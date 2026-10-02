@@ -9,7 +9,7 @@ INC   := -Isrc/include -Isrc/m0 -I$(BUILD)
 HDRS  := $(wildcard src/include/*.h)
 CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel $(BUILD)/raster.rel $(BUILD)/font.rel $(BUILD)/pcmb.rel
 
-M0_TESTS := scroll raster probe pcm
+M0_TESTS := scroll raster probe pcm mode
 M0_ROMS  := $(M0_TESTS:%=$(BUILD)/m0_%.rom)
 M0_COMMON := $(BUILD)/m0_world.rel   # M0 の検証 ROM が共有する世界(src/m0/world.c)
 
@@ -36,7 +36,7 @@ $(BUILD)/m0_%.rel: src/m0/%.c $(HDRS) src/m0/world.h config.mk | $(BUILD)
 # 生成ヘッダ: PCM の試験音(tools/gen_pcm.py)
 $(BUILD)/pcm_data.h: tools/gen_pcm.py | $(BUILD)
 	python3 tools/gen_pcm.py $@
-$(BUILD)/m0_pcm.rel: $(BUILD)/pcm_data.h
+$(BUILD)/m0_pcm.rel $(BUILD)/m0_mode.rel: $(BUILD)/pcm_data.h
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

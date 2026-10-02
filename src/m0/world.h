@@ -19,7 +19,9 @@ typedef struct {
 extern u16 g_world_cols;     /* 描き込んだ列の総数 */
 
 u8   world_strip_of(u16 c);
-void world_gen_strips(void);              /* ページ 2 に 32 本の列ストリップを作る */
+void world_set_pages(u8 ring, u8 strip);  /* リング(SP2 の偶数ページ)とストリップのページ。既定 0 と 2 */
+void world_set_top(u8 y0);                /* 列の描き込みを y0 行目からにする(既定 0) */
+void world_gen_strips(void);              /* ストリップのページに 32 本の列ストリップを作る */
 void world_palette(void);
 void world_reset(u16 x);                  /* 描き込み済み範囲を空にする */
 void world_stream(u16 x, s16 ahead, s16 behind);

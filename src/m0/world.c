@@ -3,8 +3,15 @@
 #include "world.h"
 #include "vdp.h"
 
-#define PAGE2_Y    512u     /* ページ 2 のコマンド座標 Y */
 #define RING_W     512u
+
+/* 置き場所(SCREEN5 のページ番号)。既定: リング = ページ 0|1、ストリップ = ページ 2。
+   M0-4 では SCREEN12 の帯がページ 0 の前半を使うので、リング = 2|3、ストリップ = 1 にする。 */
+static u8 ring_page = 0, strip_page = 2;
+static u8 row0 = 0;   /* この行より上は描かない(M0-4: 上の SCREEN12 の帯を壊さないため) */
+
+void world_set_pages(u8 ring, u8 strip) { ring_page = ring; strip_page = strip; }
+void world_set_top(u8 y0) { row0 = y0; }
 
 u16 g_world_cols;
 
@@ -50,7 +57,7 @@ static u8 strip_pixel(u8 s, u8 x, u8 y) {
 void world_gen_strips(void) {
     u8 y, s, x;
     for (y = 0; y < 212; y++) {
-        vdp_write_addr17(1, (u16)y * 128u);        /* ページ 2 = VRAM 0x10000 */
+        vdp_write_addr17((u8)(strip_page >> 1), (u16)((strip_page & 1) ? 0x8000u : 0u) + (u16)y * 128u);
         for (s = 0; s < 32; s++)
             for (x = 0; x < 8; x += 2)
                 VDP_DAT = (u8)((strip_pixel(s, x, y) << 4) | strip_pixel(s, (u8)(x + 1), y));
@@ -65,7 +72,8 @@ void world_reset(u16 x) { lo = hi = x & ~7u; }
 static void draw_col(u16 wx) {
     u16 rx = wx & (RING_W - 1);
     u8  s  = world_strip_of(wx >> 3);
-    vdp_hmmm((u16)s * 8u, PAGE2_Y, rx & 255u, (rx & 256u) ? 256u : 0u, 8, 212);
+    vdp_hmmm((u16)s * 8u, (u16)strip_page * 256u + row0, rx & 255u,
+             (u16)ring_page * 256u + ((rx & 256u) ? 256u : 0u) + row0, 8, (u16)(212u - row0));
     g_world_cols++;
 }
 

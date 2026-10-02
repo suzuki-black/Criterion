@@ -21,6 +21,7 @@ volatile u16 g_ras_irqs;       /* 割込みの総数(計測用) */
 volatile u16 g_ras_fh;         /* うち FH(走査線)の数 */
 volatile u16 g_ras_vb;         /* うち VBLANK の数 */
 volatile u16 g_ras_rearm;      /* 刻みの鎖が途切れて張り直した回数(計測用。0 が正常) */
+volatile u8 g_ras_mark;        /* RAS_MARK の項目が適用されるたびに +1 */
 volatile u8 ras_kick;          /* 1 = 次の VBLANK で刻みを張り直す(ras_kick_ticks) */
 
 /* PCM(走査線割込みに相乗り。指示書 8.6 の方式 A/C)。pcm_play() で開始する。 */
@@ -182,13 +183,6 @@ void ras_isr_bios(void) __naked {
         ; -- 2) サンプル --
         call pcm_out
         ld   a, d
-        cp   #244
-        jr   nz, 00013$
-        ld   a, (_pcm_fill)
-        or   a
-        call nz, pcm_gap           ; 方式 C: 246..260 の 8 サンプル(0 は仕込み済み)
-        jr   00012$
-    00013$:
         cp   #212
         jr   nz, 00012$
         ; -- 刻み 212 = VBLANK の仕事(刻み方式では VBLANK 割込みを止めている) --
@@ -205,7 +199,7 @@ void ras_isr_bios(void) __naked {
         ; -- 3) この刻み(と次のライン)までに来ているラスター項目 --
         ld   a, (_ras_left)
         or   a
-        ret  z
+        jr   z, 00015$
         ld   a, (_ras_r19)
         sub  #212
         ld   e, a                  ; E = 項目のキー(VBLANK からの順番)
@@ -213,11 +207,23 @@ void ras_isr_bios(void) __naked {
         sub  #212
         inc  a                     ; 今の刻みのキー + 1
         cp   e
-        ret  c                     ; まだ先
+        jr   c, 00015$             ; まだ先
         push de
         call _ras_apply_next
         pop  de
         jr   00012$
+        ; -- 4) 刻み 244: 方式 C の穴埋め(246..260 の 8 サンプル。0 は仕込み済み)。
+        ;   ★ラスター項目の適用より後に置く。先に穴埋め(16 ライン)をすると、その後の項目(画面モードの
+        ;     切り替えで約 2 ライン)で割込みを抜けるのが次のフレームの 2 ライン目近くになり、刻み 0 の処理が
+        ;     遅れて刻み 2 を仕込み損ねた(M0-4)。
+    00015$:
+        ld   a, d
+        cp   #244
+        ret  nz
+        ld   a, (_pcm_fill)
+        or   a
+        ret  z
+        jp   pcm_gap
         ; -- 項目方式 --
     00020$:
         ld   a, (_ras_left)
@@ -329,6 +335,11 @@ void ras_apply_next(void) __naked {
     __asm
         ld   ix, (_ras_ptr)
         ld   d, 1 (ix)             ; flags
+        bit  5, d
+        jr   z, 00014$
+        ld   hl, #_g_ras_mark      ; RAS_MARK: 適用されたことをメインへ知らせる
+        inc  (hl)
+    00014$:
         bit  0, d
         jr   z, 00001$
         ld   a, 2 (ix)
@@ -351,6 +362,33 @@ void ras_apply_next(void) __naked {
         ld   a, 6 (ix)
         out  (0x9A), a
     00002$:
+        bit  4, d
+        jr   z, 00009$
+        ; ---- レジスタ列(RAS_REGS): (番号, 値) × haze_n。画面モードの切り替え(M0-4)など ----
+        ld   e, 7 (ix)
+        ld   l, 8 (ix)
+        ld   h, 9 (ix)
+    00008$:
+        ld   a, (hl)               ; 番号
+        inc  hl
+        or   #0x80
+        ld   b, a
+        ld   a, (hl)               ; 値
+        inc  hl
+        out  (0x99), a
+        ld   a, b
+        out  (0x99), a
+        dec  e
+        jr   nz, 00008$
+        ; ★仕込み済みの R#19 を書き直す。刻み方式は先に次の刻みを仕込んでから項目を適用するが、
+        ;   画面モードを書き換えると仕込んだ割込みが失われ、刻みの鎖が 1 フレームおきに切れた
+        ;   (M0-4、openMSX。モードの変更で走査線割込みの予定が立て直されるためと思われる)。
+        ld   a, (_ras_armed)
+        out  (0x99), a
+        ld   a, #0x93              ; R#19
+        out  (0x99), a
+        jp   00005$
+    00009$:
         bit  2, d
         jp   z, 00005$
         ; ---- HR ポーリング帯 ----

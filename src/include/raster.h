@@ -27,6 +27,8 @@
 #define RAS_PAL    0x02   /* パレット 1 色を書く */
 #define RAS_HAZE   0x04   /* HR ポーリング帯: n ライン、haze 表の (r26,r27) を毎ライン書く */
 #define RAS_HAZE_FINE 0x08 /* HR ポーリング帯を R#27 だけにする(帰線での書き込み 1 回。振幅は 0..7 ドット) */
+#define RAS_MARK   0x20   /* 適用されたら g_ras_mark を +1(メインが「この行を過ぎた」を待つため) */
+#define RAS_REGS   0x10   /* レジスタ列: haze を (番号, 値) の並び、haze_n を組数として順に書く(RAS_HAZE とは排他) */
 
 typedef struct {
     u8  line;        /* 画面行(0..211)。0 は VBLANK 中に適用(フレーム先頭の状態)。昇順に並べる */
@@ -34,8 +36,8 @@ typedef struct {
     u8  r26, r27;
     u8  pidx;        /* パレット番号 */
     u8  prb, pg;     /* (R<<4)|B, G */
-    u8  haze_n;      /* HR ポーリングするライン数 */
-    const u8 *haze;  /* (r26, r27) × haze_n */
+    u8  haze_n;      /* HR ポーリングするライン数(RAS_REGS では組数) */
+    const u8 *haze;  /* (r26, r27) × haze_n(RAS_REGS では (番号, 値) × haze_n) */
 } RasEntry;          /* 10 バイト(ISR が固定オフセットで読む) */
 
 #define RAS_ISR_BIOS   0
@@ -44,6 +46,7 @@ typedef struct {
 extern volatile u8 g_ras_bias;   /* 割込み応答遅れの補正(ライン) */
 extern volatile u8 g_ras_busy_border;
 extern volatile u16 g_ras_irqs, g_ras_fh, g_ras_vb;   /* 割込み・FH・VBLANK の累計(計測用) */
+extern volatile u8  g_ras_mark;     /* RAS_MARK の項目が適用されるたびに +1 */
 extern volatile u16 g_ras_rearm;    /* PCM の刻みの鎖を VBLANK で張り直した回数(計測用。0 が正常) */  /* 0 以外: ISR の間だけ枠線色をこの番号にする(負荷可視化) */
 
 void      ras_init(void);            /* H.KEYI フック設置、E1 有効(BIOS 方式で開始) */
