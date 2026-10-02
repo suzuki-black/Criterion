@@ -47,6 +47,7 @@ void game_start(void) {
     enemy_init();
     g_gauge.cursor = N_INF; g_gauge.armed = 0; g_gauge.anim = 0; g_gauge.flash = 0;
     gauge_lose();
+    g_vscroll = 0;
     state = ST_PLAY;
 }
 
@@ -112,6 +113,8 @@ void main(void) {
         prof(0);
         ph = g_phase;
         if (ph <= PH_SORTIE) title_update();
+        bg_scroll();
+        if (g_phase >= PH_AIR) stage_update();   /* 敵(砲台)が世界の位置を使うので、敵より先に */
         if (ph >= PH_SORTIE && state == ST_PLAY) {
             if (g_dbg_invul) g_pl.invul = 2;
             player_update();
@@ -126,12 +129,12 @@ void main(void) {
             /* ★ネームエントリーと巻き戻しは M8。今はタイトルの素材を読み直して起動ロゴから(読む間は表示を止める) */
             *(volatile u8 *)0xF3E0 &= 0xBF;
             vdp_wreg(1, *(volatile u8 *)0xF3E0);
+            bg_init();                   /* 表示リングは都市や空に描き替わっている */
             title_load();
             game_start();
             title_start();
             frame_begin();
         }
-        bg_scroll();
 
         spr_voff = g_vscroll;            /* スプライトの Y はプレイエリアの R#23 を足して表へ */
         spr_begin();
@@ -141,7 +144,7 @@ void main(void) {
         spr_end();
         prof(3);
         if (g_phase <= PH_SORTIE) { title_vram(); title_build(); }
-        else bg_build();
+        else { stage_vram(); stage_build(); }
         prof(4);
         if (g_hud_on) hud_update();
         if (g_phase == PH_LOGO && g_pt == 2) {                 /* 起動ロゴのラスターリストが効いてから表示を戻す */

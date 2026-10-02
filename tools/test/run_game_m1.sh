@@ -4,7 +4,8 @@
 #   1. 無敵・連射・上下移動で約 18 秒: 遅れたフレーム 0、得点が入る、Quanta でゲージが進む
 #   2. ゲージ: SPLIT を確定 → split=1 / RAY を確定 → ray=1 かつ split=0(排他)/ ∞ で LIMIT BREAK →
 #      敵が消え、ray が 1 段下がる
-#   3. 被弾: 残機 1 で敵弾を自機に当てる → 残機 0 → GAME OVER → A で起動ロゴから(残機 3・得点 0)
+#   3. 被弾: 残機 1 で敵弾を自機に当てる → 残機 0 → GAME OVER → A で起動ロゴから(残機 3・得点 0)。
+#      ★再開は表示リングの雲とタイトルの素材を描き直すので約 1 秒かかる(表示を止めて)
 # 画面も 2 枚撮る(game_play.png / game_over.png)。
 #   usage: tools/test/run_game_m1.sh <作業ディレクトリ>
 set -e
@@ -73,8 +74,8 @@ after time 38.2 {
 after time 38.4 { check hit [expr {[rd [expr {$PL+8}]] == 0 && [rd [expr {$PL+4}]] == 0}] "lives=[rd [expr {$PL+8}]] alive=[rd [expr {$PL+4}]]" }
 after time 40.5 { check game_over [expr {[rd [expr {$ST+12}]] == 1}] "state=[rd [expr {$ST+12}]]"; screenshot -raw "$OUT/game_over.png" }
 after time 40.6 { key 8 0x01 0.1 }
-after time 41 { check restart [expr {[rd [expr {$ST+12}]] == 0 && [rd [expr {$ST+14}]] == 0 && [rd [expr {$PL+8}]] == 3 && [rd16 [expr {$PL+9}]] == 0}] "state=[rd [expr {$ST+12}]] phase=[rd [expr {$ST+14}]] lives=[rd [expr {$PL+8}]] score=[rd16 [expr {$PL+9}]]" }
-after time 41.1 { if {\$fails} { puts \$f "判定: NG (\$fails)" } else { puts \$f "判定: OK" }; close \$f; exit }
+after time 42.2 { check restart [expr {[rd [expr {$ST+12}]] == 0 && [rd [expr {$ST+14}]] == 0 && [rd [expr {$PL+8}]] == 3 && [rd16 [expr {$PL+9}]] == 0}] "state=[rd [expr {$ST+12}]] phase=[rd [expr {$ST+14}]] lives=[rd [expr {$PL+8}]] score=[rd16 [expr {$PL+9}]]" }
+after time 42.3 { if {\$fails} { puts \$f "判定: NG (\$fails)" } else { puts \$f "判定: OK" }; close \$f; exit }
 TCL
 timeout 240 openmsx -machine "$MACHINE" -carta "$ROM" -romtype ASCII8 -script "$T" >/dev/null 2>&1 || true
 cat "$OUT/game_m1.log"

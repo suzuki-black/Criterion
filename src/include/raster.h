@@ -22,6 +22,7 @@
 #include "types.h"
 
 #define RAS_MAX 20
+#define RAS_GAP 6          /* 項目どうしの最小の間隔(ライン)。これより近い項目は割込みを待たずに続けて適用される */
 
 #define RAS_SCROLL 0x01   /* R#26/R#27 を書く */
 #define RAS_PAL    0x02   /* パレット 1 色を書く */

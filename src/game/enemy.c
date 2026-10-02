@@ -3,7 +3,9 @@
    ・Tick: 5 機の編隊。右から入り、同じ正弦波の軌道を順にたどる(軌道は x で決まる)。全滅で Quanta。
    ・Tock: Tick と逆位相の編隊。
    ・Notch: 4 機が一列で上(または下)から降り、自機の高さで急旋回して突っ込む。
-   ・敵弾: Tick / Tock がときどき自機を狙って撃つ(2 ドット/フレーム)。 */
+   ・Spirit: 都市の屋上に張り付く砲台(世界の座標で動く。stage.c が列に合わせて置く)。ときどき自機を狙って撃つ。
+   ・敵弾: Tick / Tock がときどき自機を狙って撃つ(2 ドット/フレーム)。
+   ・台本は区間ごと(g_wave_set): 空中戦は 1200 フレームで一周、都市はまばらな編隊、それ以外は出さない。 */
 #include "game.h"
 #include "spr.h"
 #include "sprite_data.h"
@@ -63,6 +65,7 @@ void enemy_init(void) {
     for (i = 0; i < MAX_FX; i++) g_fx[i].t = 0;
     for (i = 0; i < MAX_FORM; i++) form_left[i] = 0;
     g_frame = 0;
+    enemy_waves(WAVES_AIR);
 }
 
 static Enemy *alloc_enemy(void) {
@@ -101,22 +104,42 @@ static void spawn_wave(u8 type, s16 y0, s8 dir) {
     }
 }
 
-/* ---- 台本(1200 フレームで一周) ---- */
+/* ---- 台本(区間ごと。LOOP フレームで一周) ---- */
 typedef struct { u16 t; u8 type; u8 y0; s8 dir; } Wave;
-static const Wave script[] = {
+static const Wave script_air[] = {
     {   60, E_TICK,  50,  0 }, {  200, E_TOCK, 130,  0 }, {  330, E_NOTCH, 0,  1 },
     {  450, E_TICK,  90,  0 }, {  520, E_TOCK,  60,  0 }, {  650, E_NOTCH, 0, -1 },
     {  760, E_TICK, 140,  0 }, {  770, E_TOCK,  40,  0 }, {  900, E_NOTCH, 0,  1 },
     { 1000, E_TICK,  70,  0 }, { 1080, E_NOTCH, 0, -1 },
 };
-#define NWAVE (sizeof(script) / sizeof(script[0]))
+static const Wave script_city[] = {               /* 都市: 砲台が主役。編隊は上空(ビルより上)をまばらに */
+    {  240, E_TICK,  30,  0 }, {  700, E_NOTCH, 0,  1 }, {  950, E_TOCK,  24,  0 },
+};
 #define LOOP  1200
+u8 g_wave_set;
+static u16 wave_t;
+
+void enemy_waves(u8 set) { g_wave_set = set; wave_t = 0; }
 
 static void run_script(void) {
-    u16 t = g_frame % LOOP;
-    u8 i;
-    for (i = 0; i < NWAVE; i++)
-        if (script[i].t == t) spawn_wave(script[i].type, FX(script[i].y0), script[i].dir);
+    const Wave *w;
+    u8 i, n;
+    if (g_wave_set == WAVES_AIR) { w = script_air; n = sizeof(script_air) / sizeof(script_air[0]); }
+    else if (g_wave_set == WAVES_CITY) { w = script_city; n = sizeof(script_city) / sizeof(script_city[0]); }
+    else return;
+    if (++wave_t >= LOOP) wave_t = 0;
+    for (i = 0; i < n; i++)
+        if (w[i].t == wave_t) spawn_wave(w[i].type, FX(w[i].y0), w[i].dir);
+}
+
+/* 屋上の砲台: wx = 世界の横位置(近い層のドット)、roof = 屋上の行(都市の s) */
+void enemy_spawn_spirit(u16 wx, u8 roof) {
+    Enemy *e = alloc_enemy();
+    if (!e) return;
+    e->type = E_SPIRIT; e->t = rnd8(); e->hp = 3; e->form = 0xFF; e->turned = 0;
+    e->y0 = (s16)wx; e->phase = roof;
+    e->vx = e->vy = 0;
+    e->x = FX((s16)(wx - g_wx)); e->y = FX((s16)roof - g_scam - 6);
 }
 
 static void enemy_fire(const Enemy *e) {
@@ -155,6 +178,13 @@ static void kill_enemy(Enemy *e, u8 by_player) {
 
 static void move_enemy(Enemy *e) {
     e->t++;
+    if (e->type == E_SPIRIT) {                       /* 世界に張り付く: 画面の位置はスクロールから求める */
+        e->x = FX((s16)((u16)e->y0 - g_wx));
+        e->y = FX((s16)e->phase - g_scam - 6);
+        if (e->x < FX(232) && e->x > FX(24) && !(e->t & 63)) enemy_fire(e);
+        if (e->x < FX(-16) || e->y > FX(PLAY_H + 16)) kill_enemy(e, 0);
+        return;
+    }
     if (e->type == E_NOTCH) {
         if (!e->turned) {
             s16 py = g_pl.y + FX(8);
@@ -273,7 +303,8 @@ void enemy_draw(void) {
         if (!e->type) continue;
         if (e->type == E_TICK) pat = (e->t & 16) ? PAT_TICK2 : PAT_TICK1;
         else if (e->type == E_TOCK) pat = (e->t & 16) ? PAT_TOCK2 : PAT_TOCK1;
-        else pat = PAT_NOTCH;
+        else if (e->type == E_NOTCH) pat = PAT_NOTCH;
+        else pat = PAT_SPIRIT;
         spr_put(PX(e->x) - 8, PX(e->y) - 8, pat, G_ENEMY, 0);
     }
     for (i = 0; i < MAX_FX; i++) {

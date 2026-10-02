@@ -1,22 +1,20 @@
-/* bg.c — 1 面 空中戦の背景(指示書 5.1「夕焼けの雲海上空」)とラスターリスト。
-   ・空(0..99 行): 色 1 だけで塗り、ラスターで帯ごとに色 1 のパレットを変えてグラデーションにする(6 帯)。
+/* bg.c — 1 面 空中戦の背景(指示書 5.1「夕焼けの雲海上空」)の絵と色。ラスターリストは stage.c が組む。
+   ・空(リングの 0..99 行): 色 1 だけで塗り、ラスターで帯ごとに色 1 のパレットを変えてグラデーションにする(7 帯)。
    ・雲海(100..187 行): 遠・中・近の 3 層。各層の絵は 512 ドット周期で一度だけ描き、層ごとの横スクロールは
-     ラスターでレジスタを書き換えるだけ(列の描き込み 0 = 毎フレームの VRAM 転送なし)。速さは 1/4・1/2・1。
+     ラスターでレジスタを書き換えるだけ。速さは 1/4・1/2・1。
    ・HUD 帯(188..211 行): ページ 2 の 212 行から(bg_fill_hud)。
-   ・空と雲の色は bg_mix で夜(タイトル)と夕焼けの間を補間する。
-   ・96 行でスプライトの属性表を下の帯へ切り替える(spr.h)。 */
+   ・空と雲の色は bg_mix で夜(タイトル)と夕焼けの間を補間する。 */
 #include "game.h"
 #include "vdp.h"
 #include "raster.h"
 #include "spr.h"
 
-#define CLOUD_Y0  100
 #define SKY_BANDS 7
 
 static u16 scroll_q;                /* 近景の位置(1/4 ドット単位) */
 u8 g_scroll_speed = 4;              /* 1/4 ドット/フレーム単位(4 = 1 ドット/フレーム) */
 
-static u8 regs_a[2][8], regs_b[2][4], regs_h[2][8];
+static u8 regs_h[2][8];
 u8 g_vscroll;                       /* プレイエリアの縦スクロール(R#23) */
 
 /* 空(上から): 色 1 の R, G, B。夜(タイトル)と夕焼け(1 面)の間を bg_mix で補間する */
@@ -24,7 +22,6 @@ static const u8 sky_dusk[SKY_BANDS][3] = {
     { 1, 0, 3 }, { 2, 0, 4 }, { 3, 1, 4 }, { 4, 1, 4 }, { 5, 2, 4 }, { 6, 3, 3 }, { 7, 4, 2 } };
 static const u8 sky_night[SKY_BANDS][3] = {
     { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 2 }, { 1, 0, 2 }, { 1, 1, 2 }, { 1, 1, 3 }, { 2, 1, 3 } };
-static const u8 sky_line[SKY_BANDS] = { 0, 16, 32, 48, 64, 80, 96 };
 /* 雲の色(パレット 2..7)。夜と夕焼け */
 static const u8 cloud_dusk[6][3]  = { { 3, 1, 3 }, { 6, 3, 4 }, { 3, 1, 2 }, { 7, 4, 3 }, { 2, 1, 2 }, { 7, 6, 5 } };
 static const u8 cloud_night[6][3] = { { 1, 1, 2 }, { 2, 2, 4 }, { 1, 1, 2 }, { 3, 3, 5 }, { 1, 0, 1 }, { 4, 4, 6 } };
@@ -83,78 +80,112 @@ static void palette(void) {
 /* 層 l の雲の頂を 512 ドットぶん求める(周期 512 / 256 / 128 / 64 の正弦の和) */
 static void make_tops(u8 l) {
     const Layer *L = &layer[l];
+    u8 o2 = (u8)(l * 21), o3 = (u8)(l * 37), o4 = (u8)(l * 11), y0 = L->y0, amp = L->amp;
+    s16 base = (s16)(L->y0 + L->base);
     u16 x;
+    /* ★掛け算(ライブラリ呼び出し)を足し算とシフトにする(1 層 0.11 秒かかっていた)。amp は 7 / 8 / 9 */
     for (x = 0; x < 512; x++) {
-        s16 v = (s16)g_sin64[(x >> 3) & 63] * 3
-              + (s16)g_sin64[((x >> 2) + l * 21) & 63] * 2
-              + (s16)g_sin64[((x >> 1) + l * 37) & 63]
-              + (s16)(g_sin64[(x + l * 11) & 63] >> 1);
-        s16 t = (s16)L->y0 + L->base + (s16)(v * (s16)L->amp / 860);   /* |v| <= 825、v * amp は 16bit に収まる */
-        if (t < (s16)L->y0) t = L->y0;
+        u8 xl = (u8)x;
+        s16 s1 = g_sin64[(u8)(x >> 3) & 63], s2 = g_sin64[(u8)((u8)(x >> 2) + o2) & 63];
+        s16 v = (s16)((s1 << 1) + s1 + (s2 << 1) + g_sin64[(u8)((u8)(x >> 1) + o3) & 63]
+                      + (g_sin64[(u8)(xl + o4) & 63] >> 1));
+        s16 a = (s16)(v << 3), t;
+        if (amp == 7) a -= v; else if (amp == 9) a += v;          /* a = v * amp(|a| <= 7425) */
+        t = (s16)(base + (a >> 10) + (a >> 12));                  /* ≒ a / 819 */
+        if (t < (s16)y0) t = y0;
         top_tab[x] = (u8)t;
     }
 }
 
-static u8 cloud_pixel(u8 l, u16 x, u8 y) {
+/* 1 行を描く。画素の種類 = 頂からの距離 d = y - 頂(負 = 空 / 0..1 = 縁の光 / 2..3 = 光と影の市松 / 4.. = 影)。
+   ★C で 1 画素ずつ求めると 1 バイト 54us かかり、起動と再開で 2 秒近く黒い画面が続いた。2 画素の種類の組
+     → 1 バイトの表(行ごとに市松の位相で作る)を引く内側のループを asm にする。 */
+u8 pair_tab[16];                   /* asm から参照するので static にしない */
+
+/* 頂の表 t から 128 バイト(256 画素)を VRAM へ(アドレスは設定済み)。A = y、DE = t(sdcccall(1)) */
+static void cloud_out(u8 y, const u8 *t) __naked {
+    (void)y; (void)t;
+    __asm
+        ld   c, a                  ; C = y
+        ex   de, hl                ; HL = t
+        ld   b, #128
+    00001$:
+        ld   a, c
+        sub  (hl)                  ; 偶数の画素の d
+        inc  hl
+        call 00010$
+        add  a, a
+        add  a, a
+        ld   e, a
+        ld   a, c
+        sub  (hl)                  ; 奇数の画素の d
+        inc  hl
+        call 00010$
+        or   e
+        push hl
+        ld   hl, #_pair_tab
+        add  a, l
+        ld   l, a
+        adc  a, h
+        sub  l
+        ld   h, a
+        ld   a, (hl)
+        pop  hl
+        out  (0x98), a
+        djnz 00001$
+        ret
+        ; d(A)→ 種類: 負 = 0、0..1 = 1、2..3 = 2、4.. = 3
+    00010$:
+        bit  7, a
+        jr   z, 00011$
+        xor  a
+        ret
+    00011$:
+        cp   #2
+        jr   nc, 00012$
+        ld   a, #1
+        ret
+    00012$:
+        cp   #4
+        ld   a, #2
+        ret  c
+        inc  a
+        ret
+    __endasm;
+}
+
+static void cloud_row(u8 l, u8 y) {
     const Layer *L = &layer[l];
-    u8 t = top_tab[x];
-    if (y < t) return 1;                                   /* 空 */
-    if (y < t + 2) return L->light;                        /* 縁の光(夕日) */
-    if (y < t + 4) return ((x + y) & 1) ? L->light : L->dark;
-    return L->dark;
+    u8 i, p;
+    for (i = 0; i < 16; i++) {
+        u8 a = i >> 2, b = i & 3, ca, cb;
+        ca = a == 0 ? 1 : a == 1 ? L->light : a == 2 ? ((y & 1) ? L->light : L->dark) : L->dark;     /* 偶数の x */
+        cb = b == 0 ? 1 : b == 1 ? L->light : b == 2 ? ((y & 1) ? L->dark : L->light) : L->dark;     /* 奇数の x */
+        pair_tab[i] = (u8)((ca << 4) | cb);
+    }
+    for (p = 0; p < 2; p++) {
+        vdp_write_addr17(0, (u16)(p ? 0x8000u : 0u) + (u16)y * 128u);
+        cloud_out(y, &top_tab[p ? 256 : 0]);
+    }
 }
 
 void bg_init(void) {
-    u8 l, y, p;
+    u8 l, y;
     palette();
     vdp_hmmv(0, 0, 256, 100, 0x11);                        /* 空(ページ 0) */
     vdp_hmmv(0, 256, 256, 100, 0x11);                      /* 空(ページ 1) */
     vdp_cmd_wait();
     for (l = 0; l < 3; l++) {
         make_tops(l);
-        for (y = layer[l].y0; y < layer[l].y1; y++)
-            for (p = 0; p < 2; p++) {
-                u16 x, x0 = (u16)p * 256u;
-                vdp_write_addr17(0, (u16)(p ? 0x8000u : 0u) + (u16)y * 128u);
-                for (x = x0; x < x0 + 256u; x += 2)
-                    VDP_DAT = (u8)((cloud_pixel(l, x, y) << 4) | cloud_pixel(l, x + 1, y));
-            }
+        for (y = layer[l].y0; y < layer[l].y1; y++) cloud_row(l, y);
     }
+    /* 188..191 行: 近い雲の底の続き(色 6)。都市の雲の底の上端と同じ色で、描き替えない(stage.c のブロック 23) */
+    vdp_hmmv(0, 188, 256, 4, 0x66);
+    vdp_hmmv(0, 256 + 188, 256, 4, 0x66);
+    vdp_cmd_wait();
     scroll_q = 0;
 }
 
 void bg_scroll(void) {
     scroll_q += g_scroll_speed;
-}
-
-void bg_build(void) {
-    RasEntry *e = ras_back();
-    u8 bi = ras_back_index();
-    u8 *ra = regs_a[bi], *rb = regs_b[bi];
-    u8 i, k = 0;
-    u16 near = scroll_q >> 2, mid = scroll_q >> 3, far = scroll_q >> 4;
-
-    ra[0] = 5; ra[1] = spr_regs.r5a; ra[2] = 11; ra[3] = spr_regs.r11a;
-    ra[4] = 2; ra[5] = 0x3F;                                /* プレイエリア: 表示リング(ページ 0|1) */
-    ra[6] = 23; ra[7] = g_vscroll;
-    rb[0] = 5; rb[1] = spr_regs.r5b; rb[2] = 11; rb[3] = spr_regs.r11b;
-
-    for (i = 0; i < SKY_BANDS; i++, k++) {
-        e[k].line = sky_line[i];
-        e[k].flags = RAS_PAL;
-        e[k].pidx = 1;
-        e[k].prb = (u8)((sky_cur[i][0] << 4) | sky_cur[i][2]);
-        e[k].pg = sky_cur[i][1];
-    }
-    e[0].flags = RAS_PAL | RAS_SCROLL | RAS_REGS;          /* 先頭: 空はどこでも同じ色。上の帯の属性表 */
-    e[0].r26 = 0; e[0].r27 = 0;
-    e[0].haze_n = 4; e[0].haze = ra;
-    e[SKY_BANDS - 1].flags = RAS_PAL | RAS_REGS;            /* 96 行: 下の帯の属性表へ */
-    e[SKY_BANDS - 1].haze_n = 2; e[SKY_BANDS - 1].haze = rb;
-
-    e[k].line = CLOUD_Y0; e[k].flags = RAS_SCROLL; e[k].r26 = VDP_R26(far);  e[k].r27 = VDP_R27(far);  k++;
-    e[k].line = 124;      e[k].flags = RAS_SCROLL; e[k].r26 = VDP_R26(mid);  e[k].r27 = VDP_R27(mid);  k++;
-    e[k].line = 150;      e[k].flags = RAS_SCROLL; e[k].r26 = VDP_R26(near); e[k].r27 = VDP_R27(near); k++;
-    bg_fill_hud(&e[k], bi); k++;
-    ras_commit(k);
 }

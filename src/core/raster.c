@@ -227,13 +227,28 @@ void ras_isr_bios(void) __naked {
         ret  z
         jp   pcm_gap
         ; -- 項目方式 --
+        ;   ★次の項目が 6 ライン未満なら、割込みを待たずに続けて適用する(項目は少し早まる)。割込みは
+        ;     R#19 の 3 ライン後あたりで来て、適用に 2〜3 ラインかかるので、近い項目に R#19 を仕込むと
+        ;     行が過ぎていて、そのフレームの残りが全部消える(M2: 降下で帯の境目が動くと項目どうしが近づく)。
+        ;     リストを組む側(stage.c)も項目を RAS_GAP ライン以上あける。
     00020$:
         ld   a, (_ras_left)
         or   a
         ret  z
         ld   a, (_ras_r19)
         cp   d
-        call z, _ras_apply_next
+        jp   nz, ras_arm_item
+    00021$:
+        push de
+        call _ras_apply_next
+        pop  de
+        ld   a, (_ras_left)
+        or   a
+        ret  z
+        ld   a, (_ras_r19)
+        sub  d
+        cp   #6
+        jr   c, 00021$
         jp   ras_arm_item
 
         ; ---- VBLANK ----

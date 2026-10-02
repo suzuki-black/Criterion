@@ -59,7 +59,9 @@ static u8 regs_top[2][16], regs_n[2][12], regs_ring[2][4], regs_b[2][4];
 /* ---- 素材 ---- */
 void title_load(void) {
     vdp_hmmv(0, 768, 256, 128, 0x11);                        /* ページ 3 の 0..127 行: 空の色(色 1)。ロゴが滑り込む間に見える */
-    vdp_hmmv(0, 768 + 128, 256, 84, 0x00);                   /* ページ 3 の 128..211 行: 黒(紋章の地) */
+    vdp_hmmv(0, 768 + 128, 256, 60, 0x00);                   /* ページ 3 の 128..187 行: 黒(紋章の地)。
+                                                                ★192 行から先はスプライトの表(0x1E000〜)。211 行まで
+                                                                  消していて、上の帯の色表が 0 になり敵が黒く点滅した */
     vdp_cmd_wait();
     rom_to_vram(ASSET_TITLE_EVEN_BANK, ASSET_TITLE_EVEN_OFF, 0, 0x0000, ASSET_TITLE_EVEN_LEN);   /* ページ 0 の 0..63 行 */
     rom_to_vram(ASSET_TITLE_ODD_BANK, ASSET_TITLE_ODD_OFF, 1, 0x0000, ASSET_TITLE_ODD_LEN);     /* ページ 2 の 0..63 行 */
@@ -131,7 +133,7 @@ void title_update(void) {
         if (g_pt >= 30 && !(g_pt & 3)) bg_mix((u8)((g_pt - 30) >> 2));
         if (g_pt < 60) g_scroll_speed = (u8)(1 + g_pt / 8);
         else if (g_pt < 120 && !(g_pt & 7) && g_scroll_speed > 4) g_scroll_speed--;
-        if (g_pt >= 120 && !g_split_n && ring_logo) { g_phase = PH_AIR; g_pt = 0; g_scroll_speed = 4; bg_mix(16); }
+        if (g_pt >= 120 && !g_split_n && ring_logo) { g_phase = PH_AIR; g_pt = 0; g_scroll_speed = 4; bg_mix(16); stage_start(); }
     }
 }
 

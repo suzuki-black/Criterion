@@ -15,7 +15,7 @@ M0_COMMON := $(BUILD)/m0_world.rel   # M0 の検証 ROM が共有する世界(sr
 
 GAME_SRCS := $(wildcard src/game/*.c)
 GAME_RELS := $(GAME_SRCS:src/game/%.c=$(BUILD)/g_%.rel)
-GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h
+GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h
 
 .PHONY: all m0 clean
 .SECONDARY:
@@ -53,10 +53,14 @@ TITLE_BINS := $(BUILD)/title_even.bin $(BUILD)/title_odd.bin $(BUILD)/logo.bin $
 $(BUILD)/title.stamp: tools/gen_title.py | $(BUILD)
 	python3 tools/gen_title.py $(BUILD)
 	touch $@
-$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp
+$(BUILD)/city.stamp: tools/gen_city.py | $(BUILD)
+	python3 tools/gen_city.py $(BUILD) $(BUILD)/city_data.h
+	touch $@
+$(BUILD)/city_data.h: $(BUILD)/city.stamp
+$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
-	    TDF=$(BUILD)/tdf.bin
+	    TDF=$(BUILD)/tdf.bin CITY_STRIPS=$(BUILD)/city_strips.bin CITY_MAP=$(BUILD)/city_map.bin
 	touch $@
 $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 

@@ -45,7 +45,7 @@ typedef struct {
 extern Player g_pl;
 
 /* ---- 敵・弾・アイテム・爆発(固定数のプール) ---- */
-enum { E_NONE, E_TICK, E_TOCK, E_NOTCH };
+enum { E_NONE, E_TICK, E_TOCK, E_NOTCH, E_SPIRIT };
 typedef struct {
     u8  type;
     u8  t;              /* 出現からのフレーム */
@@ -85,7 +85,6 @@ extern u8 g_vscroll;                 /* プレイエリアの縦スクロール(
 /* 各モジュール */
 void bg_init(void);
 void bg_scroll(void);               /* 1 フレーム分スクロールを進める */
-void bg_build(void);                /* ラスターリストを組む(spr_end の後) */
 void bg_mix(u8 t);                  /* 空と雲の色: 0 = 夜 〜 16 = 夕焼け */
 const u8 *bg_sky(u8 band);          /* 空の帯(0..6)の今の色 R, G, B */
 u16  bg_layer_x(u8 l);              /* 雲の層(0 遠 / 1 中 / 2 近)の横位置 */
@@ -121,5 +120,20 @@ void enemy_init(void);
 void enemy_update(void);
 void enemy_draw(void);
 void limit_break(void);             /* ∞: 画面の敵と弾を一掃 */
+enum { WAVES_NONE, WAVES_AIR, WAVES_CITY };
+void enemy_waves(u8 set);           /* 出現の台本を区間に合わせて切り替える(時刻は 0 から) */
+void enemy_spawn_spirit(u16 wx, u8 roof);
+
+/* ---- 面の進行と縦に長い世界(stage.c) ----
+   縦の座標 s: 都市の画面の行と同じ(0 = 雲の底、158 = 歩道)。空中戦の空と雲は s = -188..-1。
+   表示リングの行 = (188 + s) & 255、R#23 = (188 + g_scam) & 255。g_scam = 画面の上端の s。 */
+enum { SEC_AIR1, SEC_DESCENT, SEC_CITY1, SEC_MID, SEC_CITY2, SEC_BOSS, SEC_ASCENT, SEC_AIR2 };
+extern u8  g_sec;                   /* 今の区間 */
+extern u16 g_wx;                    /* 世界の横位置(近い層のドット。画面の左端) */
+extern s16 g_scam;                  /* 画面の上端の s */
+void stage_start(void);             /* 1 面の空中戦から(PH_AIR に入るとき) */
+void stage_update(void);            /* 区間を進める(スクロールの後) */
+void stage_vram(void);              /* 列と行の描き込み(VRAM の窓で) */
+void stage_build(void);             /* ラスターリスト */
 
 #endif /* GAME_H */
