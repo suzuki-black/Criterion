@@ -136,3 +136,13 @@ u8 sys_ram_exec(void) {
     }
     return ok;
 }
+
+/* ---- S1990 のフリーランタイマ(E6h 下位 / E7h 上位、約 255.7kHz = 1 カウント 3.91us) ---- */
+__sfr __at(0xE6) TMR_L;
+__sfr __at(0xE7) TMR_H;
+
+u16 sys_timer(void) {
+    u8 h, l, h2;
+    do { h = TMR_H; l = TMR_L; h2 = TMR_H; } while (h != h2);   /* 下位の桁上がりをまたいだら読み直す */
+    return (u16)((u16)h << 8 | l);
+}

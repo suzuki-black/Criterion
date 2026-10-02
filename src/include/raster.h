@@ -43,12 +43,26 @@ typedef struct {
 
 extern volatile u8 g_ras_bias;   /* 割込み応答遅れの補正(ライン) */
 extern volatile u8 g_ras_busy_border;
-extern volatile u16 g_ras_irqs, g_ras_fh, g_ras_vb;   /* 割込み・FH・VBLANK の累計(計測用) */  /* 0 以外: ISR の間だけ枠線色をこの番号にする(負荷可視化) */
+extern volatile u16 g_ras_irqs, g_ras_fh, g_ras_vb;   /* 割込み・FH・VBLANK の累計(計測用) */
+extern volatile u16 g_ras_rearm;    /* PCM の刻みの鎖を VBLANK で張り直した回数(計測用。0 が正常) */  /* 0 以外: ISR の間だけ枠線色をこの番号にする(負荷可視化) */
 
 void      ras_init(void);            /* H.KEYI フック設置、E1 有効(BIOS 方式で開始) */
 RasEntry *ras_back(void);            /* 裏の表(書き込んでよい) */
 u8        ras_back_index(void);      /* 裏の表の番号 0/1(付随データのダブルバッファ用) */
 void      ras_commit(u8 n);          /* 裏の表を n 項目で確定。次の VBLANK で表になる */
 u8        ras_set_isr(u8 mode);      /* 割込みの入口を切り替える。戻り値 = 実際のモード */
+
+/* ---- PCM(指示書 8.6 の方式 A/C。直接方式で使う) ----
+   再生中は「刻み方式」: 走査線割込みを 2 ラインごとの固定の刻みにして 1 サンプルずつ出す(15734/2 = 7867Hz)。
+   ラスターの項目はその刻みまでに来ているものを適用する(最大 1 ライン早まる)。VBLANK 割込みは止め、
+   VBLANK の仕事(JIFFY・表の差し替え)は刻み 212 で行う。詳細は raster.c と docs/M0_技術検証.md(M0-3)。
+   fill=0(方式 A): 割込みが起きない 246..261 行と HR ポーリング帯の間は出さない(その分だけ再生が伸びる)。
+   fill=1(方式 C): その間も HR を数えて出す。M0-3 で方式 C に決定。
+   開始は次の VBLANK から(フレームの途中から割り込ませるとラスターの順番を乱すため)。 */
+void pcm_play(const u8 *p, u16 n, u8 fill);   /* 再生中に呼ぶと今のデータを差し替える */
+void pcm_stop(void);
+void pcm_queue(const u8 *p, u16 n);           /* 今のデータが鳴り終わったら、切れ目なく続けて鳴らす */
+u8   pcm_queued(void);                         /* 予約が残っていれば 1 */
+u16  pcm_remaining(void);
 
 #endif /* RASTER_H */

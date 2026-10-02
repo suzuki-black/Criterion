@@ -13,4 +13,7 @@ void sys_hook_vblank(void (*fn)(void));
 /* ページ 1-2 を RAM へ複製して RAM から実行する(以後カートリッジ ROM は見えない)。成功で 1。 */
 u8 sys_ram_exec(void);
 
+/* S1990 のフリーランタイマ(1 カウント ≒ 3.91us、1 ライン ≒ 16.27 カウント)。 */
+u16 sys_timer(void);
+
 #endif /* SYS_H */

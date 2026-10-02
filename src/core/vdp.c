@@ -25,10 +25,20 @@ void vdp_write_addr17(u8 hi, u16 lo) {
 }
 
 /* CE(S#2 bit0) のポーリング。S#2 選択中に VBLANK 割込みが入ると BIOS の ISR が S#0 を読めず
-   永久再突入するので、1 回ごとに di で囲んで必ず S#0 へ戻す(前作で実機確定)。 */
+   永久再突入するので、1 回ごとに di で囲んで必ず待機値(BIOS 方式は S#0)へ戻す(前作で実機確定)。
+   ★rra の後に ld a,(nn) を使う(xor a は C フラグを壊す)。 */
+void (*volatile g_vdp_wait_hook)(void);
+volatile u8 g_vdp_status_rest;   /* R#15 の待機値(S#2 を読んだ後に戻す値) */
+
 void vdp_cmd_wait(void) {
     __asm
-    00001$:
+        jr   00002$
+    00003$:
+        ld   hl, (_g_vdp_wait_hook)
+        ld   a, h
+        or   l
+        call nz, ___sdcc_call_hl   ; 待ちの合間のポーリング(PCM 方式 B)
+    00002$:
         di
         ld   a, #2
         out  (0x99), a
@@ -36,29 +46,41 @@ void vdp_cmd_wait(void) {
         out  (0x99), a
         in   a, (0x99)
         rra
-        ld   a, #0
+        ld   a, (_g_vdp_status_rest)
         out  (0x99), a
-        ld   a, #0x8F
+        ld   a, #0x8F              ; R#15 = 待機値(直接割込みでは 1)
         out  (0x99), a
         ei
-        jp   c, 00001$
+        jp   c, 00003$
     __endasm;
 }
 
-/* R#32..46 の 15 本。R#17 間接オートインクリメントで OTIR 一括発行(0x9B は FF を使わない)。 */
+/* R#32..46 の 15 本。R#17 間接オートインクリメント + OTIR(0x9B は 0x99 のラッチを使わない)。
+   ★5 本ずつ 3 回に分け、割込み禁止を 1 回 7 アクセス(約 60us、1 ライン弱)に抑える。turboR の R800 は
+     VDP への I/O 1 回に 8.6us かかるので、15 本を一度に書くと 2.3 ライン割込みが止まり、2 ラインごとの
+     PCM 割込み(raster.c)を毎回取りこぼした(M0-3)。割込み側も R#17 を使う(陽炎帯)ので、回ごとに設定し直す。
+     R#46(CMD)は最後に書かれるので、途中で割り込まれてもコマンドは揃ってから始まる。 */
 volatile u8 vdpcbuf[15];
 
 static void cmd_flush(void) {
     __asm
-        di
-        ld   a, #32
-        out  (0x99), a
-        ld   a, #0x80 | 17
-        out  (0x99), a
         ld   hl, #_vdpcbuf
-        ld   bc, #0x0F9B
+        ld   c, #0x9B
+        ld   e, #32
+    00001$:
+        di
+        ld   a, e
+        out  (0x99), a
+        ld   a, #0x80 | 17         ; R#17 = 次の番号(自動加算あり)
+        out  (0x99), a
+        ld   b, #5
         otir
         ei
+        ld   a, e
+        add  a, #5
+        ld   e, a
+        cp   #47
+        jr   c, 00001$
     __endasm;
 }
 

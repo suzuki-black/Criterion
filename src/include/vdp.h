@@ -23,6 +23,11 @@ void vdp_set_pal(u8 idx, u8 r, u8 g, u8 b);
 void vdp_write_addr17(u8 hi, u16 lo);
 
 void vdp_cmd_wait(void);
+/* vdp_cmd_wait の待ちの間に毎回呼ぶ関数(0 = なし)。PCM 方式 B のポーリングに使う。 */
+extern void (*volatile g_vdp_wait_hook)(void);
+/* R#15(読むステータスレジスタ)の待機値。BIOS を使う間は 0、直接割込みでは 1(raster.c が設定)。
+   S#2 などを読んだら必ずこの値へ戻す。 */
+extern volatile u8 g_vdp_status_rest;
 
 /* HMMM: VRAM→VRAM バイト単位高速コピー。SCREEN5 では X/幅は偶数で扱う。Y は 0..1023(4 ページ)。 */
 void vdp_hmmm(u16 sx, u16 sy, u16 dx, u16 dy, u16 nx, u16 ny);

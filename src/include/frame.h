@@ -16,6 +16,12 @@ void frame_begin(void);
    戻り値 = 待ちループの回数(CPU 残量の目安。遅れて入ったフレームは 0)。 */
 u16 frame_sync(u8 n);
 
+/* 待ちループの中で毎回呼ぶ関数(0 = なし)。PCM 方式 B のポーリングに使う。 */
+extern void (*volatile g_poll_hook)(void);
+
+/* 待ちが約 35ms を超えたら呼ぶ関数(0 = なし)。PCM の刻みの見張り(raster.c)。 */
+extern void (*volatile g_stall_hook)(void);
+
 /* 基準から n ティック以上かかって待てなかったフレームの累計。 */
 extern u16 g_frame_late;
 

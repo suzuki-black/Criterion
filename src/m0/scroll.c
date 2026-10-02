@@ -18,9 +18,8 @@
 #include "vdp.h"
 #include "sys.h"
 #include "frame.h"
+#include "world.h"
 
-#define PAGE2_Y    512u     /* ページ 2 のコマンド座標 Y */
-#define RING_W     512u
 #define AHEAD      264      /* 右側に確保しておく描き込み済み幅(表示幅 + 1 列) */
 #define BEHIND     8        /* 左側に確保しておく描き込み済み幅(MSK の 8 ドット分) */
 
@@ -65,111 +64,6 @@ static void set_scroll(u16 x) {
     __asm ei __endasm;
 }
 
-/* ---- 世界(地形)の定義: 列番号 c(8 ドット単位)→ ストリップ番号 0..31 ---- */
-static u8 strip_of(u16 c) {
-    u16 blk = c >> 2;                               /* 4 列(32 ドット)ごとに地形が変わる */
-    u8 ceil  = (u8)((blk * 5u + (blk >> 3)) & 3);
-    u8 floor = (u8)((blk * 3u + (blk >> 2) + 1u) & 3);
-    u8 major = (c & 7) == 0;                        /* 64 ドットごとに大目盛り */
-    return (u8)((major << 4) | (floor << 2) | ceil);
-}
-
-/* ストリップ s の (x,y) の色。ceil/floor は 1..4 段(8 ドット/段)。 */
-static u8 strip_pixel(u8 s, u8 x, u8 y) {
-    u8 ceil_h  = (u8)(((s & 3) + 1) * 8);
-    u8 floor_h = (u8)((((s >> 2) & 3) + 1) * 8);
-    u8 major   = s >> 4;
-    u8 top     = 13;
-    u8 fy      = (u8)(212 - floor_h);
-    if (y < 12) {                                   /* 定規(目盛り) */
-        if (x == 0 && (major || y >= 6)) return 15;
-        return 1;
-    }
-    if (y == 12) return 14;
-    if (y < top + ceil_h) {                         /* 天井ブロック */
-        u8 ry = (u8)(y - top);
-        if ((ry & 7) == 7) return 5;
-        if (x == (((ry >> 3) & 1) ? 3 : 7)) return 5;
-        return 4;
-    }
-    if (y >= fy) {                                  /* 床ブロック */
-        u8 ry = (u8)(y - fy);
-        if (ry == 0) return 10;
-        if ((ry & 7) == 7) return 7;
-        if (x == (((ry >> 3) & 1) ? 3 : 7)) return 7;
-        return 6;
-    }
-    if (major && x == 0 && (y & 4)) return 11;      /* 大目盛りの破線 */
-    if (x == 3 && y == (u8)(40 + s * 5)) return 2;  /* 星 */
-    return 0;
-}
-
-static void gen_strips(void) {
-    u8 y, s, x;
-    for (y = 0; y < 212; y++) {
-        vdp_write_addr17(1, (u16)y * 128u);        /* ページ 2 = VRAM 0x10000 */
-        for (s = 0; s < 32; s++)
-            for (x = 0; x < 8; x += 2)
-                VDP_DAT = (u8)((strip_pixel(s, x, y) << 4) | strip_pixel(s, (u8)(x + 1), y));
-    }
-}
-
-/* ---- 列ストリーミング: 描き込み済み範囲 [lo, hi)(世界座標、8 の倍数、16bit 巡回) ---- */
-static u16 lo, hi;
-
-static void draw_col(u16 wx) {
-    u16 rx = wx & (RING_W - 1);
-    u8  s  = strip_of(wx >> 3);
-    vdp_hmmm((u16)s * 8u, PAGE2_Y, rx & 255u, (rx & 256u) ? 256u : 0u, 8, 212);
-    g_m0.cols++;
-}
-
-static void stream(u16 x) {
-    u8 n = 0;
-    /* 描き込み済み範囲の外へ飛んだ(ワープ)ら、間を順に描かずにリングを張り直す */
-    if ((s16)(x - lo) < 0 || (s16)(x - hi) >= 0) lo = hi = x & ~7u;
-    while ((s16)(hi - x) < AHEAD && n < 4) {
-        if ((u16)(hi - lo) >= RING_W) lo += 8;
-        draw_col(hi);
-        hi += 8;
-        n++;
-    }
-    while ((s16)(x - lo) < BEHIND && n < 8) {
-        if ((u16)(hi - lo) >= RING_W) hi -= 8;
-        lo -= 8;
-        draw_col(lo);
-        n++;
-    }
-}
-
-/* ---- 速度プログラム ---- */
-typedef struct { s16 target; s16 accel; u8 hold; } Seg;
-static const Seg prog[] = {
-    {  128,   4,  90 },   /* 0.5 */
-    {  256,   8,  90 },   /* 1   */
-    {  512,  16,  90 },   /* 2   */
-    { 1024,  32,  90 },   /* 4   */
-    { 2048,  64, 150 },   /* 8   */
-    {    0,  69,  60 },   /* 急停止(約 1/2 秒) */
-    {-2048,  32, 150 },   /* 逆走 8 */
-    {    0,  69,  60 },   /* 停止 */
-};
-#define NSEG (sizeof(prog) / sizeof(prog[0]))
-
-static void palette(void) {
-    vdp_set_pal(0, 0, 0, 0);
-    vdp_set_pal(1, 1, 1, 2);    /* 定規の地 */
-    vdp_set_pal(2, 4, 4, 5);    /* 星 */
-    vdp_set_pal(4, 4, 2, 1);    /* 天井ブロック */
-    vdp_set_pal(5, 2, 1, 0);    /* 天井目地 */
-    vdp_set_pal(6, 2, 3, 5);    /* 床ブロック */
-    vdp_set_pal(7, 1, 1, 3);    /* 床目地 */
-    vdp_set_pal(10, 5, 6, 7);   /* 床の縁 */
-    vdp_set_pal(11, 7, 1, 1);   /* 大目盛り破線 */
-    vdp_set_pal(14, 5, 5, 5);   /* 定規の線 */
-    vdp_set_pal(15, 7, 7, 7);   /* 目盛り */
-}
-
 static void screen_init(void) {
     __asm
         ld   a, #5
@@ -184,23 +78,20 @@ static void screen_init(void) {
     vdp_wreg(26, 0);
     vdp_wreg(27, 0);
     vdp_wreg(7, 0);
-    palette();
+    world_palette();
 }
 
 void main(void) {
-    u16 posi = 0;
-    u8  posf = 0;
-    s16 speed = 0;
-    u8  seg = 0, hold = 0;
+    WorldRun run = { 0, 0, 0, 0, 0 };
     u8  i;
 
     sys_r800();
     screen_init();
     vdp_hmmv(0, 0, 256, 512, 0x00);           /* ページ 0-1 クリア */
     vdp_cmd_wait();
-    gen_strips();
-    lo = hi = 0;
-    for (i = 0; i < 16; i++) stream(0);       /* 表示前にリングを埋め切る(stream は 1 回の列数に上限がある) */
+    world_gen_strips();
+    world_reset(0);
+    for (i = 0; i < 16; i++) world_stream(0, AHEAD, BEHIND);       /* 表示前にリングを埋め切る(stream は 1 回の列数に上限がある) */
     vdp_cmd_wait();
     set_scroll(0);
     sys_hook_vblank(vblank);
@@ -216,32 +107,20 @@ void main(void) {
     g_m0.idle_min = 0xFFFF;
 
     for (;;) {
-        const Seg *sg = &prog[seg];
         u16 idle;
 
-        if (g_dbg_freeze) { posi = g_dbg_pos; posf = 0; speed = 0; goto apply; }
-
-        /* 速度を目標へ */
-        if (speed < sg->target) { speed += sg->accel; if (speed > sg->target) speed = sg->target; }
-        else if (speed > sg->target) { speed -= sg->accel; if (speed < sg->target) speed = sg->target; }
-        else if (++hold >= sg->hold) { hold = 0; if (++seg >= NSEG) seg = 0; }
-
-        /* 位置を進める(1/256 ドット固定小数点) */
-        {
-            s16 acc = (s16)posf + speed;
-            posi += (u16)(acc >> 8);
-            posf = (u8)acc;
-        }
-    apply:
+        if (g_dbg_freeze) { run.posi = g_dbg_pos; run.posf = 0; run.speed = 0; }
+        else world_speed_step(&run);
 
         vdp_wreg(7, 4);
-        stream(posi);
+        world_stream(run.posi, AHEAD, BEHIND);
         vdp_cmd_wait();                        /* 次の VBLANK までに描き終えていることを保証 */
         vdp_wreg(7, 0);
-        set_scroll(posi);
+        set_scroll(run.posi);
 
-        g_m0.speed = speed;
-        g_m0.seg = seg;
+        g_m0.cols = g_world_cols;
+        g_m0.speed = run.speed;
+        g_m0.seg = run.seg;
         g_m0.frame++;
         idle = frame_sync(1);              /* 絶対時刻同期: 遅れたフレームは待たずに進む */
         g_m0.miss = g_frame_late;

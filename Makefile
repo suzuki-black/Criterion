@@ -5,12 +5,13 @@
 include config.mk
 
 BUILD := build
-INC   := -Isrc/include
+INC   := -Isrc/include -Isrc/m0 -I$(BUILD)
 HDRS  := $(wildcard src/include/*.h)
-CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel $(BUILD)/raster.rel $(BUILD)/font.rel
+CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel $(BUILD)/raster.rel $(BUILD)/font.rel $(BUILD)/pcmb.rel
 
-M0_TESTS := scroll raster
+M0_TESTS := scroll raster probe pcm
 M0_ROMS  := $(M0_TESTS:%=$(BUILD)/m0_%.rom)
+M0_COMMON := $(BUILD)/m0_world.rel   # M0 の検証 ROM が共有する世界(src/m0/world.c)
 
 .PHONY: all m0 clean
 .SECONDARY:
@@ -29,14 +30,19 @@ $(BUILD)/crt0rom.rel: src/crt0rom.s | $(BUILD)
 $(BUILD)/%.rel: src/core/%.c $(HDRS) config.mk | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(INC) $< -o $@
 
-$(BUILD)/m0_%.rel: src/m0/%.c $(HDRS) config.mk | $(BUILD)
+$(BUILD)/m0_%.rel: src/m0/%.c $(HDRS) src/m0/world.h config.mk | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(INC) $< -o $@
+
+# 生成ヘッダ: PCM の試験音(tools/gen_pcm.py)
+$(BUILD)/pcm_data.h: tools/gen_pcm.py | $(BUILD)
+	python3 tools/gen_pcm.py $@
+$(BUILD)/m0_pcm.rel: $(BUILD)/pcm_data.h
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。
-$(BUILD)/m0_%.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/m0_%.rel
+$(BUILD)/m0_%.ihx: $(BUILD)/crt0rom.rel $(CORE) $(M0_COMMON) $(BUILD)/m0_%.rel
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
-	    $(BUILD)/crt0rom.rel $(BUILD)/m0_$*.rel $(CORE) -o $@
+	    $(BUILD)/crt0rom.rel $(BUILD)/m0_$*.rel $(CORE) $(M0_COMMON) -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
 
