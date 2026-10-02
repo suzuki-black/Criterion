@@ -23,6 +23,7 @@
 #include "assets.h"
 #include "city_data.h"
 #include "sys.h"
+#include "font.h"
 
 #define AIR1_LEN   512             /* 空中戦(ドット) */
 #define DESC_LEN   256             /* 降下(この間に g_scam が -188 → 0) */
@@ -58,6 +59,7 @@ static u8  jb0, jn, jstep;         /* 描き替え中のブロック(先頭・�
 static s16 js;
 static s16 pick_at;                /* 前に描き替えを探して何も無かったときの g_scam(8 行単位) */
 static u8  hs_t;                   /* hs_cur を求めたときの sky_t */
+static u8  banner_t;               /* 面の開始表示の進み(0 = なし) */
 static u8  sky_t;                  /* 高い空の暗さ(0 = 藍 .. 16 = 黒) */
 
 /* ---- 区間 ---- */
@@ -71,7 +73,7 @@ static void enter(u8 sec) {
     if (sec == SEC_MID) boss_start(BOSS_LEGION);
     if (sec == SEC_BOSS) boss_start(BOSS_PLUMB);
     if (sec == SEC_ASCENT) { upper_sky = 1; g_scroll_speed = 8; pick_at = 0x7FFF; }
-    if (sec == SEC_AIR2) g_scroll_speed = 4;
+    if (sec == SEC_AIR2) { g_scroll_speed = 4; banner_t = 1; }
 }
 
 void stage_start(void) {
@@ -83,7 +85,7 @@ void stage_start(void) {
     for (b = 0; b < NBLK; b++) tag[b] = b < BLK_CONST ? (s16)(b * 8 - 188) : TAG_NONE;
     tag[BLK_CONST] = -4;
     rom_to_ram(ASSET_CITY_MAP_BANK, ASSET_CITY_MAP_OFF, cmap, CITY_COLS);
-    strip_off = 0; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; turret_i = 0; hs_t = 0xFF;
+    strip_off = 0; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; turret_i = 0; hs_t = 0xFF; banner_t = 0;
     enter(SEC_AIR1);
 }
 
@@ -258,7 +260,39 @@ static void pump(void) {
     }
 }
 
+/* ---- 面の開始表示(指示書 4.2): HUD 帯の上に 16 行の帯を出し、「STAGE 2 / GRAVITY WELL」を左から滑り込ませ、
+   2 秒で HUD 帯へ吸い込ませる(帯が上から縮み、文字が上から消える)。
+   ★帯はページ 2|3 の (行 + R#23) の行を見せる。R#23 はプレイエリアと同じ値のまま(変えるとその帯のスプライトの
+     Y がずれる)なので、2 面の空中戦(g_scam = -192、R#23 = 252)では画面の 172..187 行 = 168..183 行。
+     ページ 2 のそこは起動ロゴの黒い区間、ページ 3 は都市の短冊(もう使わない)なので、色 1 で塗って使い、
+     終わったらページ 2 を黒へ戻す。横は 256(ページ 3 = 何もない)から 0 へ寄せて、文字を左から入れる。
+     帯の色 1 はその高さの空の色にする(透けて見える)。 */
+#define BAN_LINE  172
+#define BAN_ROW   168              /* (BAN_LINE + 252) & 255 */
+#define BAN_IN    4                /* ここから見せる */
+#define BAN_SUCK  96               /* ここから吸い込む */
+#define BAN_END   (BAN_SUCK + 22)       /* 吸い込み: 帯の上端を 2 フレームに 1 行下げる(HUD の手前 6 行まで) */
+static u8 ban_regs[2];
+static u16 ban_x;
+
+static void banner_vram(void) {
+    if (banner_t == 1) vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x11);      /* 1 フレームに 1 つ(VDP を待たない) */
+    else if (banner_t == 2) vdp_hmmv(0, 768 + BAN_ROW - 8, 256, 24, 0x11);
+    else if (banner_t == 3) {
+        vdp_cmd_wait();
+        font_text(2, 40, (u8)(BAN_ROW + 4), 15, 1, "STAGE 2 / GRAVITY WELL");
+        ban_x = 256;
+    } else if (banner_t == BAN_END) {
+        vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x00);       /* 起動ロゴの黒い区間へ戻す */
+        banner_t = 0;
+        return;
+    }
+    if (banner_t >= BAN_IN && ban_x) ban_x -= (ban_x + 7) >> 3;   /* 左から寄ってきて止まる */
+    banner_t++;
+}
+
 void stage_vram(void) {
+    if (banner_t) banner_vram();
     if (strip_off < STRIP_LEN) {                              /* 空中戦の間に短冊をページ 3 へ(256 バイト/フレーム) */
         rom_to_vram(ASSET_CITY_STRIPS_BANK, (u16)(ASSET_CITY_STRIPS_OFF + strip_off), 1,
                     (u16)(0x8000u + strip_off), 256);
@@ -353,6 +387,19 @@ void stage_build(void) {
     ev_scroll((s16)(0 - sc), nx);
     for (i = 0; i < 6; i++) ev_pal((s16)(city_sky_s[i] - sc), city_sky[i]);
     if (!sat_done) sat_entry();
+    if (banner_t >= BAN_IN && banner_t < BAN_END) {
+        s16 line = (s16)(BAN_LINE + (banner_t > BAN_SUCK ? (banner_t - BAN_SUCK) >> 1 : 0));
+        RasEntry *c = &E[K - 1];
+        if (line < (s16)c->line + RAS_GAP) line = (s16)(c->line + RAS_GAP);
+        if (line <= PLAY_H - RAS_GAP && K < RAS_MAX - 1) {
+            c = &E[K++];
+            ban_regs[0] = 2; ban_regs[1] = 0x7F;                  /* ページ 2|3 */
+            c->line = (u8)line; c->flags = RAS_REGS | RAS_SCROLL | RAS_PAL;
+            c->haze = ban_regs; c->haze_n = 1;
+            c->r26 = VDP_R26(ban_x); c->r27 = VDP_R27(ban_x);
+            c->pidx = 1; c->prb = (u8)((hs_cur[7][0] << 4) | hs_cur[7][2]); c->pg = hs_cur[7][1];
+        }
+    }
 
     bg_fill_hud(&E[K], bi); K++;
     ras_commit(K);
