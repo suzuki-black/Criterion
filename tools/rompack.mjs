@@ -4,7 +4,9 @@
 //  ROM レイアウト(このプロジェクトの規律。ここで機械的に強制する):
 //    bank0-3  ROM 0x00000-0x07FFF  常駐コード(.ihx の 0x4010-0xBFFF)  ← 上限 32KB。超過=エラー
 //             (Criterion は起動時にページ 1-2 = 0x4000-0xBFFF を RAM へ複製して実行する: sys_ram_exec)
-//    bank4-   ROM 0x08000-        データ ← 各 8KB
+//    bank4-5  ROM 0x08000-0x0BFFF ページ 0 のコード(.ihx の 0x0100-0x3FFF)。起動時にページ 0 の RAM へ複製する
+//             (直接割込み方式の間、ページ 0 は RAM。0x0000-0x00FF は割込みの入口などに空けておく)
+//    bank6-   ROM 0x0C000-        データ ← 各 8KB
 //
 //  使い方:
 //    node tools/rompack.mjs --code build/rom.ihx --out GAME.ROM [--bank N file] ...
@@ -22,7 +24,9 @@ let   ROM_SIZE    = 0x100000;  // 既定 1MB(128バンク, 指示書 8.12)。--s
 const BANK_SIZE   = 0x2000;    // 8KB
 const CODE_BASE   = 0x4000;    // 常駐コードのリンク基準アドレス
 const CODE_LIMIT  = 0x8000;    // 常駐コード ROM オフセット上限(=32KB=bank0-3)。Criterion は起動時に 0x4000-0xBFFF を RAM へ複製する
-const ASSET_FIRST = 4;         // データ/バンクコードは bank4 以降
+const LOW_BANK    = 4;         // ページ 0 のコード(16KB = bank4-5)
+const LOW_MIN     = 0x0100;    // ページ 0 のコードはここから(下は RST・割込みの入口)
+const ASSET_FIRST = 6;         // データ/バンクコードは bank6 以降
 
 // ---- 引数パース ----
 const args = process.argv.slice(2);
@@ -47,7 +51,8 @@ const rom = Buffer.alloc(ROM_SIZE, 0xFF);
 const used = new Array(ROM_SIZE / BANK_SIZE).fill(0);   // バンク毎の最終使用オフセット(表示用)
 
 // ---- .ihx を ROM オフセットへ展開する共通関数 ----
-function loadIhx(path, linkBase, romBase, spanLimit, label) {
+let lowLen = 0;                // ページ 0 のコードの末尾(0x0000 起点)
+function loadIhx(path, linkBase, romBase, spanLimit, label, allowLow) {
   let max = -1;
   for (const l of readFileSync(path, 'utf8').split(/\r?\n/)) {
     if (l[0] !== ':') continue;
@@ -56,6 +61,15 @@ function loadIhx(path, linkBase, romBase, spanLimit, label) {
     const t = parseInt(l.substr(7, 2), 16);
     if (t !== 0) continue;                       // データレコードのみ
     for (let i = 0; i < n; i++) {
+      if (allowLow && a + i < 0x4000) {          // ページ 0 のコード → bank4-5
+        if (a + i < LOW_MIN) {
+          console.error(`ERROR: ページ 0 のコードが 0x${LOW_MIN.toString(16)} より下にある: addr=0x${(a + i).toString(16)}`);
+          process.exit(2);
+        }
+        rom[LOW_BANK * BANK_SIZE + a + i] = parseInt(l.substr(9 + i * 2, 2), 16);
+        if (a + i + 1 > lowLen) lowLen = a + i + 1;
+        continue;
+      }
       const rel = a + i - linkBase;
       if (rel < 0 || rel >= spanLimit) {
         console.error(`ERROR: ${label} がリンク範囲外: addr=0x${(a + i).toString(16)} (base=0x${linkBase.toString(16)}, span=0x${spanLimit.toString(16)})`);
@@ -69,7 +83,8 @@ function loadIhx(path, linkBase, romBase, spanLimit, label) {
 }
 
 // ---- 常駐コード(bank0-3) ----
-const codeLen = loadIhx(inIhx, CODE_BASE, 0x0000, CODE_LIMIT, '常駐コード');
+const codeLen = loadIhx(inIhx, CODE_BASE, 0x0000, CODE_LIMIT, '常駐コード', true);
+if (lowLen) { used[LOW_BANK] = Math.min(lowLen, BANK_SIZE); if (lowLen > BANK_SIZE) used[LOW_BANK + 1] = lowLen - BANK_SIZE; }
 if (codeLen > CODE_LIMIT) {
   console.error(`ERROR: 常駐コードが ${CODE_LIMIT / 1024}KB を超過(${codeLen}B)。`);
   process.exit(2);
@@ -127,7 +142,8 @@ writeFileSync(outRom, rom);
 const KB = (b) => (b / 1024).toFixed(1);
 console.log(`ROM: ${outRom}  (MegaROM ASCII8, ${ROM_SIZE / 1024}KB / ${ROM_SIZE / BANK_SIZE} banks)`);
 console.log(`  常駐コード(bank0-3): ${codeLen}B / ${CODE_LIMIT}B  残り ${CODE_LIMIT - codeLen}B (${KB(CODE_LIMIT - codeLen)}KB)`);
-for (let n = ASSET_FIRST; n < used.length; n++) {
+if (lowLen) console.log(`  ページ 0 のコード(bank4-5): ${lowLen - LOW_MIN}B / ${0x4000 - LOW_MIN}B  残り ${0x4000 - lowLen}B (${KB(0x4000 - lowLen)}KB)`);
+for (let n = LOW_BANK + 2; n < used.length; n++) {
   if (used[n] > 0) console.log(`  bank${String(n).padStart(2)}          : ${used[n]}B / 8192B  残り ${BANK_SIZE - used[n]}B`);
 }
 const freeBanks = used.slice(ASSET_FIRST).filter((u) => u === 0).length;

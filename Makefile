@@ -69,12 +69,16 @@ $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 #   カートリッジの別のバンクになるため(rom.c)。リンクの先頭に並べ、リンク後に番地を検査する。
 GAME_FIRST := $(BUILD)/raster.rel $(BUILD)/rom.rel
 GAME_REST  := $(filter-out $(GAME_FIRST),$(CORE))
-$(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+# ★ページ 0 のコード(CODE0、0x0100-0x3FFF): 場面ごとのコード。起動時に ROM の bank4-5 から RAM へ複製する
+#   (main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前(起動の最初)には呼ばないこと。
+CODE0_GAME := title boss
+CODE0_FLAGS = $(if $(filter $(CODE0_GAME),$*),--codeseg CODE0 --constseg CODE0)
+$(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(CODE0_FLAGS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS)
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
-	    $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) -o $@
+	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
 	@for S in _ras_isr_direct _ras_isr_bios _ras_apply_next _ras_vblank _rom_copy; do \
@@ -84,7 +88,7 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS)
 	done
 
 GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin tools/rompack.mjs
-	node tools/rompack.mjs --code $< --out $@ --asset 4 $(BUILD)/assets.bin
+	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

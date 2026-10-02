@@ -3,13 +3,13 @@
 
   usage: pack_assets.py <out.bin> <out.h> 名前=ファイル ...
 
-out.bin は rompack.mjs の --asset 4 で置く(バンク 4 = ROM の 0x8000 から)。
+out.bin は rompack.mjs の --asset 6 で置く(バンク 6 = ROM の 0xC000 から)。
 out.h には素材ごとに ASSET_名前_BANK(8KB バンク番号)/ _OFF(バンク内の位置)/ _LEN を出す。
 素材は 256 バイト境界にそろえて隙間なく並べる(読み出しの rom_to_vram はバンクをまたいでよい)。
 """
 import sys
 
-FIRST_BANK = 4
+FIRST_BANK = 6                     # bank4-5 はページ 0 のコード(rompack.mjs)
 BANK = 8192
 ALIGN = 256
 

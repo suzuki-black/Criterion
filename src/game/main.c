@@ -11,6 +11,7 @@
 #include "input.h"
 #include "font.h"
 #include "game.h"
+#include "rom.h"
 #define SPRITE_PATTERNS                 /* 絵の表はここだけに置く(sprite_data.h) */
 #include "sprite_data.h"
 
@@ -81,6 +82,19 @@ static void wait_vram_window(void) {
     frame_begin();
 }
 
+/* ページ 0 のコード(CODE0、0x0100〜)の長さ = リンカが決める l__CODE0 */
+static u16 code0_len(void) __naked {
+    __asm
+        ld   de, #l__CODE0
+        ret
+    __endasm;
+}
+
+/* ページ 0 のコードを ROM の bank4-5 から RAM へ。★直接割込み方式にしてから(ページ 0 が RAM) */
+static void code0_load(void) {
+    rom_to_ram(4, 0x0100, (u8 *)0x0100, code0_len());
+}
+
 void main(void) {
     sys_r800();
     screen_init();
@@ -91,9 +105,10 @@ void main(void) {
     bg_init();
     spr_init(spr_pat, PAT_COUNT);
     sys_ram_exec();
-    title_load();                    /* ROM の素材(ページ 1-2 を一時的にカートリッジへ戻して読む) */
     ras_init();
     ras_set_isr(RAS_ISR_DIRECT);
+    code0_load();                    /* ここから先でページ 0 のコード(title.c など)を呼べる */
+    title_load();                    /* ROM の素材(ページ 1-2 を一時的にカートリッジへ戻して読む) */
     game_start();
     title_start();
 
