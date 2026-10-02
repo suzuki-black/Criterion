@@ -11,6 +11,7 @@
 #include "input.h"
 #include "font.h"
 #include "game.h"
+#define SPRITE_PATTERNS                 /* 絵の表はここだけに置く(sprite_data.h) */
 #include "sprite_data.h"
 
 enum { ST_PLAY, ST_OVER };
@@ -48,6 +49,7 @@ void game_start(void) {
     g_gauge.cursor = N_INF; g_gauge.armed = 0; g_gauge.anim = 0; g_gauge.flash = 0;
     gauge_lose();
     g_vscroll = 0;
+    g_boss_state = BS_NONE;
     state = ST_PLAY;
 }
 
@@ -119,7 +121,7 @@ void main(void) {
             if (g_dbg_invul) g_pl.invul = 2;
             player_update();
             prof(1);
-            if (ph >= PH_AIR) enemy_update();
+            if (ph >= PH_AIR) { enemy_update(); boss_update(); }
             prof(2);
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
                 state = ST_OVER;
@@ -139,7 +141,7 @@ void main(void) {
         spr_voff = g_vscroll;            /* スプライトの Y はプレイエリアの R#23 を足して表へ */
         spr_begin();
         if (g_phase <= PH_TITLE) title_draw();
-        else { player_draw(); enemy_draw(); hud_sprites(); }
+        else { player_draw(); boss_draw(); enemy_draw(); hud_sprites(); }
         wait_vram_window();              /* ここから先は VRAM を書く */
         spr_end();
         prof(3);

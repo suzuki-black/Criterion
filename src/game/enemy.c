@@ -142,25 +142,31 @@ void enemy_spawn_spirit(u16 wx, u8 roof) {
     e->x = FX((s16)(wx - g_wx)); e->y = FX((s16)roof - g_scam - 6);
 }
 
-static void enemy_fire(const Enemy *e) {
+/* 敵弾を 1 発(位置と速さは固定小数点)。空きが無ければ撃たない */
+void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy) {
     u8 i;
-    s16 dx, dy, m;
-    if (!g_pl.alive) return;
-    dx = PX(g_pl.x) + 8 - PX(e->x);
-    dy = PX(g_pl.y) + 8 - PX(e->y);
-    m = dx < 0 ? -dx : dx;
-    if ((dy < 0 ? -dy : dy) > m) m = dy < 0 ? -dy : dy;
-    if (m < 8) return;
     for (i = 0; i < MAX_ESHOT; i++) {
         Bullet *b = &g_eshot[i];
         if (b->on) continue;
         b->on = 1;
-        b->x = e->x; b->y = e->y;
-        b->vx = (s16)(dx * 32 / m);                    /* 2 ドット/フレーム(固定小数点 32) */
-        b->vy = (s16)(dy * 32 / m);
+        b->x = x; b->y = y; b->vx = vx; b->vy = vy;
         return;
     }
 }
+
+/* (x, y)(固定小数点)から自機を狙って 2 ドット/フレーム */
+void enemy_shoot(s16 x, s16 y) {
+    s16 dx, dy, m;
+    if (!g_pl.alive) return;
+    dx = PX(g_pl.x) + 8 - PX(x);
+    dy = PX(g_pl.y) + 8 - PX(y);
+    m = dx < 0 ? -dx : dx;
+    if ((dy < 0 ? -dy : dy) > m) m = dy < 0 ? -dy : dy;
+    if (m < 8) return;
+    enemy_bullet(x, y, (s16)(dx * 32 / m), (s16)(dy * 32 / m));   /* 固定小数点 32 = 2 ドット */
+}
+
+static void enemy_fire(const Enemy *e) { enemy_shoot(e->x, e->y); }
 
 static void kill_enemy(Enemy *e, u8 by_player) {
     u8 f = e->form;
@@ -281,6 +287,7 @@ void enemy_update(void) {
 
 void limit_break(void) {
     u8 i;
+    boss_damage(10);
     for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type) kill_enemy(&g_enemy[i], 1);
     for (i = 0; i < MAX_ESHOT; i++) if (g_eshot[i].on) { g_eshot[i].on = 0; }
 }

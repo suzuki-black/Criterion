@@ -68,6 +68,8 @@ static void enter(u8 sec) {
     case SEC_CITY1: case SEC_CITY2: enemy_waves(WAVES_CITY); break;
     default: enemy_waves(WAVES_NONE); break;
     }
+    if (sec == SEC_MID) boss_start(BOSS_LEGION);
+    if (sec == SEC_BOSS) boss_start(BOSS_PLUMB);
     if (sec == SEC_ASCENT) { upper_sky = 1; g_scroll_speed = 8; pick_at = 0x7FFF; }
     if (sec == SEC_AIR2) g_scroll_speed = 4;
 }
@@ -104,14 +106,18 @@ void stage_update(void) {
     case SEC_CITY1:
         if (col_of_screen() + 8 >= CITY_COL_ARENA1) enter(SEC_MID);
         break;
-    case SEC_MID:       /* ★中ボス LEGION(仮)は M2 の 3b。今は通り過ぎる */
-        if (col_of_screen() >= CITY_COL_CITY2) enter(SEC_CITY2);
+    case SEC_MID:
+    case SEC_BOSS:      /* スクロールを止めて戦う。倒すか時間切れ(60 秒)で先へ */
+        if (g_scroll_speed && !(sec_t & 7)) g_scroll_speed--;
+        if (sec_t == 3600) boss_leave();
+        if (g_boss_state == BS_DONE && !g_scroll_speed) {
+            g_boss_state = BS_NONE;
+            if (g_sec == SEC_MID) { g_scroll_speed = 4; enter(SEC_CITY2); }
+            else enter(SEC_ASCENT);
+        }
         break;
     case SEC_CITY2:
         if (col_of_screen() + 8 >= CITY_COL_ARENA2) enter(SEC_BOSS);
-        break;
-    case SEC_BOSS:      /* ★ボス PLUMB(仮)は M2 の 3b */
-        if (col_of_screen() >= CITY_COL_ASCENT) enter(SEC_ASCENT);
         break;
     case SEC_ASCENT:
         scam_q -= 24;                                   /* 1.5 行/フレーム */

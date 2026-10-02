@@ -123,6 +123,19 @@ void limit_break(void);             /* ∞: 画面の敵と弾を一掃 */
 enum { WAVES_NONE, WAVES_AIR, WAVES_CITY };
 void enemy_waves(u8 set);           /* 出現の台本を区間に合わせて切り替える(時刻は 0 から) */
 void enemy_spawn_spirit(u16 wx, u8 roof);
+void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy);   /* 固定小数点 */
+void enemy_shoot(s16 x, s16 y);     /* 自機を狙う */
+
+/* ---- 1 面の中ボスとボス(boss.c)。★本物の LEGION(群体)と PLUMB(ROTOR の回転)は M3 ---- */
+enum { BOSS_LEGION, BOSS_PLUMB };
+enum { BS_NONE, BS_ENTER, BS_FIGHT, BS_DYING, BS_DONE };
+extern u8 g_boss_state;
+extern u8 g_boss_hp;
+void boss_start(u8 kind);
+void boss_update(void);
+void boss_draw(void);
+void boss_damage(u8 n);
+void boss_leave(void);              /* 時間切れ: 倒さずに去る */
 
 /* ---- 面の進行と縦に長い世界(stage.c) ----
    縦の座標 s: 都市の画面の行と同じ(0 = 雲の底、158 = 歩道)。空中戦の空と雲は s = -188..-1。
