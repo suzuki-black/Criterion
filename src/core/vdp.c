@@ -108,3 +108,16 @@ void vdp_hmmv(u16 dx, u16 dy, u16 nx, u16 ny, u8 byte) {
     vdpcbuf[14] = 0xC0;
     cmd_flush();
 }
+
+/* n バイト(0 = 256)を VRAM へ続けて書く(vdp_write_addr17 の後)。OTIR で R800 の命令の負担を最小にする
+   (速さは VDP の I/O 待ち 8.6us/バイトで決まる)。引数は A = n、DE = p(SDCC の sdcccall(1))。 */
+void vdp_out_block(u8 n, const u8 *p) __naked {
+    (void)n; (void)p;
+    __asm
+        ld   b, a
+        ex   de, hl
+        ld   c, #0x98
+        otir
+        ret
+    __endasm;
+}

@@ -5,6 +5,7 @@
 #include "types.h"
 
 void font_text(u8 page, u8 px, u8 py, u8 fg, u8 bg, const char *s);
+void font_text_row(u8 page, u8 px, u8 py, u8 fg, u8 bg, const char *s, u8 row);   /* 1 行だけ */
 void font_num(u8 page, u8 px, u8 py, u8 fg, u8 bg, u16 v, u8 digits);
 
 #endif /* FONT_H */

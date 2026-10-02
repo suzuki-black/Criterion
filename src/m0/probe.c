@@ -1,6 +1,6 @@
 /* probe.c — M0 の設計判断用の探り ROM(結果は docs/M0_技術検証.md)。
    (1) 走査線割込み(FH)が表示期間の外(212 行以降)でも起きるか: g_probe_line を総当たりする。
-   (2) R800 の I/O 1 回の時間: VDP(0x98/0x99)、PCM(0xA4 読み/書き)、S1990 タイマ(0xE6)、NOP を 64 回ずつ並べ、
+   (2) R800 の I/O 1 回の時間: VDP(0x98 読み/書き、0x99)、PCM(0xA4 読み/書き)、S1990 タイマ(0xE6)、NOP を 64 回ずつ並べ、
        openMSX のブレークポイントで各区間の所要時間を測る(_probe_* のラベル)。 */
 #include "types.h"
 #include "vdp.h"
@@ -10,6 +10,7 @@
 
 /* デバッガから書き換えて総当たりする(R#19 = これ - bias) */
 volatile u8 g_probe_line = 230;
+volatile u8 g_probe_r8 = 0x2A;    /* R#8(0x2A = スプライト非表示 / 0x28 = 表示)。VRAM 書き込みの速さの比較用 */
 
 /* 64 回ずつ: VDP 読み(0x98)/ VDP 書き(0x99 に R#7 の 2 バイト = 32 組)/ PCM ポート読み(0xA4)/ NOP */
 void probe_io(void) __naked {
@@ -29,6 +30,10 @@ void probe_io(void) __naked {
     _probe_pcm_in::
         .rept 64
         in   a, (0xA4)
+        .endm
+    _probe_vram_out::
+        .rept 64
+        out  (0x98), a
         .endm
     _probe_tmr_in::
         .rept 64
@@ -68,6 +73,8 @@ void main(void) {
         e[0].flags = RAS_PAL;
         e[0].pidx = 0; e[0].prb = 0; e[0].pg = 0;
         ras_commit(1);
+        vdp_wreg(8, g_probe_r8);
+        vdp_write_addr17(1, 0xF000);      /* 0x1F000: 表示に使わない場所へ書く */
         probe_io();
         frame_sync(1);
     }

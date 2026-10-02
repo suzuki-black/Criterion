@@ -59,18 +59,37 @@ static s8 font_index(u8 c) {
     return -1;   /* 空白/未収録は空白 */
 }
 
-/* (px, py) から文字列を描く。px は偶数。page は 0〜3。fg/bg はパレット番号。 */
+/* (px, py) から文字列を描く。px は偶数。page は 0〜3。fg/bg はパレット番号。
+   ★1 行(8 行のうちの 1 行)ずつ、全文字ぶんをまとめて書く。VDP への I/O は 1 回 8.6us(turboR の R800)なので、
+     文字ごとに 8 回アドレスを設定し直す書き方(1 文字 64 回)より、アドレス設定が行ごと 1 回で済むぶん速い。 */
 void font_text(u8 page, u8 px, u8 py, u8 fg, u8 bg, const char *s) {
-    for (; *s; s++, px = (u8)(px + 8)) {
-        s8 gi = font_index((u8)*s);
-        u8 row, x;
-        for (row = 0; row < 8; row++) {
-            u8 bits = gi < 0 ? 0 : fontset[gi][row];
-            u16 a = (u16)((u16)(py + row) * 128u + (px >> 1));
-            vdp_write_addr17((u8)(page >> 1), (u16)((page & 1) ? (a | 0x8000u) : a));
-            for (x = 0; x < 4; x++, bits <<= 2)
-                VDP_DAT = (u8)(((bits & 0x80) ? fg : bg) << 4 | ((bits & 0x40) ? fg : bg));
+    s8 gi[32];
+    u8 n = 0, row, i, x;
+    u8 pair[4];
+    while (s[n] && n < 32) { gi[n] = font_index((u8)s[n]); n++; }
+    pair[0] = (u8)(bg << 4 | bg); pair[1] = (u8)(bg << 4 | fg);
+    pair[2] = (u8)(fg << 4 | bg); pair[3] = (u8)(fg << 4 | fg);
+    for (row = 0; row < 8; row++) {
+        u16 a = (u16)((u16)(py + row) * 128u + (px >> 1));
+        vdp_write_addr17((u8)(page >> 1), (u16)((page & 1) ? (a | 0x8000u) : a));
+        for (i = 0; i < n; i++) {
+            u8 bits = gi[i] < 0 ? 0 : fontset[gi[i]][row];
+            for (x = 0; x < 4; x++, bits <<= 2) VDP_DAT = pair[bits >> 6];
         }
+    }
+}
+
+/* 文字列の 1 行(row = 0..7)だけを描く。何フレームかに分けて書くとき用(VDP の I/O は 1 回 8.6us)。 */
+void font_text_row(u8 page, u8 px, u8 py, u8 fg, u8 bg, const char *s, u8 row) {
+    u8 pair[4], x;
+    u16 a = (u16)((u16)(py + row) * 128u + (px >> 1));
+    pair[0] = (u8)(bg << 4 | bg); pair[1] = (u8)(bg << 4 | fg);
+    pair[2] = (u8)(fg << 4 | bg); pair[3] = (u8)(fg << 4 | fg);
+    vdp_write_addr17((u8)(page >> 1), (u16)((page & 1) ? (a | 0x8000u) : a));
+    for (; *s; s++) {
+        s8 gi = font_index((u8)*s);
+        u8 bits = gi < 0 ? 0 : fontset[gi][row];
+        for (x = 0; x < 4; x++, bits <<= 2) VDP_DAT = pair[bits >> 6];
     }
 }
 

@@ -15,12 +15,19 @@ __sfr __at(0x9B) VDP_IDAT;
 /* 割込み禁止中(ISR 内)専用のレジスタ書込み。 */
 #define VDP_ISR_WREG(r, v) do { VDP_CTRL = (v); VDP_CTRL = 0x80 | (r); } while (0)
 
+/* 横スクロール位置 x(ドット)→ R#26 / R#27(SP2 リング 512 幅。M0-1 で 1 ドット単位に検証済み) */
+#define VDP_R26(x) ((u8)((((x) + 7u) >> 3) & 63u))
+#define VDP_R27(x) ((u8)((0u - (x)) & 7u))
+
 void vdp_wreg(u8 r, u8 v);
 void vdp_set_pal(u8 idx, u8 r, u8 g, u8 b);
 
 /* 17bit VRAM 書込みアドレス設定((hi<<16)|lo)。以降 VDP_DAT へ連続書込み。
    ★アドレスカウンタの桁上げは 16KB 境界で R#14 へ伝播しないので、跨ぐときは貼り直すこと。 */
 void vdp_write_addr17(u8 hi, u16 lo);
+
+/* n バイト(0 = 256)を VRAM へ続けて書く(vdp_write_addr17 の後)。 */
+void vdp_out_block(u8 n, const u8 *p);
 
 void vdp_cmd_wait(void);
 /* vdp_cmd_wait の待ちの間に毎回呼ぶ関数(0 = なし)。PCM 方式 B のポーリングに使う。 */
