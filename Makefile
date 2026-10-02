@@ -31,8 +31,8 @@ $(BUILD):
 $(BUILD)/crt0rom.rel: src/crt0rom.s | $(BUILD)
 	sdasz80 -o $@ $<
 
-$(BUILD)/%.rel: src/core/%.c $(HDRS) config.mk | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(INC) $< -o $@
+$(BUILD)/%.rel: src/core/%.c $(HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(if $(filter $(CODE0_CORE),$*),--codeseg CODE0 --constseg CODE0) $(INC) $< -o $@
 
 $(BUILD)/m0_%.rel: src/m0/%.c $(HDRS) src/m0/world.h config.mk | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(INC) $< -o $@
@@ -57,10 +57,14 @@ $(BUILD)/city.stamp: tools/gen_city.py | $(BUILD)
 	python3 tools/gen_city.py $(BUILD) $(BUILD)/city_data.h
 	touch $@
 $(BUILD)/city_data.h: $(BUILD)/city.stamp
-$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp
+$(BUILD)/boss.stamp: tools/gen_boss.py | $(BUILD)
+	python3 tools/gen_boss.py $(BUILD)
+	touch $@
+$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
-	    TDF=$(BUILD)/tdf.bin CITY_STRIPS=$(BUILD)/city_strips.bin CITY_MAP=$(BUILD)/city_map.bin
+	    TDF=$(BUILD)/tdf.bin CITY_STRIPS=$(BUILD)/city_strips.bin CITY_MAP=$(BUILD)/city_map.bin \
+	    BOB=$(BUILD)/bob.bin
 	touch $@
 $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 
@@ -72,13 +76,15 @@ GAME_REST  := $(filter-out $(GAME_FIRST),$(CORE))
 # ★ページ 0 のコード(CODE0、0x0100-0x3FFF): 場面ごとのコード。起動時に ROM の bank4-5 から RAM へ複製する
 #   (main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前(起動の最初)には呼ばないこと。
 CODE0_GAME := title boss
+CODE0_CORE := rotor ghost
+GAME_CODE0_CORE := $(CODE0_CORE:%=$(BUILD)/%.rel)
 CODE0_FLAGS = $(if $(filter $(CODE0_GAME),$*),--codeseg CODE0 --constseg CODE0)
 $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(CODE0_FLAGS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
-$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS)
+$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(GAME_CODE0_CORE)
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
-	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) -o $@
+	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) $(GAME_CODE0_CORE) -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
 	@for S in _ras_isr_direct _ras_isr_bios _ras_apply_next _ras_vblank _rom_copy; do \

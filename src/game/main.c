@@ -12,6 +12,7 @@
 #include "font.h"
 #include "game.h"
 #include "rom.h"
+#include "ghost.h"
 #define SPRITE_PATTERNS                 /* 絵の表はここだけに置く(sprite_data.h) */
 #include "sprite_data.h"
 
@@ -50,7 +51,7 @@ void game_start(void) {
     g_gauge.cursor = N_INF; g_gauge.armed = 0; g_gauge.anim = 0; g_gauge.flash = 0;
     gauge_lose();
     g_vscroll = 0;
-    g_boss_state = BS_NONE;
+    boss_reset();
     state = ST_PLAY;
 }
 
@@ -126,6 +127,7 @@ void main(void) {
         g_stat.idle_sum += idle;
 
         prof_t = sys_timer();
+        if (g_phase >= PH_AIR) gq_pump(0);   /* GHOST の待ち行列: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
         input_read();
         prof(0);
         ph = g_phase;
@@ -136,7 +138,7 @@ void main(void) {
             if (g_dbg_invul) g_pl.invul = 2;
             player_update();
             prof(1);
-            if (ph >= PH_AIR) { enemy_update(); boss_update(); }
+            if (ph >= PH_AIR) { gq_pump(0); enemy_update(); boss_update(); gq_pump(0); }
             prof(2);
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
                 state = ST_OVER;
@@ -159,6 +161,7 @@ void main(void) {
         else { player_draw(); boss_draw(); enemy_draw(); hud_sprites(); }
         wait_vram_window();              /* ここから先は VRAM を書く */
         spr_end();
+        if (g_phase >= PH_AIR) gq_pump(0);
         prof(3);
         if (g_phase <= PH_SORTIE) { title_vram(); title_build(); }
         else { stage_vram(); stage_build(); }

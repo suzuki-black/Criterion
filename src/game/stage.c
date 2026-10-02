@@ -71,6 +71,7 @@ static void enter(u8 sec) {
     default: enemy_waves(WAVES_NONE); break;
     }
     if (sec == SEC_MID) boss_start(BOSS_LEGION);
+    if (sec == SEC_CITY2) boss_prepare(BOSS_PLUMB);           /* ROTOR で下げ振りの絵を作り始める */
     if (sec == SEC_BOSS) boss_start(BOSS_PLUMB);
     if (sec == SEC_ASCENT) { upper_sky = 1; g_scroll_speed = 8; pick_at = 0x7FFF; }
     if (sec == SEC_AIR2) { g_scroll_speed = 4; banner_t = 1; }
@@ -248,6 +249,12 @@ static void job_pick(void) {
 static void pump(void) {
     u16 t0 = sys_timer();
     for (;;) {
+        /* ★VDP が動いている間(GHOST の大きな HMMM など)は、予算の間だけ待つ。vdp_hmmm に待たせると
+           PLUMB の 64x64 の写し(約 12ms)を丸ごと待った */
+        if (vdp_cmd_busy()) {
+            if ((u16)(sys_timer() - t0) > PUMP_BUDGET) return;
+            continue;
+        }
         if (!jn && pick_at != (s16)(g_scam & ~7)) job_pick();
         if (!next_job_cmd() && !next_col_cmd()) return;
         if (c_star) {
@@ -293,6 +300,7 @@ static void banner_vram(void) {
 
 void stage_vram(void) {
     if (banner_t) banner_vram();
+    boss_vram();
     if (strip_off < STRIP_LEN) {                              /* 空中戦の間に短冊をページ 3 へ(256 バイト/フレーム) */
         rom_to_vram(ASSET_CITY_STRIPS_BANK, (u16)(ASSET_CITY_STRIPS_OFF + strip_off), 1,
                     (u16)(0x8000u + strip_off), 256);

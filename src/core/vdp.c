@@ -121,3 +121,32 @@ void vdp_out_block(u8 n, const u8 *p) __naked {
         ret
     __endasm;
 }
+
+/* コマンドを実行中か(CE)。待たずに調べる */
+u8 vdp_cmd_busy(void) __naked {
+    __asm
+        di
+        ld   a, #2
+        out  (0x99), a
+        ld   a, #0x8F
+        out  (0x99), a
+        in   a, (0x99)
+        and  #1
+        ld   b, a
+        ld   a, (_g_vdp_status_rest)
+        out  (0x99), a
+        ld   a, #0x8F
+        out  (0x99), a
+        ei
+        ld   a, b
+        ret
+    __endasm;
+}
+
+/* 詰め済みの 15 バイト(R#32..46 の順)を出す。前のコマンドの終わりは待つ */
+void vdp_cmd_issue(const u8 *p) {
+    u8 i;
+    vdp_cmd_wait();
+    for (i = 0; i < 15; i++) vdpcbuf[i] = p[i];
+    cmd_flush();
+}

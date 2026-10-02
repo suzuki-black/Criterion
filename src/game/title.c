@@ -67,6 +67,8 @@ void title_load(void) {
     rom_to_vram(ASSET_TITLE_ODD_BANK, ASSET_TITLE_ODD_OFF, 1, 0x0000, ASSET_TITLE_ODD_LEN);     /* ページ 2 の 0..63 行 */
     rom_to_vram(ASSET_LOGO_BANK, ASSET_LOGO_OFF, 1, (u16)LOGO_Y * 128u, ASSET_LOGO_LEN);        /* ページ 2 の 64..127 行 */
     rom_to_vram(ASSET_TDF_BANK, ASSET_TDF_OFF, 1, (u16)(0x8000u + TDF_ROW * 128u), ASSET_TDF_LEN); /* ページ 3 */
+    vdp_hmmv(0, 512 + 128, 256, 84, 0x00);                   /* ページ 2 の 128..211 行: 起動ロゴの黒(ゲーム中は
+                                                                PLUMB の絵や面の開始表示に使うので描き直す) */
     vdp_hmmv(0, 512 + HUD_VROW, 256, 24, 0x00);               /* HUD 帯は空にしておく(文字はタイトルに入ってから) */
     vdp_cmd_wait();
 }

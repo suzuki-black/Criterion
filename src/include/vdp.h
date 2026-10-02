@@ -30,6 +30,8 @@ void vdp_write_addr17(u8 hi, u16 lo);
 void vdp_out_block(u8 n, const u8 *p);
 
 void vdp_cmd_wait(void);
+u8   vdp_cmd_busy(void);                 /* 1 = コマンド実行中(待たない) */
+void vdp_cmd_issue(const u8 *p);        /* 詰め済みの R#32..46(15 バイト)を出す(前の終わりは待つ) */
 /* vdp_cmd_wait の待ちの間に毎回呼ぶ関数(0 = なし)。PCM 方式 B のポーリングに使う。 */
 extern void (*volatile g_vdp_wait_hook)(void);
 /* R#15(読むステータスレジスタ)の待機値。BIOS を使う間は 0、直接割込みでは 1(raster.c が設定)。
