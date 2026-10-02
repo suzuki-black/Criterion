@@ -4,6 +4,7 @@
 #define GAME_H
 
 #include "types.h"
+#include "raster.h"
 
 #define FX(v)     ((s16)((v) * 16))     /* ドット → 固定小数点 */
 #define PX(v)     ((s16)((v) >> 4))     /* 固定小数点 → ドット */
@@ -85,6 +86,26 @@ extern u8 g_vscroll;                 /* プレイエリアの縦スクロール(
 void bg_init(void);
 void bg_scroll(void);               /* 1 フレーム分スクロールを進める */
 void bg_build(void);                /* ラスターリストを組む(spr_end の後) */
+void bg_mix(u8 t);                  /* 空と雲の色: 0 = 夜 〜 16 = 夕焼け */
+const u8 *bg_sky(u8 band);          /* 空の帯(0..6)の今の色 R, G, B */
+u16  bg_layer_x(u8 l);              /* 雲の層(0 遠 / 1 中 / 2 近)の横位置 */
+extern u8 g_scroll_speed;           /* 1/4 ドット/フレーム単位 */
+void bg_fill_hud(RasEntry *e, u8 bi);   /* HUD 帯の項目(188 行)を作る */
+
+/* ---- 場面(指示書 4: 一本のフィルム。暗転しない) ---- */
+enum { PH_LOGO, PH_TITLE, PH_SORTIE, PH_AIR, PH_COUNT };
+extern u8  g_phase;
+extern u16 g_pt;                    /* 今の場面に入ってからのフレーム */
+extern u8  g_hud_on;                /* 1 = ゲームの HUD を描いた(出撃で上の帯が消えてから) */
+extern u8  g_split_shown;           /* 今表示しているリストを作ったときの g_split_n */
+extern u8  g_split_n;               /* 上の SCREEN12 の帯の高さ(0 = 分割なし)。VRAM の書き込みはその下の区間で */
+void title_load(void);              /* タイトルの素材を ROM から VRAM へ(全面 SCREEN5 のときに) */
+void title_update(void);            /* 起動ロゴ・タイトル・出撃の進行(場面を進める) */
+void title_draw(void);              /* その場面のスプライト */
+void title_vram(void);              /* その場面の VRAM の仕事(下の区間で) */
+void title_build(void);             /* その場面のラスターリスト */
+void title_start(void);             /* 起動ロゴから始める */
+void game_start(void);              /* 自機・敵・ゲージを最初の状態に(main.c) */
 void hud_init(void);
 void hud_update(void);              /* 変わったところだけ書く */
 void hud_sprites(void);             /* ゲージのカーソル光点 */

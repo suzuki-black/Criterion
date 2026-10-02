@@ -24,6 +24,7 @@ typedef struct {
     u32 idle_sum;
     u8  state;
     u8  dropped;       /* スプライトが表に入りきらなかった累計(255 で止める) */
+    u8  phase;         /* 今の場面(PH_*) */
 } GameStat;
 volatile GameStat g_stat;
 volatile u8 g_dbg_invul;      /* 1 = 被弾しない(自動テスト用) */
@@ -41,12 +42,11 @@ static void prof(u8 k) {
 
 static u8 state;
 
-static void new_game(void) {
+void game_start(void) {
     player_init();
     enemy_init();
     g_gauge.cursor = N_INF; g_gauge.armed = 0; g_gauge.anim = 0; g_gauge.flash = 0;
     gauge_lose();
-    hud_init();
     state = ST_PLAY;
 }
 
@@ -63,17 +63,36 @@ static void screen_init(void) {
     vdp_wreg(7, 0);
 }
 
+/* 上の帯が SCREEN12 の間は、VRAM を下の区間でしか書けない(M0-4)。境界の項目(RAS_MARK)を待つ。
+   待ったらフレーム待ちの基準も置き直す(ループの位相が境界に揃うため)。
+   ★g_split_n が 0 になったフレームも待つ(g_split_shown)。表示中のリストは前のフレームに作ったもので、まだ
+     244 行で SCREEN12 に切り替わる。待たずに書いたら、HUD の文字がプレイエリアへ化けて書かれた。 */
+static void wait_vram_window(void) {
+    u8 m0, i;
+    if (!g_split_n && !g_split_shown) return;
+    m0 = g_ras_mark;
+    for (i = 0; i < 200 && g_ras_mark == m0; i++) {
+        u16 t0 = sys_timer();
+        while (g_ras_mark == m0 && (u16)(sys_timer() - t0) < 30) { }
+    }
+    frame_begin();
+}
+
 void main(void) {
     sys_r800();
     screen_init();
-    vdp_hmmv(0, 0, 256, 512, 0x00);
+    *(volatile u8 *)0xF3E0 &= 0xBF;                         /* 読み込みの間は表示を止める(BL = 0)。★RG1SAV ごと変える */
+    vdp_wreg(1, *(volatile u8 *)0xF3E0);                    /*   (spr_init が RG1SAV から R#1 を書き直すので) */
+    vdp_hmmv(0, 0, 256, 1024, 0x00);
     vdp_cmd_wait();
     bg_init();
     spr_init(spr_pat, PAT_COUNT);
     sys_ram_exec();
+    title_load();                    /* ROM の素材(ページ 1-2 を一時的にカートリッジへ戻して読む) */
     ras_init();
     ras_set_isr(RAS_ISR_DIRECT);
-    new_game();
+    game_start();
+    title_start();
 
     frame_begin();
     { u8 j; u16 m = 0; frame_sync(1); for (j = 0; j < 8; j++) { u16 v = frame_sync(1); if (v > m) m = v; } g_stat.base = m; }
@@ -81,6 +100,7 @@ void main(void) {
 
     for (;;) {
         u16 late0 = g_frame_late, idle;
+        u8 ph;
         idle = frame_sync(1);
         if (g_frame_late != late0) g_stat.late++;
         if (idle < g_stat.idle_min) g_stat.idle_min = idle;
@@ -90,34 +110,49 @@ void main(void) {
         prof_t = sys_timer();
         input_read();
         prof(0);
-        if (state == ST_PLAY) {
+        ph = g_phase;
+        if (ph <= PH_SORTIE) title_update();
+        if (ph >= PH_SORTIE && state == ST_PLAY) {
             if (g_dbg_invul) g_pl.invul = 2;
             player_update();
             prof(1);
-            enemy_update();
+            if (ph >= PH_AIR) enemy_update();
             prof(2);
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
                 state = ST_OVER;
                 font_text(HUD_PAGE, 136, HUD_ROW1, 8, 0, "GAME OVER");
             }
-        } else if (g_in_edge & IN_A) {
-            new_game();
+        } else if (state == ST_OVER && (g_in_edge & IN_A)) {
+            /* ★ネームエントリーと巻き戻しは M8。今はタイトルの素材を読み直して起動ロゴから(読む間は表示を止める) */
+            *(volatile u8 *)0xF3E0 &= 0xBF;
+            vdp_wreg(1, *(volatile u8 *)0xF3E0);
+            title_load();
+            game_start();
+            title_start();
+            frame_begin();
         }
         bg_scroll();
 
         spr_voff = g_vscroll;            /* スプライトの Y はプレイエリアの R#23 を足して表へ */
         spr_begin();
-        player_draw();
-        enemy_draw();
-        hud_sprites();
+        if (g_phase <= PH_TITLE) title_draw();
+        else { player_draw(); enemy_draw(); hud_sprites(); }
+        wait_vram_window();              /* ここから先は VRAM を書く */
         spr_end();
         prof(3);
-        bg_build();
+        if (g_phase <= PH_SORTIE) { title_vram(); title_build(); }
+        else bg_build();
         prof(4);
-        hud_update();
+        if (g_hud_on) hud_update();
+        if (g_phase == PH_LOGO && g_pt == 2) {                 /* 起動ロゴのラスターリストが効いてから表示を戻す */
+            *(volatile u8 *)0xF3E0 |= 0x40;
+            vdp_wreg(1, *(volatile u8 *)0xF3E0);
+        }
         prof(5);
 
+        g_pt++;
         g_stat.state = state;
+        g_stat.phase = g_phase;
         if (g_spr_dropped && g_stat.dropped < 255) { g_stat.dropped++; g_spr_dropped = 0; }
     }
 }

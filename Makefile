@@ -15,7 +15,7 @@ M0_COMMON := $(BUILD)/m0_world.rel   # M0 の検証 ROM が共有する世界(sr
 
 GAME_SRCS := $(wildcard src/game/*.c)
 GAME_RELS := $(GAME_SRCS:src/game/%.c=$(BUILD)/g_%.rel)
-GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h
+GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h
 
 .PHONY: all m0 clean
 .SECONDARY:
@@ -47,18 +47,40 @@ $(BUILD)/sprite_data.h: tools/gen_sprites.py | $(BUILD)
 $(BUILD)/hud_data.h: tools/gen_hud.py | $(BUILD)
 	python3 tools/gen_hud.py $@
 
+# ---- 素材(ROM のバンク 4 以降) ----
+# ★macOS の make 3.81 は複数出力のまとめ書き(&:)が使えないので、目印ファイル(.stamp)で束ねる
+TITLE_BINS := $(BUILD)/title_even.bin $(BUILD)/title_odd.bin $(BUILD)/logo.bin $(BUILD)/tdf.bin
+$(BUILD)/title.stamp: tools/gen_title.py | $(BUILD)
+	python3 tools/gen_title.py $(BUILD)
+	touch $@
+$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp
+	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
+	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
+	    TDF=$(BUILD)/tdf.bin
+	touch $@
+$(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
+
 # ---- 本体(GAME.ROM, 1MB) ----
+# ★割込み処理(raster)と ROM 読み出し(rom)はページ 1(0x8000 未満)に置く。ROM を読む間はページ 2 が
+#   カートリッジの別のバンクになるため(rom.c)。リンクの先頭に並べ、リンク後に番地を検査する。
+GAME_FIRST := $(BUILD)/raster.rel $(BUILD)/rom.rel
+GAME_REST  := $(filter-out $(GAME_FIRST),$(CORE))
 $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
-$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(GAME_RELS)
+$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS)
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
-	    $(BUILD)/crt0rom.rel $(GAME_RELS) $(CORE) -o $@
+	    $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
+	@for S in _ras_isr_direct _ras_isr_bios _ras_apply_next _ras_vblank _rom_copy; do \
+	    A=$$(awk -v n=$$S '$$2==n{print $$3}' $(@:.ihx=.noi)); \
+	    if [ -z "$$A" ] || [ $$(printf '%d' $$A) -ge 32768 ]; then \
+	        echo "ERROR: $$S=$$A がページ 1(0x8000 未満)に無い。ROM を読む間に壊れる(rom.c)"; rm -f $@; exit 1; fi; \
+	done
 
-GAME.ROM: $(BUILD)/game.ihx tools/rompack.mjs
-	node tools/rompack.mjs --code $< --out $@
+GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin tools/rompack.mjs
+	node tools/rompack.mjs --code $< --out $@ --asset 4 $(BUILD)/assets.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

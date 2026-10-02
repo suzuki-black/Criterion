@@ -50,19 +50,35 @@ static void job_set(u8 j, u8 x, u8 y, u8 fg, const char *s, u8 width) {
     t->x = x; t->y = y; t->fg = fg; t->row = 0;
 }
 
+/* HUD を描き直す。★一度に描くと 1 フレームに収まらない(場面の切り替えでフレーム落ち)ので、
+   消去だけ始めて、残りは hud_update が 1 フレームに 1 段ずつ描く(init_stage)。 */
+static u8 init_stage;
+
 void hud_init(void) {
-    u8 y, x;
     vdp_hmmv(0, 512 + HUD_VROW, 256, 24, 0x00);             /* ページ 2 の HUD の行 */
-    vdp_cmd_wait();
-    for (y = 0; y < GAUGE_H; y++) {
-        vdp_write_addr17(1, (u16)(HUD_VROW + y) * 128u + GX / 2);
-        for (x = 0; x < GAUGE_W / 2; x++) VDP_DAT = hud_gauge[y][x];
-    }
-    font_text(HUD_PAGE, TX, HUD_ROW0, 14, 0, "SC");
-    font_text(HUD_PAGE, (u8)(TX + 64), HUD_ROW0, 15, 0, "0");           /* スコアは 10 点単位なので末尾の 0 は固定 */
-    font_text(HUD_PAGE, TX, HUD_ROW1, 14, 0, "SHIP");
     shown_score = 0xFFFF; shown_lives = 0xFF; shown_node = 0xFF;
     { u8 j; for (j = 0; j < NJOB; j++) job[j].row = 8; }
+    init_stage = 1;
+}
+
+#define GAUGE_STEP 4                 /* ゲージの絵を 1 フレームに描く行数(1 行 64 回の書き込み ≒ 0.55ms) */
+#define INIT_TEXT  (GAUGE_H / GAUGE_STEP + 1)
+
+static void init_step(void) {
+    vdp_cmd_wait();
+    if (init_stage < INIT_TEXT) {
+        u8 y, x, y0 = (u8)((init_stage - 1) * GAUGE_STEP);
+        for (y = y0; y < y0 + GAUGE_STEP; y++) {
+            vdp_write_addr17(1, (u16)(HUD_VROW + y) * 128u + GX / 2);
+            for (x = 0; x < GAUGE_W / 2; x++) VDP_DAT = hud_gauge[y][x];
+        }
+    } else if (init_stage == INIT_TEXT) {
+        font_text(HUD_PAGE, TX, HUD_ROW0, 14, 0, "SC");
+        font_text(HUD_PAGE, (u8)(TX + 64), HUD_ROW0, 15, 0, "0");       /* スコアは 10 点単位なので末尾の 0 は固定 */
+    } else {
+        font_text(HUD_PAGE, TX, HUD_ROW1, 14, 0, "SHIP");
+    }
+    init_stage = init_stage > INIT_TEXT ? 0 : (u8)(init_stage + 1);
 }
 
 static void jobs_run(u8 rows) {
@@ -85,6 +101,7 @@ void hud_update(void) {
     u8 *lv = level_of(node);
     u8 lvv = lv ? *lv : 0;
     char buf[16];
+    if (init_stage) { init_step(); return; }
     if (g_pl.score != shown_score) {
         shown_score = g_pl.score;
         num_str(buf, g_pl.score, 5);
