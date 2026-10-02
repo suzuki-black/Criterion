@@ -1,0 +1,54 @@
+/* raster.h — ラスターリスト(指示書 8.4)。走査線割込み(R#19 / S#1 FH)で帯ごとに VDP を書き換える。
+
+   ★データ駆動・ダブルバッファ: メインは ras_back() で裏の表を受け取って組み、ras_commit(n) で確定する。
+     VBLANK 割込みが表を差し替え、先頭(line==0)の項目を適用し、次の分割行を R#19 へ仕込む。
+     (分割の仕切り直しは必ず VBLANK 文脈で行う。前作で、本体側で仕切り直して先頭の分割を
+      毎フレーム取りこぼした。)
+   ★HR ポーリング帯(陽炎・重力レンズ): flags に RAS_HAZE を立てた項目は、割込みの中で S#2 の HR を
+     見ながら n ラインぶん毎ライン R#26/R#27 を書く。その間はメインが止まる(帯の高さぶんを予算から引く)。
+
+   ★割込みの入口は 2 方式(M0-2 で比較する):
+     RAS_ISR_BIOS   … BIOS の割込みハンドラ → H.KEYI(0xFD9A) から呼ばれる(前作と同じ)。
+     RAS_ISR_DIRECT … ページ 0 を RAM に切り替え、0x0038 に JP を置いて直接受ける。BIOS の
+                      全レジスタ退避とキー走査が無くなるぶん応答が速い。この方式の間は BIOS を
+                      呼んではいけない(JIFFY は自前で進める)。
+   ★作法(前作 raster.h から):
+     - S#1 を読むため R#15=1 にしたら、必ず R#15=0 へ戻す。
+     - R#19 は VRAM 行で数える(R#23 を使うときは加算が要る。M0-2 では R#23 は使わない)。
+     - 割込みの応答遅れのぶん、R#19 は line - g_ras_bias に仕込む(実測で決める)。 */
+#ifndef RASTER_H
+#define RASTER_H
+
+#include "types.h"
+
+#define RAS_MAX 20
+
+#define RAS_SCROLL 0x01   /* R#26/R#27 を書く */
+#define RAS_PAL    0x02   /* パレット 1 色を書く */
+#define RAS_HAZE   0x04   /* HR ポーリング帯: n ライン、haze 表の (r26,r27) を毎ライン書く */
+#define RAS_HAZE_FINE 0x08 /* HR ポーリング帯を R#27 だけにする(帰線での書き込み 1 回。振幅は 0..7 ドット) */
+
+typedef struct {
+    u8  line;        /* 画面行(0..211)。0 は VBLANK 中に適用(フレーム先頭の状態)。昇順に並べる */
+    u8  flags;
+    u8  r26, r27;
+    u8  pidx;        /* パレット番号 */
+    u8  prb, pg;     /* (R<<4)|B, G */
+    u8  haze_n;      /* HR ポーリングするライン数 */
+    const u8 *haze;  /* (r26, r27) × haze_n */
+} RasEntry;          /* 10 バイト(ISR が固定オフセットで読む) */
+
+#define RAS_ISR_BIOS   0
+#define RAS_ISR_DIRECT 1
+
+extern volatile u8 g_ras_bias;   /* 割込み応答遅れの補正(ライン) */
+extern volatile u8 g_ras_busy_border;
+extern volatile u16 g_ras_irqs, g_ras_fh, g_ras_vb;   /* 割込み・FH・VBLANK の累計(計測用) */  /* 0 以外: ISR の間だけ枠線色をこの番号にする(負荷可視化) */
+
+void      ras_init(void);            /* H.KEYI フック設置、E1 有効(BIOS 方式で開始) */
+RasEntry *ras_back(void);            /* 裏の表(書き込んでよい) */
+u8        ras_back_index(void);      /* 裏の表の番号 0/1(付随データのダブルバッファ用) */
+void      ras_commit(u8 n);          /* 裏の表を n 項目で確定。次の VBLANK で表になる */
+u8        ras_set_isr(u8 mode);      /* 割込みの入口を切り替える。戻り値 = 実際のモード */
+
+#endif /* RASTER_H */

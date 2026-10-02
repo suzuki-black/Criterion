@@ -197,6 +197,7 @@ void main(void) {
     sys_r800();
     screen_init();
     vdp_hmmv(0, 0, 256, 512, 0x00);           /* ページ 0-1 クリア */
+    vdp_cmd_wait();
     gen_strips();
     lo = hi = 0;
     for (i = 0; i < 16; i++) stream(0);       /* 表示前にリングを埋め切る(stream は 1 回の列数に上限がある) */

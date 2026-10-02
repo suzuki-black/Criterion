@@ -1,14 +1,15 @@
 # Makefile — Criterion (MSX turboR 横スクロールシューティング)
 #   make m0         M0 技術検証 ROM をすべて作る(build/m0_*.rom)
 #   make clean
+#   make DEFS=-DNO_RAMX   RAM 実行を止めた比較用(make clean してから)
 include config.mk
 
 BUILD := build
 INC   := -Isrc/include
 HDRS  := $(wildcard src/include/*.h)
-CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel
+CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel $(BUILD)/raster.rel $(BUILD)/font.rel
 
-M0_TESTS := scroll
+M0_TESTS := scroll raster
 M0_ROMS  := $(M0_TESTS:%=$(BUILD)/m0_%.rom)
 
 .PHONY: all m0 clean
@@ -26,10 +27,10 @@ $(BUILD)/crt0rom.rel: src/crt0rom.s | $(BUILD)
 	sdasz80 -o $@ $<
 
 $(BUILD)/%.rel: src/core/%.c $(HDRS) config.mk | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(INC) $< -o $@
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(INC) $< -o $@
 
 $(BUILD)/m0_%.rel: src/m0/%.c $(HDRS) config.mk | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(INC) $< -o $@
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(INC) $< -o $@
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。
