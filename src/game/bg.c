@@ -15,7 +15,8 @@
 static u16 scroll_q;                /* 近景の位置(1/4 ドット単位) */
 u8 g_scroll_speed = 4;              /* 1/4 ドット/フレーム単位(4 = 1 ドット/フレーム) */
 
-static u8 regs_a[2][4], regs_b[2][4];
+static u8 regs_a[2][8], regs_b[2][4], regs_h[2][8];
+u8 g_vscroll;                       /* プレイエリアの縦スクロール(R#23) */
 
 /* 夕焼けの空(上から): 色 1 の R, G, B */
 static const u8 sky_rgb[SKY_BANDS][3] = {
@@ -94,12 +95,18 @@ void bg_scroll(void) {
 void bg_build(void) {
     RasEntry *e = ras_back();
     u8 bi = ras_back_index();
-    u8 *ra = regs_a[bi], *rb = regs_b[bi];
+    u8 *ra = regs_a[bi], *rb = regs_b[bi], *rh = regs_h[bi];
     u8 i, k = 0;
     u16 near = scroll_q >> 2, mid = scroll_q >> 3, far = scroll_q >> 4;
 
     ra[0] = 5; ra[1] = spr_regs.r5a; ra[2] = 11; ra[3] = spr_regs.r11a;
+    ra[4] = 2; ra[5] = 0x3F;                                /* プレイエリア: 表示リング(ページ 0|1) */
+    ra[6] = 23; ra[7] = g_vscroll;
     rb[0] = 5; rb[1] = spr_regs.r5b; rb[2] = 11; rb[3] = spr_regs.r11b;
+    rh[0] = 2; rh[1] = 0x7F;                                /* HUD 帯: ページ 2 の 212 行から */
+    rh[2] = 23; rh[3] = HUD_R23;
+    rh[4] = 5; rh[5] = spr_regs.r5h;                        /* HUD 帯は属性表も別 */
+    rh[6] = 11; rh[7] = 3;
 
     for (i = 0; i < SKY_BANDS; i++, k++) {
         e[k].line = sky_line[i];
@@ -110,13 +117,14 @@ void bg_build(void) {
     }
     e[0].flags = RAS_PAL | RAS_SCROLL | RAS_REGS;          /* 先頭: 空はどこでも同じ色。上の帯の属性表 */
     e[0].r26 = 0; e[0].r27 = 0;
-    e[0].haze_n = 2; e[0].haze = ra;
+    e[0].haze_n = 4; e[0].haze = ra;
     e[SKY_BANDS - 1].flags = RAS_PAL | RAS_REGS;            /* 96 行: 下の帯の属性表へ */
     e[SKY_BANDS - 1].haze_n = 2; e[SKY_BANDS - 1].haze = rb;
 
     e[k].line = CLOUD_Y0; e[k].flags = RAS_SCROLL; e[k].r26 = VDP_R26(far);  e[k].r27 = VDP_R27(far);  k++;
     e[k].line = 124;      e[k].flags = RAS_SCROLL; e[k].r26 = VDP_R26(mid);  e[k].r27 = VDP_R27(mid);  k++;
     e[k].line = 150;      e[k].flags = RAS_SCROLL; e[k].r26 = VDP_R26(near); e[k].r27 = VDP_R27(near); k++;
-    e[k].line = HUD_Y;    e[k].flags = RAS_SCROLL; e[k].r26 = 0; e[k].r27 = 0; k++;
+    e[k].line = HUD_Y;    e[k].flags = RAS_SCROLL | RAS_REGS; e[k].r26 = 0; e[k].r27 = 0;
+    e[k].haze_n = 4; e[k].haze = rh; k++;
     ras_commit(k);
 }

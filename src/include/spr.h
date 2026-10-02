@@ -14,6 +14,7 @@
 
 #define SPR_SPLIT   96        /* 帯の境界の行(ラスターの項目もこの行に置く) */
 #define SPR_LIMIT_Y 188       /* これより下(HUD 帯)には出さない。HUD 用は spr_put_hud */
+#define HUD_SCREEN_Y 188      /* HUD 帯の画面の行(HUD 帯は属性表が別) */
 
 /* グループ(枠の範囲は spr.c) */
 enum { G_SHIP_A, G_SHIP_B, G_SHOT, G_ENEMY, G_EBUL, G_MISC, G_COUNT };
@@ -21,14 +22,15 @@ enum { G_SHIP_A, G_SHIP_B, G_SHOT, G_ENEMY, G_EBUL, G_MISC, G_COUNT };
 /* G_MISC の色の組 */
 enum { CS_QUANTA, CS_EXPL, CS_CURSOR, CS_SHARD, CS_DIM, CS_COUNT };
 
-typedef struct { u8 r5a, r11a, r5b, r11b; } SprRegs;
-extern SprRegs spr_regs;      /* spr_end() が書いた表の R#5/R#11(上の帯 / 下の帯) */
+typedef struct { u8 r5a, r11a, r5b, r11b, r5h; } SprRegs;   /* R#11 はどれも 3 */
+extern SprRegs spr_regs;      /* spr_end() が書いた表の R#5/R#11(上の帯 / 下の帯 / HUD 帯) */
 extern u8 g_spr_dropped;      /* グループの枠に入りきらなかった枚数(計測用) */
+extern u8 spr_voff;           /* プレイエリアの縦スクロール(R#23)。spr_put の Y に足す */
 
 void spr_init(const u8 (*pat)[32], u8 npat);   /* パターン表・色表の初期化、R#1/R#5/R#6/R#11 */
 void spr_begin(void);
 void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs);       /* 左上(ドット)。cs は G_MISC のときだけ使う */
-void spr_put_hud(s16 x, s16 y, u8 pat, u8 cs);             /* HUD 帯(G_MISC) */
+void spr_put_hud(s16 x, s16 y, u8 pat, u8 cs);             /* HUD 帯(1 枚、色は G_MISC の組) */
 void spr_end(void);
 
 #endif /* SPR_H */

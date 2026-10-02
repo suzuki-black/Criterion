@@ -98,13 +98,14 @@ void main(void) {
             prof(2);
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
                 state = ST_OVER;
-                font_text(0, 136, HUD_ROW1, 8, 0, "GAME OVER");
+                font_text(HUD_PAGE, 136, HUD_ROW1, 8, 0, "GAME OVER");
             }
         } else if (g_in_edge & IN_A) {
             new_game();
         }
         bg_scroll();
 
+        spr_voff = g_vscroll;            /* スプライトの Y はプレイエリアの R#23 を足して表へ */
         spr_begin();
         player_draw();
         enemy_draw();

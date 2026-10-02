@@ -8,11 +8,17 @@
 #define FX(v)     ((s16)((v) * 16))     /* ドット → 固定小数点 */
 #define PX(v)     ((s16)((v) >> 4))     /* 固定小数点 → ドット */
 #define PLAY_H    188
-#define HUD_Y     188
-/* HUD の文字の行。★SDCC は「188 + 8」のような定数式を u8 の引数に渡すと値が範囲内でも警告するので、足した値で持つ */
-#define HUD_ROW0  188
-#define HUD_ROW1  196
-#define HUD_ROW2  204
+#define HUD_Y     188                 /* HUD 帯の画面の行 */
+/* ★HUD はページ 2 の 212..235 行に描き、HUD 帯だけ R#2 = 0x7F(ページ 2|3)・R#23 = 24 で見せる
+   (表示リングは縦スクロールで 256 行すべてが画面に出るので、HUD をリングに置けない。M2) */
+#define HUD_PAGE  2
+#define HUD_VROW  212                 /* HUD の VRAM の行(ページ 2) */
+#define HUD_R23   24                  /* = HUD_VROW - HUD_Y */
+/* HUD の文字の行(ページ 2 の VRAM の行)。★SDCC は「212 + 8」のような定数式を u8 の引数に渡すと
+   値が範囲内でも警告するので、足した値で持つ */
+#define HUD_ROW0  212
+#define HUD_ROW1  220
+#define HUD_ROW2  228
 
 /* ---- ∞ゲージ(指示書 2.3) ---- */
 enum { N_INF, N_THRUST, N_ECHO, N_AEGIS, N_INF2, N_DROP, N_SPLIT, N_RAY, N_STEPS };
@@ -72,6 +78,8 @@ u8   rnd8(void);
 void fx_spawn(s16 x, s16 y);
 void item_spawn(s16 x, s16 y, u8 kind);
 void score_add(u16 v10);            /* 10 点単位 */
+
+extern u8 g_vscroll;                 /* プレイエリアの縦スクロール(R#23)。bg.c */
 
 /* 各モジュール */
 void bg_init(void);

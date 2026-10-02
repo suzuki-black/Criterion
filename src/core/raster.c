@@ -17,6 +17,8 @@ RasEntry *volatile ras_ptr;    /* 次に適用する項目 */
 volatile u8 ras_left;          /* 残り項目数 */
 volatile u8 ras_armed;         /* 今 R#19 に仕込んである値 */
 volatile u8 ras_r19;           /* ラスターの次の項目の R#19(ras_left > 0 のとき有効) */
+volatile u8 ras_vs;            /* 今の R#23(RAS_REGS で R#23 を書くと更新)。R#19 はこれを足した値で仕込む。
+                                  ★刻み方式(PCM)の刻みには未対応: 縦スクロールと PCM の併用は M7 で */
 volatile u16 g_ras_irqs;       /* 割込みの総数(計測用) */
 volatile u16 g_ras_fh;         /* うち FH(走査線)の数 */
 volatile u16 g_ras_vb;         /* うち VBLANK の数 */
@@ -371,6 +373,12 @@ void ras_apply_next(void) __naked {
     00008$:
         ld   a, (hl)               ; 番号
         inc  hl
+        cp   #23
+        jr   nz, 00019$
+        ld   a, (hl)
+        ld   (_ras_vs), a          ; R#23(縦スクロール)を覚える: 以降の R#19 に足す
+        ld   a, #23
+    00019$:
         or   #0x80
         ld   b, a
         ld   a, (hl)               ; 値
@@ -489,6 +497,9 @@ void ras_apply_next(void) __naked {
         ld   b, a
         ld   a, 0 (ix)
         sub  b
+        ld   b, a
+        ld   a, (_ras_vs)
+        add  a, b                  ; ★R#19 は「表示の行 + R#23」で比べられる(縦スクロール中は足す)
         ld   (_ras_r19), a
         ret
 
@@ -549,6 +560,9 @@ void ras_vblank(void) __naked {
         ld   d, a
         ld   a, b
         sub  d
+        ld   b, a
+        ld   a, (_ras_vs)
+        add  a, b
         ld   (_ras_r19), a
         ret
     __endasm;

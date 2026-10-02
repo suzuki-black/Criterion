@@ -1,8 +1,14 @@
 /* spr.c — スプライト(spr.h 参照)。
-   VRAM の置き場所(SCREEN5、表示リングはページ 0|1 の 0..211 行):
-     パターン表 0xF000-0xF7FF(64 パターン)
-     属性表 / 色表: 上の帯 A0 0x7600/0x7400、A1 0x7E00/0x7C00、下の帯 B0 0xEE00/0xEC00、B1 0xFE00/0xFC00
-     (どれも表示されない 212 行以降。色表は属性表の 0x200 前に自動で決まる)
+   VRAM の置き場所(M2〜): ★表示リング(ページ 0|1)は縦スクロール(R#23)で 256 行すべてが画面に出るので、
+     スプライトの表はページ 3 の 212 行以降(表示しない場所)に置く。
+     パターン表 0x1F800-0x1FFFF(64 パターン。63 番は空白 = 使わない枠を隠す)
+     属性表 / 色表: 上の帯 A0 0x1EA00/0x1E800、A1 0x1EE00/0x1EC00、下の帯 B0 0x1F200/0x1F000、B1 0x1F600/0x1F400
+     (色表は属性表の 0x200 前に自動で決まる。R#11 = 3)
+     HUD 帯の表 C0 0x1E600/0x1E400、C1 0x1E200/0x1E000(ゲージのカーソル 1 枚だけ)
+   ★Y 座標は「表示の行 + R#23」で比べられるので、spr_voff(プレイエリアの R#23)を足す。
+   ★HUD 帯は R#23 が別なので属性表も別にする(同じ表だと、縦スクロール量しだいで HUD のスプライトが
+     プレイエリアの行でも一致して描かれた。M2)。
+   ★216 は「ここで終わり」の印。足した結果が 216 になったら 217 にする(1 行ずれるだけ)。
    ★spr_put の時点で帯ごとの属性表の写し(RAM)へ直接置き、spr_end は写しを OTIR で送るだけにする。
      要求を貯めてから帯ごとに振り分け直す作りは、SDCC の生成コードでは 1 要求 300 クロック前後かかり、
      スプライトだけで 1 フレームの半分を使った(M1)。 */
@@ -10,7 +16,8 @@
 #include "vdp.h"
 
 #define SLOTS   32
-#define HIDE_Y  213                 /* 使わない枠(216 は「ここで終わり」の印なので使わない) */
+#define BLANK_PAT (63 * 4)          /* 空白のパターン(使わない枠を隠す) */
+#define HUD_VOFF  24                /* HUD 帯の R#23(ページ 2 の 212 行を画面の 188 行に出す) */
 
 /* グループの色(1 行ずつ。bit6 = CC: 1 つ前の枠と OR 合成) */
 static const u8 g_col[G_COUNT - 1][16] = {
@@ -28,7 +35,7 @@ static const u8 misc_col[CS_COUNT][16] = {
     /* CS_DIM    */ { 14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14 },
 };
 
-static const u16 sat_addr[2][2] = { { 0x7600, 0x7E00 }, { 0xEE00, 0xFE00 } };
+static const u16 sat_addr[2][2] = { { 0xEA00, 0xEE00 }, { 0xF200, 0xF600 } };   /* 0x1xxxx の下 16 ビット */
 
 /* ---- 帯の写し(asm から使うので非 static。添字の [帯 * 8 + グループ] は 8 で揃える) ---- */
 u8 spr_shadow[2 * SLOTS * 4];        /* 帯ごとの属性表の写し(帯 b は b * 128 から) */
@@ -40,6 +47,7 @@ const u8 spr_gfirst[8] = { 0, 1, 2, 10, 22, 28, 0, 0 };
 const u8 spr_gend[8]   = { 1, 2, 10, 22, 28, 32, 0, 0 };
 const u8 spr_gcount[8] = { 1, 1, 8, 12, 6, 4, 0, 0 };
 u8 spr_bx, spr_bp, spr_bg, spr_bcs, spr_bmask;   /* spr_add への受け渡し */
+u8 spr_voff;                         /* プレイエリアの縦スクロール(R#23)。Y に足す */
 
 static u8 misc_cache[2][2][4];       /* その表の G_MISC の 4 枠に今書いてある色の組 */
 static u8 rot_g[G_COUNT];            /* グループごとの回し始め(毎フレーム +1、数で折り返す) */
@@ -47,30 +55,46 @@ static u8 buf;                       /* 次に書く側(0/1) */
 u8 g_spr_dropped;
 SprRegs spr_regs;
 
+/* HUD 帯の表(1 枚) */
+static const u16 hud_sat[2] = { 0xE600, 0xE200 };
+static u8 hud_y, hud_x, hud_p, hud_cs, hud_on;
+static u8 hud_cache[2];
+
 static u8 r5_of(u16 a) { return (u8)(((a >> 7) & 0xFF) | 0x07); }
+
+static u8 hide_y(void) {
+    u8 y = (u8)(spr_voff + 212);     /* プレイエリアの下の外 */
+    return y == 216 ? 217 : y;
+}
 
 void spr_init(const u8 (*pat)[32], u8 npat) {
     u8 i, j, b, g;
-    vdp_write_addr17(0, 0xF000);
+    static const u8 zero[32] = { 0 };
+    vdp_write_addr17(1, 0xF800);
     for (i = 0; i < npat; i++) vdp_out_block(32, pat[i]);
+    vdp_write_addr17(1, (u16)(0xF800u + 63u * 32u));
+    vdp_out_block(32, zero);                                /* 63 番 = 空白 */
     for (b = 0; b < 2; b++)
         for (j = 0; j < 2; j++) {
             u16 sa = sat_addr[b][j];
-            vdp_write_addr17(0, sa);
+            vdp_write_addr17(1, sa);
             VDP_DAT = 216;                                  /* 空の表 */
-            vdp_write_addr17(0, (u16)(sa - 0x200u));        /* 色表: グループの色を固定で書く */
+            vdp_write_addr17(1, (u16)(sa - 0x200u));        /* 色表: グループの色を固定で書く */
             for (g = 0; g < G_MISC; g++)
                 for (i = 0; i < spr_gcount[g]; i++) vdp_out_block(16, g_col[g]);
             for (i = 0; i < 4; i++) misc_cache[b][j][i] = 0xFF;
         }
-    for (i = 0; i < 2 * SLOTS; i++) spr_shadow[i * 4] = HIDE_Y;
-    vdp_wreg(6, 0x1E);                                      /* パターン表 0xF000 */
+    for (i = 0; i < 2 * SLOTS; i++) { spr_shadow[i * 4] = hide_y(); spr_shadow[i * 4 + 2] = BLANK_PAT; }
+    hud_cache[0] = hud_cache[1] = 0xFF;
+    for (j = 0; j < 2; j++) { vdp_write_addr17(1, hud_sat[j]); VDP_DAT = 216; }
+    spr_regs.r5h = r5_of(hud_sat[0]);
+    vdp_wreg(6, 0x3F);                                      /* パターン表 0x1F800 */
     *(volatile u8 *)0xF3E0 |= 0x02;                         /* 16x16(RG1SAV と合わせる) */
     vdp_wreg(1, *(volatile u8 *)0xF3E0);
     vdp_wreg(5, r5_of(sat_addr[0][0]));
-    vdp_wreg(11, 0);
-    spr_regs.r5a = r5_of(sat_addr[0][0]); spr_regs.r11a = 0;
-    spr_regs.r5b = r5_of(sat_addr[1][0]); spr_regs.r11b = 1;
+    vdp_wreg(11, 3);
+    spr_regs.r5a = r5_of(sat_addr[0][0]); spr_regs.r11a = 3;
+    spr_regs.r5b = r5_of(sat_addr[1][0]); spr_regs.r11b = 3;
     buf = 1;
 }
 
@@ -78,7 +102,8 @@ void spr_begin(void) {
     u8 b, g, n, st;
     for (b = 0; b < 2; b++) {
         u8 *sh = &spr_shadow[b ? SLOTS * 4 : 0];
-        for (n = spr_last[b]; n; n--, sh += 4) *sh = HIDE_Y;   /* 前のフレームに使った枠だけ隠す */
+        u8 hy = hide_y();
+        for (n = spr_last[b]; n; n--, sh += 4) { sh[0] = hy; sh[2] = BLANK_PAT; }   /* 前のフレームに使った枠だけ隠す */
         spr_last[b] = 0;
     }
     for (g = 0; g < G_COUNT; g++) {
@@ -216,31 +241,47 @@ void spr_add(u8 yy) __naked {
     __endasm;
 }
 
+static u8 table_y(s16 y, u8 voff) {
+    u8 t = (u8)(y - 1 + voff);       /* 表示は Y+1 行目から。R#23 を足す */
+    return t == 216 ? 217 : t;
+}
+
 void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs) {
     if ((u16)x > 255 || y <= -16 || y >= SPR_LIMIT_Y - 8) return;
     spr_bx = (u8)x; spr_bp = (u8)(pat << 2); spr_bg = group; spr_bcs = cs;
     spr_bmask = (u8)((y < SPR_SPLIT ? 1 : 0) | (y > SPR_SPLIT - 16 ? 2 : 0));
-    spr_add((u8)(y - 1));                   /* 表示は Y+1 行目から */
+    spr_add(table_y(y, spr_voff));
 }
 
 void spr_put_hud(s16 x, s16 y, u8 pat, u8 cs) {
-    if ((u16)x > 255 || y <= -16 || y >= 212) return;
-    spr_bx = (u8)x; spr_bp = (u8)(pat << 2); spr_bg = G_MISC; spr_bcs = cs;
-    spr_bmask = 2;                          /* HUD は下の帯 */
-    spr_add((u8)(y - 1));
+    if ((u16)x > 255 || y < HUD_SCREEN_Y - 16 || y >= 212) return;
+    hud_y = table_y(y, HUD_VOFF); hud_x = (u8)x; hud_p = (u8)(pat << 2); hud_cs = cs; hud_on = 1;
+}
+
+static void write_hud(void) {
+    u16 sa = hud_sat[buf];
+    vdp_write_addr17(1, sa);
+    if (hud_on) { VDP_DAT = hud_y; VDP_DAT = hud_x; VDP_DAT = hud_p; VDP_DAT = 0; }
+    VDP_DAT = 216;
+    if (hud_on && hud_cache[buf] != hud_cs) {
+        vdp_write_addr17(1, (u16)(sa - 0x200u));
+        vdp_out_block(16, misc_col[hud_cs]);
+        hud_cache[buf] = hud_cs;
+    }
+    hud_on = 0;
 }
 
 static void write_band(u8 b) {
     u16 sa = sat_addr[b][buf];
     u8 n = spr_last[b], i;
-    vdp_write_addr17(0, sa);
+    vdp_write_addr17(1, sa);
     if (n) vdp_out_block((u8)(n * 4), &spr_shadow[b ? SLOTS * 4 : 0]);
     if (n < SLOTS) VDP_DAT = 216;
     /* G_MISC の色: 組が変わった枠だけ */
     for (i = 0; i < 4; i++) {
         u8 cs = spr_misc_cs[b * 4 + i];
         if (cs != 0xFF && misc_cache[b][buf][i] != cs) {
-            vdp_write_addr17(0, (u16)(sa - 0x200u + (u16)(spr_gfirst[G_MISC] + i) * 16u));
+            vdp_write_addr17(1, (u16)(sa - 0x200u + (u16)(spr_gfirst[G_MISC] + i) * 16u));
             vdp_out_block(16, misc_col[cs]);
             misc_cache[b][buf][i] = cs;
         }
@@ -250,9 +291,11 @@ static void write_band(u8 b) {
 void spr_end(void) {
     write_band(0);
     write_band(1);
+    write_hud();
+    spr_regs.r5h = r5_of(hud_sat[buf]);
     spr_regs.r5a = r5_of(sat_addr[0][buf]);
-    spr_regs.r11a = 0;
+    spr_regs.r11a = 3;
     spr_regs.r5b = r5_of(sat_addr[1][buf]);
-    spr_regs.r11b = 1;
+    spr_regs.r11b = 3;
     buf ^= 1;
 }

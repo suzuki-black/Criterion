@@ -52,15 +52,15 @@ static void job_set(u8 j, u8 x, u8 y, u8 fg, const char *s, u8 width) {
 
 void hud_init(void) {
     u8 y, x;
-    vdp_hmmv(0, HUD_Y, 256, 24, 0x00);
+    vdp_hmmv(0, 512 + HUD_VROW, 256, 24, 0x00);             /* ページ 2 の HUD の行 */
     vdp_cmd_wait();
     for (y = 0; y < GAUGE_H; y++) {
-        vdp_write_addr17(0, (u16)(HUD_Y + y) * 128u + GX / 2);
+        vdp_write_addr17(1, (u16)(HUD_VROW + y) * 128u + GX / 2);
         for (x = 0; x < GAUGE_W / 2; x++) VDP_DAT = hud_gauge[y][x];
     }
-    font_text(0, TX, HUD_ROW0, 14, 0, "SC");
-    font_text(0, (u8)(TX + 64), HUD_ROW0, 15, 0, "0");           /* スコアは 10 点単位なので末尾の 0 は固定 */
-    font_text(0, TX, HUD_ROW1, 14, 0, "SHIP");
+    font_text(HUD_PAGE, TX, HUD_ROW0, 14, 0, "SC");
+    font_text(HUD_PAGE, (u8)(TX + 64), HUD_ROW0, 15, 0, "0");           /* スコアは 10 点単位なので末尾の 0 は固定 */
+    font_text(HUD_PAGE, TX, HUD_ROW1, 14, 0, "SHIP");
     shown_score = 0xFFFF; shown_lives = 0xFF; shown_node = 0xFF;
     { u8 j; for (j = 0; j < NJOB; j++) job[j].row = 8; }
 }
@@ -69,7 +69,7 @@ static void jobs_run(u8 rows) {
     u8 j;
     for (j = 0; j < NJOB && rows; j++) {
         TextJob *t = &job[j];
-        while (t->row < 8 && rows) { font_text_row(0, t->x, t->y, t->fg, 0, t->text, t->row); t->row++; rows--; }
+        while (t->row < 8 && rows) { font_text_row(HUD_PAGE, t->x, t->y, t->fg, 0, t->text, t->row); t->row++; rows--; }
     }
 }
 
