@@ -913,7 +913,7 @@ void pcm_req_seq(u8 id) {
 
 /* 任意の PCM(4 小節ごとのオケヒ、爆発など): ★刻み方式は CPU を約 4 割使うので、余裕のあるフレームが 1 秒続いているときだけ */
 void pcm_req_opt(u8 id) {
-    if (quiet >= 20 && (g_pcm_cur == SND_NONE || pcm_opt)) { pcm_req(id); pcm_q |= 0x80; }
+    if (quiet >= 2 && (g_pcm_cur == SND_NONE || pcm_opt)) { pcm_req(id); pcm_q |= 0x80; }   /* その瞬間に空きがあれば(遅れたら止める) */
 }
 
 u8  g_pcm_off;                                /* 検証用: 1 = PCM を鳴らさない(m1..m6 はエンジンの時間を見るので切る) */
@@ -964,7 +964,7 @@ void snd_frame(void) {
         if (fade_att < 15) fade_att++;
         else { u8 id = fade_to; start_song(SND_NONE); bgm_play(id); }
     }
-    snd_att = g_snd_atten > fade_att ? g_snd_atten : fade_att;
+    snd_att = g_snd_atten > fade_att ? g_snd_atten : fade_att;   /* 演出とフェード(鳴っている音も書き直す) */
     retune_f = (u8)(g_snd_bend != bend_w || g_snd_detune != detune_w);
     retune_v = (u8)(snd_att != atten_w);
     if (retune_f | retune_v) {
@@ -976,6 +976,12 @@ void snd_frame(void) {
             opll_w(0x37, (u8)(((4 + a > 15 ? 15 : 4 + a) << 4) | (2 + a)));
             opll_w(0x38, (u8)(((2 + a) << 4) | (2 + a)));
         }
+    }
+    if (g_pcm_cur < PCM_V01) {                                /* ★ダッキング: 声以外の PCM の間は、新しく鳴る音を 4 段下げる
+                                                                 (曲に埋もれて聞こえなかった。鳴っている音まで書き直すと 1 回
+                                                                 約 0.3ms かかり、重い場面で遅れた。M7) */
+        snd_att = (u8)(snd_att + 4);
+        if (snd_att > 15) snd_att = 15;
     }
     psg_env();
     sfx_frame();

@@ -36,12 +36,16 @@ def decimate(sig):
     return out
 
 
-def to_u8(sig, gain=1.0, bits=8):
+def to_u8(sig, gain=1.0, bits=8, drive=0.0):
+    """drive > 0: ソフトクリップ(tanh)で平均の音量を上げる(★そのままでは曲に埋もれて聞こえなかった。M7)"""
     peak = max(1e-9, max(abs(v) for v in sig))
     q = 1 << (8 - bits)
     out = []
     for v in sig:
-        s = max(-1.0, min(1.0, v / peak * gain))
+        s = v / peak * gain
+        if drive > 0:
+            s = math.tanh(drive * s) / math.tanh(drive)
+        s = max(-1.0, min(1.0, s))
         b = int(round(128 + s * 127))
         b = (b // q) * q + (q // 2 if q > 1 else 0)
         out.append(max(0, min(255, b)))
@@ -207,12 +211,12 @@ def voice(phs, f0=105.0, f1=None, speed=1.0, seed=1):
 def build():
     """[(名前, 優先度, バイト列)]。優先度: 音声 4 > オケヒ 3 > 爆発 2 > スネア 1"""
     res = []
-    res.append(('P01', 3, to_u8(decimate(orch([73.42, 146.83, 220.0, 293.66, 369.99, 440.0, 587.33], 0.40, 0.11, 1990)))))
-    res.append(('P02', 3, to_u8(decimate(orch([73.42, 146.83, 220.0, 293.66, 349.23, 440.0, 587.33], 0.40, 0.11, 1991)))))
-    res.append(('P03', 3, to_u8(decimate(orch([61.74, 123.47, 174.61, 246.94, 293.66, 415.30], 0.60, 0.20, 1992)))))
-    res.append(('P04', 2, to_u8(decimate(cymbal_rev(0.80)))))
-    res.append(('P05', 1, to_u8(decimate(snare(0.15)))))
-    res.append(('P06', 2, to_u8(decimate(explosion(0.70)))))
+    res.append(('P01', 3, to_u8(decimate(orch([73.42, 146.83, 220.0, 293.66, 369.99, 440.0, 587.33], 0.40, 0.11, 1990)), drive=3.0)))
+    res.append(('P02', 3, to_u8(decimate(orch([73.42, 146.83, 220.0, 293.66, 349.23, 440.0, 587.33], 0.40, 0.11, 1991)), drive=3.0)))
+    res.append(('P03', 3, to_u8(decimate(orch([61.74, 123.47, 174.61, 246.94, 293.66, 415.30], 0.60, 0.20, 1992)), drive=3.0)))
+    res.append(('P04', 2, to_u8(decimate(cymbal_rev(0.80)), drive=3.0)))
+    res.append(('P05', 1, to_u8(decimate(snare(0.15)), drive=3.0)))
+    res.append(('P06', 2, to_u8(decimate(explosion(0.70)), drive=3.0)))
     res.append(('V01', 4, to_u8(decimate(voice('IH N F IH N IH T AH S _ L AO N CH'.split(), 112, 96, 1.05, 11)), 1.0, 6)))
     res.append(('V02', 4, to_u8(decimate(voice('W AO R N IH NG'.split(), 118, 104, 1.0, 12)), 1.0, 6)))
     res.append(('V03', 4, to_u8(decimate(voice('S IH S T AH M _ AA N L AY N'.split(), 108, 100, 1.0, 13)), 1.0, 6)))
