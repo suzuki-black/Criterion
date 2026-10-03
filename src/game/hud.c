@@ -181,6 +181,7 @@ void gauge_confirm(void) {
     g_gauge.armed = 0;
     g_gauge.anim = 0;
     g_gauge.flash = 32;
+    infx_start(128, 172);                       /* ∞ が回りながら画面の中央へ飛び出す(ROTOR) */
 }
 
 void gauge_lose(void) {

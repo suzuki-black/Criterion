@@ -117,3 +117,89 @@ void rotor_4bpp(u8 *dst, u8 n, u8 angle, u16 step, u8 bg) {
     rotor_begin(n, angle, step, bg);
     rotor_rows(dst, n);
 }
+
+/* ---- スプライト用: 32x32 の 1bpp を回転拡縮(指示書 8.9「スプライトパターン」) ----
+   元は ROT1_SRC(ページ 0 の RAM、1 ドット 1 バイト = 1KB に広げたもの。rotor_1bpp_src で作る)。
+   写し先は 32x32 の 1bpp(1 行 4 バイト、128 バイト)。1 行の中は 4bpp と同じく増分を足すだけ。 */
+static u8 rot1_bytes;
+
+/* 1 行(rot1_bytes × 8 ドット)を rot_dst へ */
+static void rotor1_row(void) __naked {
+    __asm
+        push ix
+        push iy
+        ld   ix, (_rot_u)
+        ld   iy, (_rot_v)
+        ld   de, (_rot_dst)
+        exx
+        ld   bc, (_rot_dux)
+        ld   de, (_rot_dvx)
+        exx
+        ld   a, (_rot1_bytes)
+    00001$:
+        push af
+        ld   b, #8
+    00002$:
+        .db  0xFD, 0x7C            ; ld a, iyh(v)
+        cp   #32
+        jr   nc, 00012$            ; 外(CF = 0)
+        rrca
+        rrca
+        rrca                       ; 上位 3 ビット = (v & 7) << 5、下位 2 ビット = v >> 3
+        ld   l, a
+        and  #3
+        add  a, #0x38              ; ROT1_SRC の上位
+        ld   h, a
+        ld   a, l
+        and  #0xE0
+        ld   l, a
+        .db  0xDD, 0x7C            ; ld a, ixh(u)
+        cp   #32
+        jr   nc, 00012$
+        or   l
+        ld   l, a
+        ld   a, (hl)               ; 0 / 1
+        rra                        ; CF = ドット
+    00012$:
+        rl   c
+        exx
+        add  ix, bc
+        add  iy, de
+        exx
+        djnz 00002$
+        ld   a, c
+        ld   (de), a
+        inc  de
+        pop  af
+        dec  a
+        jr   nz, 00001$
+        pop  iy
+        pop  ix
+        ret
+    __endasm;
+}
+
+/* 32x32 の 1bpp(128 バイト)を ROT1_SRC へ 1 ドット 1 バイトに広げる */
+void rotor_1bpp_src(const u8 *bits) {
+    u8 *d = ROT1_SRC;
+    u16 i;
+    for (i = 0; i < 128; i++) {
+        u8 b = bits[i], k;
+        for (k = 0; k < 8; k++) { *d++ = (u8)(b >> 7); b <<= 1; }
+    }
+}
+
+/* 32x32 の 1bpp を角度・倍率つきで dst(128 バイト)へ。rows 行だけ(row0 から)作る */
+void rotor_1bpp32(u8 *dst, u8 angle, u16 step, u8 row0, u8 rows) {
+    s8 c = g_sin64[(u8)(angle + 16) & 63], s = g_sin64[angle & 63];
+    s16 dux = mul7(c, step), dvx = (s16)-mul7(s, step);
+    s16 dy_u = mul7(s, step), dy_v = mul7(c, step);
+    s16 u = (s16)(0x1080 - dux * 16 - dy_u * 16 + dy_u * row0), v = (s16)(0x1080 - dvx * 16 - dy_v * 16 + dy_v * row0);
+    rot_dux = dux; rot_dvx = dvx; rot1_bytes = 4;
+    dst += row0 * 4u;
+    while (rows--) {
+        rot_u = u; rot_v = v; rot_dst = dst;
+        rotor1_row();
+        u += dy_u; v += dy_v; dst += 4;
+    }
+}

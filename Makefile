@@ -87,6 +87,10 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(
 	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) $(GAME_CODE0_CORE) -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
+	@E=$$(awk '$$2=="s__CODE0"{s=$$3} $$2=="l__CODE0"{l=$$3} END{printf "%d", s+l}' $(@:.ihx=.noi)); \
+	    if [ $$E -gt $$((0x3800)) ]; then echo "ERROR: CODE0 の末尾 $$E が 0x3800(ROTOR の元の置き場、rotor.h)を超えた"; rm -f $@; exit 1; fi
+	@E=$$(awk '$$2=="s__DATA"{s=$$3} $$2=="l__DATA"{l=$$3} END{printf "%d", s+l}' $(@:.ihx=.noi)); \
+	    if [ $$E -gt $$((0xD800)) ]; then echo "ERROR: _DATA の末尾 $$E が 0xD800(ROTOR_SRC、rotor.h)を超えた"; rm -f $@; exit 1; fi
 	@for S in _ras_isr_direct _ras_isr_bios _ras_apply_next _ras_vblank _rom_copy; do \
 	    A=$$(awk -v n=$$S '$$2==n{print $$3}' $(@:.ihx=.noi)); \
 	    if [ -z "$$A" ] || [ $$(printf '%d' $$A) -ge 32768 ]; then \

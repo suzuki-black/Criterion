@@ -5,7 +5,8 @@
      256 = 等倍、大きいほど小さく写る)。
    ★元は ROTOR_SRC(0xD800、2KB、256 境界)に置くこと(asm がアドレスの上位だけを足す)。
      写し先は任意(RAM)。標準の置き場 ROTOR_DST(0xE000、2KB)。
-   ★1 ドットおよそ 5us(R800、openMSX)。64x64 で約 20ms。毎フレームではなく、場面の入りで前もって作る。 */
+   ★1 ドットおよそ 11us(R800、openMSX の実測。スプライト用の 1bpp で 11.5us)。64x64 で約 45ms。
+     毎フレームではなく、場面の入りで前もって作るか、何フレームかに分けて作る。 */
 #ifndef ROTOR_H
 #define ROTOR_H
 
@@ -18,5 +19,11 @@ void rotor_4bpp(u8 *dst, u8 n, u8 angle, u16 step, u8 bg);
 /* 分けて作る: rotor_begin の後、rotor_rows を何回かに分けて呼ぶ(dst は呼ぶたびにその続きを渡す) */
 void rotor_begin(u8 n, u8 angle, u16 step, u8 bg);
 void rotor_rows(u8 *dst, u8 rows);
+
+/* スプライト用(32x32 の 1bpp)。★元は ROT1_SRC(ページ 0 の RAM の 0x3800、1KB。CODE0 はその手前まで) */
+#define ROT1_SRC ((u8 *)0x3800)
+#define ROT1_DST ((u8 *)0x3C00)        /* 写し先の標準(128 バイト) */
+void rotor_1bpp_src(const u8 *bits);  /* 32x32 の 1bpp(128 バイト)を元として広げる */
+void rotor_1bpp32(u8 *dst, u8 angle, u16 step, u8 row0, u8 rows);   /* 何行かずつ作れる */
 
 #endif /* ROTOR_H */

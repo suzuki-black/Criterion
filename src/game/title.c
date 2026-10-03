@@ -90,6 +90,7 @@ static void enter(u8 ph) {
         g_scroll_speed = 1;
         bg_mix(0);
         vdp_set_pal(15, 7, 7, 7);
+        infx_title(1);                                        /* ロゴの下で ∞ が回る(ROTOR) */
     }
     if (ph == PH_SORTIE) {
         s16 y = (s16)(150 + (g_sin64[(u8)(pt_prev >> 1) & 63] >> 4));   /* タイトルで最後に描いた位置 */

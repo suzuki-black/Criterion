@@ -142,6 +142,13 @@ void boss_prepare(u8 kind);         /* 先に絵を作り始める(PLUMB: 都市
 void boss_vram(void);               /* VRAM の窓で毎フレーム(絵を作る段・BG に描く) */
 void boss_vram_gen(void);
 u8   boss_bands(s16 *line, s8 *off);   /* LEGION の揺れの帯(数を返す) */
+/* ---- ∞ の紋章(infx.c。ROTOR のスプライト用) ---- */
+void infx_start(s16 x, s16 y);      /* 確定の演出: (x, y) から画面の中央へ */
+void infx_title(u8 on);             /* タイトルの紋章 */
+void infx_reset(void);
+void infx_update(void);             /* 論理の段 */
+void infx_vram(void);               /* VRAM の窓 */
+void infx_draw(void);               /* スプライトの段 */
 /* ---- Pawn(pawn.c) ---- */
 void pawn_sheet_load(void);
 void pawn_reset(void);

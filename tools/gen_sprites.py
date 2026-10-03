@@ -471,6 +471,23 @@ def to_bytes(rows):
             out.append(b)
     return out
 
+def inf32():
+    """32x32 の ∞(レムニスケート r^2 = a^2 cos 2θ の太線)。ROTOR(スプライト用)の元。1 行 4 バイト"""
+    import math
+    pts = []
+    for k in range(720):
+        t = k / 720 * 2 * math.pi
+        d = 1 + math.sin(t) ** 2
+        pts.append((15.5 + 14.0 * math.cos(t) / d, 15.5 + 14.0 * math.sin(t) * math.cos(t) / d * 1.6))
+    out = bytearray()
+    for y in range(32):
+        row = 0
+        for x in range(32):
+            on = min((px - x) ** 2 + (py - y) ** 2 for px, py in pts) < 2.6
+            row = (row << 1) | (1 if on else 0)
+        out += row.to_bytes(4, 'big')
+    return bytes(out)
+
 def main(path):
     names = list(PATS)
     with open(path, 'w') as f:
@@ -485,6 +502,12 @@ def main(path):
         f.write('static const u8 spr_pat[PAT_COUNT][32] = {\n')
         for n in names:
             f.write('    { ' + ', '.join(f'0x{b:02X}' for b in to_bytes(PATS[n])) + ' },  /* ' + n + ' */\n')
+        f.write('};\n#endif\n\n')
+        # ROTOR の元(32x32 の 1bpp)。infx.c だけが取り込む
+        f.write('#ifdef SPRITE_INF32\nstatic const u8 spr_inf32[128] = {\n')
+        b = inf32()
+        for i in range(0, 128, 16):
+            f.write('    ' + ', '.join(f'0x{v:02X}' for v in b[i:i + 16]) + ',\n')
         f.write('};\n#endif\n\n#endif /* SPRITE_DATA_H */\n')
 
 if __name__ == '__main__':

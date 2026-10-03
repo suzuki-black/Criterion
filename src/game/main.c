@@ -62,6 +62,7 @@ void game_start(void) {
     gauge_lose();
     g_vscroll = 0;
     boss_reset();
+    infx_reset();
     state = ST_PLAY;
 }
 
@@ -148,6 +149,7 @@ void main(void) {
         if (ph <= PH_SORTIE) title_update();
         bg_scroll();
         if (g_phase >= PH_AIR) stage_update();   /* 敵(砲台)が世界の位置を使うので、敵より先に */
+        infx_update();
         if (ph >= PH_SORTIE && state == ST_PLAY) {
             if (g_dbg_invul) g_pl.invul = 2;
             player_update();
@@ -178,13 +180,15 @@ void main(void) {
             spr_voff = g_vscroll;        /* スプライトの Y はプレイエリアの R#23 を足して表へ */
             spr_begin();
             if (g_phase <= PH_TITLE) title_draw();
-            else { player_draw(); boss_draw(); enemy_draw(); hud_sprites(); }
+            else { player_draw(); infx_draw(); boss_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
+            if (g_phase <= PH_TITLE) infx_draw();
         }
         wait_vram_window();              /* ここから先は VRAM を書く */
         /* ★CPU で VRAM を書く仕事(属性表・HUD の文字)を先に、VDP のコマンドを出す仕事(stage_vram)を後に。
            VDP がコマンドを実行している間は CPU の VRAM の書き込みも遅くなる(Pawn を足したら 1 フレームが
            90 ライン延びた)。コマンドはフレームの頭とここで出し、次のフレームの論理の間に VDP が進める */
         if (!g_slow) spr_end();
+        infx_vram();
         /* HUD の文字は次のフレームへ回してよい: フレームの残りが少なければ書かない(VDP のコマンドと重なると
            2 行の書き込みが 50 ライン近くかかることがある) */
         if (g_hud_on && (g_phase < PH_AIR || (u16)(sys_timer() - g_frame_t0) < HUD_DEADLINE)) hud_update();
