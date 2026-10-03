@@ -23,6 +23,8 @@ void rom_copy(void) __naked {
         in   a, (0xA8)
         push af                    ; 今の選択(ページ 0 は RAM、ページ 3 は RAM)
         ld   b, a
+        di                         ; ★ページ 1 がカートリッジの間は割込みを止める(割込み処理が ROM から実行されて遅く
+                                   ;   なり、PCM の刻みを取りこぼした。M7)。止めるのは命令 10 個ほど
         ld   a, (_ramx_a8)
         and  #0x3C                 ; ページ 1-2 = カートリッジ
         ld   c, a
@@ -34,6 +36,18 @@ void rom_copy(void) __naked {
         ld   (0x7000), a           ; 0x8000-0x9FFF
         inc  a
         ld   (0x7800), a           ; 0xA000-0xBFFF
+        ; ★ページ 1 は RAM に戻し、ページ 2 だけカートリッジにして写す。ページ 1 をカートリッジのままにすると、
+        ;   その間の割込み処理(ページ 1)が ROM から実行されて約 2.7 倍遅くなり、PCM の刻みを取りこぼした
+        ;   (M7。出撃の声の間、JIFFY が 2 フレームに 1 回しか進まず、曲もゲームも半分の速さになった)
+        pop  af
+        push af                    ; 元の選択(ページ 1-2 = RAM)
+        and  #0xCF
+        ld   b, a
+        ld   a, (_ramx_a8)
+        and  #0x30
+        or   b
+        out  (0xA8), a
+        ei
         ld   hl, (_rom_src)
         ld   de, (_rom_len)
         ld   bc, (_rom_dst)
@@ -68,12 +82,24 @@ void rom_copy(void) __naked {
         pop  bc                    ; BC = バイト数
         ldir
     00020$:
+        pop  af
+        push af
+        ld   b, a
+        ld   a, (_ramx_a8)
+        and  #0x3C
+        ld   c, a
+        ld   a, b
+        and  #0xC3
+        or   c
+        di
+        out  (0xA8), a             ; バンクのレジスタを書くため、ページ 1-2 をカートリッジに(一瞬。割込みは止める)
         ld   a, #2
         ld   (0x7000), a           ; 窓をコードのバンクへ戻す
         inc  a
         ld   (0x7800), a
         pop  af
         out  (0xA8), a             ; ページ 1-2 を RAM へ
+        ei
         ret
     __endasm;
 }

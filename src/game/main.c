@@ -20,7 +20,6 @@
 #include "sprite_data.h"
 
 enum { ST_PLAY, ST_OVER };
-static u8 snd_skip;
 extern u8 g_snd_room;
 
 /* 計測・検証用(デバッガから読む / 書く) */
@@ -164,9 +163,9 @@ void main(void) {
         g_stat.idle_sum += idle;
 
         prof_t = sys_timer();
-        /* 音: 選曲と演出 → ドライバ。★前のフレームに空き時間が無ければ 5 フレームまで先送り(テンポは JIFFY で
-           数えているので次でまとめて進む)。PCM の補充だけは毎フレーム */
-        if (g_snd_room || ++snd_skip > 5) { snd_skip = 0; music_frame(state == ST_OVER); snd_frame(); }
+        /* 音: 選曲と演出 → ドライバ。★毎フレーム必ず回す(先送りすると音が固まって出て、リズムがもたついた。M7 の測定で
+           16 分音符の半分が 1 フレームより大きくずれた) */
+        music_frame(state == ST_OVER); snd_frame();
         pcm_keep();
         if (g_phase >= PH_AIR) stage_pump_nb();   /* 列の描き込みと GHOST: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
         input_read();

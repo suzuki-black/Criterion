@@ -40,14 +40,19 @@ foreach s {11 13 20 22 29 31 38 41 48 50} { set ::minhp(\$s) 255 }
 set ::press 0; set ::g7 0; set ::mark 0; set ::yjk_bad -1
 # YJK の絵の照合(GNOMON の間に一度。6 面を出るとリングの 0..47 行は空に描き戻される)
 proc yjk_check {} {
+  # ★openMSX の VRAM の読み口は、読んだ瞬間の画面モードで見え方が変わる(GRAPHIC7 の帯の表示中はインターリーブした
+  #   論理番地で返る)。物理の並び(ページ 0 と 2)と論理の並び(偶数 = ページ 0、奇数 = ページ 2)の両方で照合する(M7)
+  set h [open "build/yjk_even.bin" rb]; binary scan [read \$h] cu* we; close \$h
+  set h [open "build/yjk_odd.bin" rb]; binary scan [read \$h] cu* wo; close \$h
+  binary scan [debug read_block VRAM 0 6144] cu* p0
+  binary scan [debug read_block VRAM 0x10000 6144] cu* p2
   set bad 0
-  foreach {pg fn} {0 yjk_even.bin 1 yjk_odd.bin} {
-    set h [open "build/\$fn" rb]; set ref [read \$h]; close \$h
-    binary scan [debug read_block VRAM [expr {\$pg * 0x10000}] 6144] cu* got
-    binary scan \$ref cu* want2
-    foreach a \$got b \$want2 { if {\$a != \$b} { incr bad } }
-  }
-  set ::yjk_bad \$bad
+  foreach a \$p0 b \$we { if {\$a != \$b} { incr bad } }
+  foreach a \$p2 b \$wo { if {\$a != \$b} { incr bad } }
+  binary scan [debug read_block VRAM 0 12288] cu* lg
+  set bad2 0; set k 0
+  foreach {a c} \$lg { if {\$a != [lindex \$we \$k]} { incr bad2 }; if {\$c != [lindex \$wo \$k]} { incr bad2 }; incr k }
+  set ::yjk_bad [expr {\$bad < \$bad2 ? \$bad : \$bad2}]
 }
 # 表(ISR が読んでいる方)の項目: 行 1..187 の横スクロールの数、HR ポーリングの有無、(行, x) の組
 proc raslist {} {

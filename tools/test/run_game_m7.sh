@@ -5,6 +5,8 @@
 #      クリア J01、ラスボス M14A/B/C、脱出 M15、終幕 M16
 #   7. 声の PCM(g_pcm_cur に書かれた番号): 起動ロゴ V03、出撃 V01、警告 V02、試験 V06、8 面 V04。D/A に書いた回数
 #   8. 曲を鳴らしている区間で発音が進む(g_snd_keyons)、刻みの鎖の張り直し(g_ras_rearm)が 0
+#   9. もたつき: OPLL のキーオンの時刻を記録し(opll.log)、曲データから計算した本来の時刻と突き合わせる
+#      (tools/test/check_tempo.py。1 音のずれ 1.5 フレームまで)
 # 以下は M6 の説明:
 # M6 の総合検証(GAME.ROM): 起動から 1 周(8 面・終幕)を通して、2 周目の 1 面の空中戦に入るまで。
 #   無敵・連射・上下移動で流す。ボス戦の間は自機をボスの弱点の高さ(g_boss_aim)へ置き、左端に寄せる。
@@ -27,7 +29,7 @@ sym() { awk -v s="$1" '$2==s{print $3}' "$NOI"; }
 ST=$(sym _g_stat); PL=$(sym _g_pl); SEC=$(sym _g_sec); BS=$(sym _g_boss_state); BHP=$(sym _g_boss_hp)
 INV=$(sym _g_dbg_invul); AIM=$(sym _g_boss_aim); CAL=$(sym _g_calib); LOOP=$(sym _g_loop); DMG=$(sym _g_boss_dmg)
 RFRONT=$(sym _ras_front); RN=$(sym _ras_front_n)
-BGM=$(sym _g_bgm); CUTS=$(sym _g_pcm_cuts); DROPS=$(sym _g_pcm_drops); KEY=$(sym _g_snd_keyons); PCMC=$(sym _g_pcm_cur); OPLL=$(sym _g_opll); REARM=$(sym _g_ras_rearm)
+BGM=$(sym _g_bgm); TEMPO=$(sym _g_snd_tempo); CUTS=$(sym _g_pcm_cuts); DROPS=$(sym _g_pcm_drops); KEY=$(sym _g_snd_keyons); PCMC=$(sym _g_pcm_cur); OPLL=$(sym _g_opll); REARM=$(sym _g_ras_rearm)
 SONG() { awk -v s="SONG_$1" '$2==s{print $3}' build/snd_data.h; }
 PCMID() { awk -v s="PCM_$1" '$2==s{print $3}' build/snd_data.h; }
 T="$OUT/game_m7.tcl"
@@ -50,6 +52,11 @@ set ::pcms {}; set ::da 0; set ::phsong {}; set ::k_prev 0
 proc pcm_w {} { if {\$::wp_last_value != 255 && [lsearch \$::pcms \$::wp_last_value] < 0} { lappend ::pcms \$::wp_last_value } }
 debug set_watchpoint write_mem $PCMC {} pcm_w
 debug set_watchpoint write_io 0xA4 {} {incr ::da}
+set ::tf [open "$OUT/opll.log" w]; set ::oad 0
+debug set_watchpoint write_io 0x7C {} { set ::oad \$::wp_last_value }
+debug set_watchpoint write_io 0x7D {} { if {(\$::oad >= 0x20 && \$::oad <= 0x25 && (\$::wp_last_value & 0x10)) || \$::oad == 0x0E} { puts \$::tf "[format %.5f [machine_info time]] \$::oad \$::wp_last_value" } }
+proc bgm_smp {} { puts \$::tf "[format %.5f [machine_info time]] bgm [debug read memory $BGM] pcm [debug read memory $PCMC] tempo [debug read memory $TEMPO]"; after time 0.1 bgm_smp }
+after time 12 bgm_smp
 proc song_seen {key b} { if {![info exists ::songs(\$key)]} { set ::songs(\$key) {} }; if {[lsearch \$::songs(\$key) \$b] < 0} { lappend ::songs(\$key) \$b } }
 for {set k 1} {\$k <= 7} {incr k} { set ::calhp(\$k) 255 }
 foreach s {58 60 61} { set ::minhp(\$s) 255 }
@@ -109,6 +116,7 @@ proc shot {name} { set ::throttle on; after time 0.2 [list apply {{n} { screensh
 # ★判定がエラーでも必ず終わる(終わらないと throttle off のまま何周も遊び続けた。M7)
 proc safe_finish {} {
   global f
+  catch { close \$::tf }
   if {[catch finish err]} { catch { puts \$f "判定: NG (スクリプトのエラー: \$err)"; close \$f }; exit }
 }
 after time 1500 { safe_finish }
@@ -167,4 +175,7 @@ after time 30 wait_end
 TCL
 timeout 3000 openmsx -machine "$MACHINE" -carta "$ROM" -romtype ASCII8 -script "$T" >/dev/null 2>&1 || true
 cat "$OUT/game_m7.log"
-grep -q "判定: OK" "$OUT/game_m7.log"
+echo "== もたつき(check_tempo.py)"
+T_OK=0; python3 tools/test/check_tempo.py "$OUT/opll.log" > "$OUT/tempo.txt" || T_OK=1
+grep -E "NG|判定" "$OUT/tempo.txt" || true
+grep -q "判定: OK" "$OUT/game_m7.log" && [ $T_OK -eq 0 ]

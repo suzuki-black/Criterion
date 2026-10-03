@@ -114,6 +114,7 @@ static void snd_map(void) __naked {
         ld   a, b
         and  #0xC3
         or   c
+        di                         ; ★ページ 1 がカートリッジの間は割込みを止める(rom.c と同じ理由)
         out  (0xA8), a             ; ページ 1-2 = カートリッジ(ページ 1 は RAM の写しと同じコード)
         ld   a, (_map_bank)
         ld   (0x7000), a
@@ -126,6 +127,7 @@ static void snd_map(void) __naked {
         and  #0xCF
         or   c
         out  (0xA8), a             ; ページ 1 = RAM に戻し、ページ 2 だけカートリッジ
+        ei
         ret
     __endasm;
 }
@@ -138,6 +140,7 @@ static void snd_unmap(void) __naked {
         ld   a, (_map_a8)
         and  #0xC3
         or   c
+        di
         out  (0xA8), a
         ld   a, #2
         ld   (0x7000), a           ; 窓をコードのバンクへ戻す
@@ -145,6 +148,7 @@ static void snd_unmap(void) __naked {
         ld   (0x7800), a
         ld   a, (_map_a8)
         out  (0xA8), a
+        ei
         ret
     __endasm;
 }
@@ -929,7 +933,7 @@ void snd_frame(void) {
             seq_n = n;
             seq_run();                            /* 待ちを減らす(曲のバンクは要らない) */
             if (seq_need) {                       /* ★バンクの出し入れは 1 回約 50us。命令を読むフレームだけ */
-                opll_budget = g_snd_room ? 12 : 6;
+                opll_budget = 24;
                 map_bank = song_bank;
                 snd_map();
                 seq_events();

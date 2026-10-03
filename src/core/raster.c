@@ -36,6 +36,7 @@ volatile u16 pcm_left;
 volatile u8  pcm_pend;         /* 1 = 次の VBLANK で pcm_on にする(フレームの途中から始めない) */
 const u8 *volatile pcm_next_ptr;   /* 鳴り終わったら続けて鳴らすデータ(pcm_queue)。切れ目を作らない */
 volatile u16 pcm_next_left;
+volatile u8  ras_regs_hit;      /* 刻み方式: この刻みでレジスタ列(RAS_REGS)の項目を適用した */
 volatile u8  pcm_end;          /* 1 = 刻み 212 で刻み方式をやめる(pcm_stop) */
 
 volatile u8 g_ras_bias = 4;    /* openMSX(FS-A1ST)で境界のずれが 0 になる値。実機で取り直す */
@@ -248,6 +249,15 @@ void ras_isr_bios(void) __naked {
         ;   ★割込みは表示ライン (R#19 - R#23) ちょうどで来る。項目を適用し終えた頃には 2 ライン先の刻みが
         ;     過ぎていることがあり、取りこぼすと 1 フレーム近く止まった(M7、起動ロゴの 130 行で R#23 が 58 → 8)。
         ;     1 つ先(4 ライン先)を仕込み、飛ばしたサンプルはここで出す。
+        ;   レジスタ列の項目(画面モードの切り替えなど、2 ライン近くかかる)の後も同じ(M7、出撃の帯の終わりで
+        ;   毎フレーム 1 つ取りこぼし、JIFFY が 2 フレームに 1 回しか進まず、声の間は曲もゲームも半分の速さになった)
+        ld   a, (_ras_regs_hit)
+        or   a
+        jr   z, 00018$
+        xor  a
+        ld   (_ras_regs_hit), a
+        jr   00019$
+    00018$:
         ld   a, (_ras_vs)
         ld   e, a
         ld   a, (_ras_tl)
@@ -256,6 +266,7 @@ void ras_isr_bios(void) __naked {
         ld   a, (_ras_armed)
         cp   e
         jr   z, 00016$
+    00019$:
         ld   a, (_ras_tl)
         cp   #212
         jr   z, 00017$             ; 刻み 212(VBLANK の仕事)は飛ばさない
@@ -459,6 +470,8 @@ void ras_apply_next(void) __naked {
         bit  4, d
         jr   z, 00009$
         ; ---- レジスタ列(RAS_REGS): (番号, 値) × haze_n。画面モードの切り替え(M0-4)など ----
+        ld   a, #1
+        ld   (_ras_regs_hit), a    ; 刻み方式: 書き終わる頃には次の刻みが過ぎていることがある(on_fh が 1 つ先を仕込む)
         ld   e, 7 (ix)
         ld   l, 8 (ix)
         ld   h, 9 (ix)
