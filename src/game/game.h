@@ -127,21 +127,14 @@ void enemy_spawn_spirit(u16 wx, u8 roof);
 void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy);   /* 固定小数点 */
 void enemy_shoot(s16 x, s16 y);     /* 自機を狙う */
 
-/* ---- 1 面の中ボスとボス(boss.c) ---- */
-enum { BOSS_LEGION, BOSS_PLUMB };
+/* ---- ボスの状態(本体に置く。面のオーバレイが動かす) ---- */
 enum { BS_NONE, BS_ENTER, BS_FIGHT, BS_DYING, BS_DONE };
-extern u8 g_boss_state;
-extern u8 g_boss_hp;
-void boss_reset(void);
-void boss_start(u8 kind);
-void boss_update(void);
-void boss_draw(void);
-void boss_damage(u8 n);
-void boss_leave(void);              /* 時間切れ: 倒さずに去る */
-void boss_prepare(u8 kind);         /* 先に絵を作り始める(PLUMB: 都市後半に入ったとき) */
-void boss_vram(void);               /* VRAM の窓で毎フレーム(絵を作る段・BG に描く) */
-void boss_vram_gen(void);
-u8   boss_bands(s16 *line, s8 *off);   /* LEGION の揺れの帯(数を返す) */
+extern u8  g_boss_state;
+extern u8  g_boss_hp;
+extern u8  g_boss_dmg;              /* 受け取っていない傷(boss_damage が足す) */
+extern u16 g_lg_on[26];             /* LEGION の積んであるマス(検証も読む) */
+extern s16 g_lg_x0;
+void boss_damage(u8 n);             /* LIMIT BREAK など: 次のフレームで面が受け取る */
 /* ---- ∞ の紋章(infx.c。ROTOR のスプライト用) ---- */
 void infx_start(s16 x, s16 y);      /* 確定の演出: (x, y) から画面の中央へ */
 void infx_title(u8 on);             /* タイトルの紋章 */
@@ -149,16 +142,8 @@ void infx_reset(void);
 void infx_update(void);             /* 論理の段 */
 void infx_vram(void);               /* VRAM の窓 */
 void infx_draw(void);               /* スプライトの段 */
-/* ---- Pawn(pawn.c) ---- */
-void pawn_sheet_load(void);
-void pawn_reset(void);
-void pawn_update(u8 active);
-void pawn_cell(s16 x, s16 y, u8 kind);  /* 空の地の 4x4: 0 / 1 = Pawn、2 = 空 */
-void pawn_move(s16 x, s16 y, u8 kind);  /* 4x8: 0 = 上 Pawn・下 空、1 = 上下 Pawn、2 = 上 空・下 Pawn */
-void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */
-
 /* ---- 面の進行と縦に長い世界(stage.c) ----
-   縦の座標 s: 都市の画面の行と同じ(0 = 雲の底、158 = 歩道)。空中戦の空と雲は s = -188..-1。
+   縦の座標 s: 地面の区間の画面の行と同じ(1 面の都市: 0 = 雲の底、158 = 歩道)。空中戦の空と雲は s = -188..-1。
    表示リングの行 = (188 + s) & 255、R#23 = (188 + g_scam) & 255。g_scam = 画面の上端の s。 */
 enum { SEC_AIR1, SEC_DESCENT, SEC_CITY1, SEC_MID, SEC_CITY2, SEC_BOSS, SEC_ASCENT, SEC_AIR2 };
 extern u8  g_sec;                   /* 今の区間 */
@@ -169,5 +154,18 @@ void stage_update(void);            /* 区間を進める(スクロールの後)
 void stage_vram(void);              /* 列と行の描き込み(VRAM の窓で) */
 void stage_build(void);             /* ラスターリスト */
 void stage_pump_nb(void);           /* VDP が空いていれば列の描き込みと GHOST を出す(待たない) */
+/* 面のオーバレイから使う */
+#define MAP_MAX 640
+enum { UP_AIR, UP_SKY };            /* s < 0 の中身: 空中戦の空と雲(起動時の絵)/ 高い空(塗って星) */
+extern s16 g_scam_q;                /* g_scam × 16 */
+extern u8  g_sky_t;                 /* 高い空の暗さ 0..16 */
+extern u16 g_w0;                    /* 地図の列 0 の世界の列 */
+extern u8  g_map[MAP_MAX];
+extern u16 g_maplen;
+void stage_set_upper(u8 kind);
+void stage_load_strips(u8 bank, u16 off);   /* 短冊(8x188 × 32 本、24064 バイト)を少しずつページ 3 へ */
+void stage_banner(const char *text);        /* 面の開始表示 */
+void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */
+void stage_ev_pal(s16 line, const u8 *rgb);
 
 #endif /* GAME_H */

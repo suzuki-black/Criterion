@@ -41,11 +41,6 @@
 #define R8_SPR  0x28
 #define R8_NOSP 0x2A
 
-u8  g_phase;
-u16 g_pt;
-u8  g_split_n;
-u8  g_split_shown;
-u8  g_hud_on;
 
 static s16 band_x[LOGO_BANDS];    /* ロゴの帯の横位置(0 = 組み上がり) */
 static u8  wiped;                 /* 出撃: 空の色で描き戻した行の上端 */

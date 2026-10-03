@@ -5,6 +5,7 @@
 include config.mk
 
 BUILD := build
+comma := ,
 INC   := -Isrc/include -Isrc/m0 -I$(BUILD)
 HDRS  := $(wildcard src/include/*.h)
 CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel $(BUILD)/raster.rel $(BUILD)/font.rel $(BUILD)/pcmb.rel $(BUILD)/input.rel $(BUILD)/spr.rel
@@ -73,32 +74,73 @@ $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 #   カートリッジの別のバンクになるため(rom.c)。リンクの先頭に並べ、リンク後に番地を検査する。
 GAME_FIRST := $(BUILD)/raster.rel $(BUILD)/rom.rel
 GAME_REST  := $(filter-out $(GAME_FIRST),$(CORE))
-# ★ページ 0 のコード(CODE0、0x0100-0x3FFF): 場面ごとのコード。起動時に ROM の bank4-5 から RAM へ複製する
-#   (main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前(起動の最初)には呼ばないこと。
-CODE0_GAME := title boss pawn
+# ★ページ 0 のコード(CODE0、0x0100-OVL_BASE): 共通のエンジン(ROTOR / GHOST)。起動時に ROM の bank4-5 から
+#   RAM へ複製する(main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前には呼ばないこと。
 CODE0_CORE := rotor ghost
 GAME_CODE0_CORE := $(CODE0_CORE:%=$(BUILD)/%.rel)
-CODE0_FLAGS = $(if $(filter $(CODE0_GAME),$*),--codeseg CODE0 --constseg CODE0)
 $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) $(CODE0_FLAGS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
-$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(GAME_CODE0_CORE)
+# ---- オーバレイ(src/include/ovl.h): ページ 0 の OVL_BASE..OVL_END へ ROM から読み込む場面のコード ----
+#   本体を先にリンクし、本体の .noi から大域シンボルを絶対番地で定義した resident.rel を作って、オーバレイを
+#   別にリンクする。本体からは JP 表の番地(ovl_entries.rel)で呼ぶ。
+OVL_BASE := 0x0A00
+OVL_END  := 0x3800
+OVL_DBEG := 0xD000
+OVL_DEND := 0xD800
+OVL_TITLE_EXPORTS := title_load title_start title_update title_draw title_vram title_build
+OVL_STAGE_EXPORTS := ovl_init ovl_update ovl_logic ovl_draw ovl_vram ovl_bands
+OVLS := title s1
+OVL_title_RELS := $(patsubst src/ovl/title/%.c,$(BUILD)/ov_title_%.rel,$(wildcard src/ovl/title/*.c))
+OVL_s1_RELS    := $(patsubst src/ovl/s1/%.c,$(BUILD)/ov_s1_%.rel,$(wildcard src/ovl/s1/*.c))
+OVL_title_HDR  := title
+OVL_s1_HDR     := stage
+OVL_BINS := $(OVLS:%=$(BUILD)/ovl_%.bin)
+
+$(BUILD)/ov_title_%.rel: src/ovl/title/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+$(BUILD)/ov_s1_%.rel: src/ovl/s1/%.c src/ovl/s1/s1.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+
+$(BUILD)/ovlhdr_title.s: tools/gen_ovl.py Makefile | $(BUILD)
+	python3 tools/gen_ovl.py hdr $@ $(OVL_TITLE_EXPORTS)
+$(BUILD)/ovlhdr_stage.s: tools/gen_ovl.py Makefile | $(BUILD)
+	python3 tools/gen_ovl.py hdr $@ $(OVL_STAGE_EXPORTS)
+$(BUILD)/ovl_entries.s: tools/gen_ovl.py Makefile | $(BUILD)
+	python3 tools/gen_ovl.py entries $@ $(OVL_BASE) $(join $(addsuffix $(comma),$(OVL_TITLE_EXPORTS)),$(OVL_STAGE_EXPORTS))
+$(BUILD)/%.rel: $(BUILD)/%.s
+	sdasz80 -o $@ $<
+$(BUILD)/resident.s: $(BUILD)/game.ihx tools/gen_ovl.py
+	python3 tools/gen_ovl.py resident $(BUILD)/game.noi $@ $(OVL_TITLE_EXPORTS) $(OVL_STAGE_EXPORTS)
+
+.SECONDEXPANSION:
+$(BUILD)/ovl_%.ihx: $(BUILD)/ovlhdr_$$(OVL_$$*_HDR).rel $$(OVL_$$*_RELS) $(BUILD)/resident.rel
+	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(OVL_BASE) --data-loc $(OVL_DBEG) \
+	    $(BUILD)/ovlhdr_$(OVL_$*_HDR).rel $(OVL_$*_RELS) $(BUILD)/resident.rel -o $@
+	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
+	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル(オーバレイ $*)"; rm -f $@; exit 1; fi
+$(BUILD)/ovl_%.bin: $(BUILD)/ovl_%.ihx tools/gen_ovl.py
+	python3 tools/gen_ovl.py bin $< $(<:.ihx=.map) $@ $(OVL_BASE) $(OVL_END) $(OVL_DBEG) $(OVL_DEND)
+
+$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(GAME_CODE0_CORE) $(BUILD)/ovl_entries.rel
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
-	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) $(GAME_CODE0_CORE) -o $@
+	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) $(GAME_CODE0_CORE) \
+	    $(BUILD)/ovl_entries.rel -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
 	@E=$$(awk '$$2=="s__CODE0"{s=$$3} $$2=="l__CODE0"{l=$$3} END{printf "%d", s+l}' $(@:.ihx=.noi)); \
-	    if [ $$E -gt $$((0x3800)) ]; then echo "ERROR: CODE0 の末尾 $$E が 0x3800(ROTOR の元の置き場、rotor.h)を超えた"; rm -f $@; exit 1; fi
+	    if [ $$E -gt $$(($(OVL_BASE))) ]; then echo "ERROR: CODE0 の末尾 $$E がオーバレイの窓 $(OVL_BASE) に入った(ovl.h)"; rm -f $@; exit 1; fi
 	@E=$$(awk '$$2=="s__DATA"{s=$$3} $$2=="l__DATA"{l=$$3} END{printf "%d", s+l}' $(@:.ihx=.noi)); \
-	    if [ $$E -gt $$((0xD800)) ]; then echo "ERROR: _DATA の末尾 $$E が 0xD800(ROTOR_SRC、rotor.h)を超えた"; rm -f $@; exit 1; fi
+	    if [ $$E -gt $$(($(OVL_DBEG))) ]; then echo "ERROR: _DATA の末尾 $$E がオーバレイの変数 $(OVL_DBEG) に入った(ovl.h)"; rm -f $@; exit 1; fi
 	@for S in _ras_isr_direct _ras_isr_bios _ras_apply_next _ras_vblank _rom_copy; do \
 	    A=$$(awk -v n=$$S '$$2==n{print $$3}' $(@:.ihx=.noi)); \
 	    if [ -z "$$A" ] || [ $$(printf '%d' $$A) -ge 32768 ]; then \
 	        echo "ERROR: $$S=$$A がページ 1(0x8000 未満)に無い。ROM を読む間に壊れる(rom.c)"; rm -f $@; exit 1; fi; \
 	done
 
-GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin tools/rompack.mjs
-	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin
+GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(OVL_BINS) tools/rompack.mjs
+	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin \
+	    --asset 120 $(BUILD)/ovl_title.bin --asset 122 $(BUILD)/ovl_s1.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

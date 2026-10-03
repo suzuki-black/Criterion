@@ -13,6 +13,7 @@
 #include "game.h"
 #include "rom.h"
 #include "ghost.h"
+#include "ovl.h"
 #define SPRITE_PATTERNS                 /* 絵の表はここだけに置く(sprite_data.h) */
 #include "sprite_data.h"
 
@@ -32,6 +33,12 @@ typedef struct {
 } GameStat;
 volatile GameStat g_stat;
 volatile u8 g_dbg_invul;
+/* 場面(タイトルのオーバレイが動かすが、本体も見るので本体に置く) */
+u8  g_phase;
+u16 g_pt;
+u8  g_split_n;
+u8  g_split_shown;
+u8  g_hud_on;
 /* 処理落ち(指示書 8.3「重い場面では 30fps に落としても構わない。スクロールが滑らかなまま敵だけ処理落ち」):
    前のフレームが遅れたか、余りが少なかったら、このフレームは敵・ボス・Pawn の更新とスプライトの描き直しを
    飛ばす(続けては飛ばさない = ゲームの進みは最低 30fps)。スクロール・ラスター・自機の操作は毎フレーム */
@@ -61,7 +68,7 @@ void game_start(void) {
     g_gauge.cursor = N_INF; g_gauge.armed = 0; g_gauge.anim = 0; g_gauge.flash = 0;
     gauge_lose();
     g_vscroll = 0;
-    boss_reset();
+    g_boss_state = BS_NONE; g_boss_dmg = 0;
     infx_reset();
     state = ST_PLAY;
 }
@@ -119,7 +126,8 @@ void main(void) {
     sys_ram_exec();
     ras_init();
     ras_set_isr(RAS_ISR_DIRECT);
-    code0_load();                    /* ここから先でページ 0 のコード(title.c など)を呼べる */
+    code0_load();                    /* ここから先でページ 0 のコード(ROTOR / GHOST)を呼べる */
+    ovl_load_sync(OVL_TITLE);        /* タイトルのオーバレイ */
     title_load();                    /* ROM の素材(ページ 1-2 を一時的にカートリッジへ戻して読む) */
     game_start();
     title_start();
@@ -154,7 +162,7 @@ void main(void) {
             if (g_dbg_invul) g_pl.invul = 2;
             player_update();
             prof(1);
-            if (ph >= PH_AIR) { stage_pump_nb(); if (!g_slow) { enemy_update(); boss_update(); } }
+            if (ph >= PH_AIR) { stage_pump_nb(); if (!g_slow) { enemy_update(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_logic(); } }
             prof(2);
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
                 state = ST_OVER;
@@ -165,6 +173,7 @@ void main(void) {
             *(volatile u8 *)0xF3E0 &= 0xBF;
             vdp_wreg(1, *(volatile u8 *)0xF3E0);
             bg_init();                   /* 表示リングは都市や空に描き替わっている */
+            ovl_load_sync(OVL_TITLE);
             title_load();
             game_start();
             title_start();
@@ -180,7 +189,7 @@ void main(void) {
             spr_voff = g_vscroll;        /* スプライトの Y はプレイエリアの R#23 を足して表へ */
             spr_begin();
             if (g_phase <= PH_TITLE) title_draw();
-            else { player_draw(); infx_draw(); boss_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
+            else { player_draw(); infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
             if (g_phase <= PH_TITLE) infx_draw();
         }
         wait_vram_window();              /* ここから先は VRAM を書く */

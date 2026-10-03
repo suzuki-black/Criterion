@@ -14,7 +14,7 @@
        HMMM で写し、前の位置からはみ出した分を空の色で塗る(GHOST の待ち行列)。広場の背景は空(色 1)なので
        枠の地も色 1 にして重ね描きする。雲の底(画面の 14 行より上)と歩道(158 行から)には描かない。
    座標はドット(中心)。画面の外の上は y < 0。 */
-#include "game.h"
+#include "s1.h"
 #include "spr.h"
 #include "sprite_data.h"
 #include "vdp.h"
@@ -27,8 +27,6 @@
 #define PLUMB_HP  70
 #define PLUMB_HALF 35
 
-u8 g_boss_state;
-u8 g_boss_hp;
 static u8  kind;
 static u16 t;
 static s16 bx, by;
@@ -43,8 +41,6 @@ static s16 bx, by;
 static const u16 lg_mask[LG_H] = {
     0x0F0, 0x1F8, 0x1F8, 0x0F0, 0x060, 0x3FC, 0x7FE, 0xFFF, 0xEF7, 0xCF3, 0xCF3, 0xCF3, 0xCF3,
     0x8F1, 0x0F0, 0x0F0, 0x1F8, 0x198, 0x198, 0x198, 0x198, 0x198, 0x198, 0x39C, 0x39C, 0x79E };
-u16 g_lg_on[LG_H];                 /* 積んであるマス(検証 run_game_m3.sh も読む) */
-s16 g_lg_x0;                       /* 人型の左端(画面)。同上 */
 #define lg_on g_lg_on
 #define gx0 g_lg_x0
 static u8  asm_j, asm_i;           /* 組み上げの次のマス(下の行から) */
@@ -101,7 +97,7 @@ void boss_start(u8 k) {
 
 void boss_leave(void) { if (g_boss_state != BS_NONE) g_boss_state = BS_DONE; }
 
-void boss_damage(u8 n) {
+static void bdamage(u8 n) {
     if (g_boss_state != BS_FIGHT) return;
     if (g_boss_hp > n) { g_boss_hp -= n; return; }
     g_boss_hp = 0; g_boss_state = BS_DYING; t = 0;
@@ -273,7 +269,7 @@ static void legion_update(void) {
         {
             s16 cx = (s16)(gx0 + 24 + sway[2]), cy = LG_Y + 34;
             u8 n = shot_hit(cx, cy, 8);
-            while (n--) boss_damage(1);
+            while (n--) bdamage(1);
             touch(cx, cy, 8);
             touch((s16)(gx0 + 24 + sway[1]), LG_Y + 20, 12);   /* 上半身に体当たり */
             if (++aim_t >= 64) {                              /* 腕(13 行の両端)が狙って撃つ */
@@ -359,8 +355,8 @@ static void plumb_update(void) {
     {
         u8 n = shot_hit(bx, by + 2, fr_r[cur_fr]);
         u8 w = shot_hit(ring_x(), ring_y(), 5);               /* 吊り輪: 2 倍 */
-        while (n--) boss_damage(1);
-        while (w--) boss_damage(2);
+        while (n--) bdamage(1);
+        while (w--) bdamage(2);
         touch(bx, by + 2, (u8)(fr_r[cur_fr] - 2));
     }
     if (!(t & (broken ? 0 : 3))) {                            /* 自転: 縞のパレットを回す(切れたら速く) */
@@ -449,6 +445,7 @@ void boss_vram(void) {
 }
 
 void boss_update(void) {
+    if (g_boss_dmg) { u8 d = g_boss_dmg; g_boss_dmg = 0; bdamage(d); }   /* LIMIT BREAK など(本体が預かった傷) */
     if (g_boss_state == BS_NONE || g_boss_state == BS_DONE) return;
     t++;
     shots_prepare();

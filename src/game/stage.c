@@ -1,17 +1,16 @@
-/* stage.c — 1 面の進行と、縦に長い世界の表示(指示書 5.1)。
-   空中戦 → 降下(R#23 の縦スクロールと横スクロールを同時に)→ 都市前半 → 中ボス → 都市後半 → ボス →
-   上昇(縦スクロールで空へ抜ける)→ 2 面の空中戦。画面は一度も消さない。
+/* stage.c — 面の土台(指示書 5)。縦に長い世界と表示リング、列の流し込み、ラスターリストの骨組み。
+   面ごとの中身(区間・地図・帯・ボス)はオーバレイ(src/ovl/s1 ほか。ovl.h の入口)が受け持つ。
 
-   縦の座標 s(game.h): 空中戦の空と雲が s = -188..-1、都市が s = 0..187(雲の底 / 空とビル / 歩道 / 街路)。
+   縦の座標 s(game.h): 上の区間(空中戦の空と雲・高い空)が s = -188..-1、地面(短冊で描く区間)が s = 0..187。
    表示リング(ページ 0|1、512x256)の行 = (188 + s) & 255。画面には 188 行しか出ないので、リングの残りの
    68 行と、画面から出た行を、次に見える s の内容へ描き替えながら進む。
    ・8 行ごとのブロック(32 個)に「今どの s を持っているか」(tag)を持つ。カメラの窓(進む向きに 60 行先まで)
      で欲しい s と違い、かつ画面に出ていないブロックを描き替える。
-       都市(s >= 0): ページ 3 の短冊(8x188、tools/gen_city.py)から 1 列ずつ HMMM。1 ブロック = 64 列。
-       高い空(上昇から。s < 0): HMMV で空の色(色 1)を塗り、星を打つ。
-       空中戦の空と雲(s < 0): 起動時に描いたもの(bg.c)をそのまま使う(描き直さない)。
-   ・横は 8 ドット(1 列)進むごとに、画面の右の外の列を地図の次の列で描く(都市のブロックだけ)。
-   ・★ブロック 23(リングの 184..191 行)は s = -4..3。空中戦の近い雲の底も都市の雲の底の上端も色 6 だけ
+       地面(s >= 0): ページ 3 の短冊(8x188)から 1 列ずつ HMMM。どの短冊かは地図(g_map、面が読み込む)。
+       高い空(UP_SKY): HMMV で空の色(色 1)を塗り、星を打つ。
+       空中戦の空と雲(UP_AIR): 起動時に描いたもの(bg.c)をそのまま使う(描き直さない)。
+   ・横は 8 ドット(1 列)進むごとに、画面の右の外の列を地図の次の列で描く(地面のブロックだけ)。
+   ・★ブロック 23(リングの 184..191 行)は s = -4..3。空中戦の近い雲の底も短冊の上端(雲の底)も色 6 だけ
      なので、描き替えない。
    ・ラスターは s の帯の境目を「画面の行 = s - g_scam」に置く。画面より上に出た境目は 0 行の項目にまとめる。
      項目どうしは RAS_GAP 行以上あける(近い境目は 1 つの項目にまとめるか、後ろへずらす)。 */
@@ -21,13 +20,11 @@
 #include "spr.h"
 #include "rom.h"
 #include "assets.h"
-#include "city_data.h"
+#include "ovl.h"
 #include "sys.h"
 #include "font.h"
 #include "ghost.h"
 
-#define AIR1_LEN   512             /* 空中戦(ドット) */
-#define DESC_LEN   256             /* 降下(この間に g_scam が -188 → 0) */
 #define S_AIR      (-188)
 #define S_AIR2     (-192)          /* 2 面の空中戦。★ブロック 23(s = -4..-1)が画面に出ない位置 */
 #define STRIP_Y    768             /* 短冊はページ 3 の 0..187 行 */
@@ -42,19 +39,25 @@
 u8  g_sec;
 u16 g_wx;
 s16 g_scam;
-
-static s16 scam_q;                 /* g_scam × 16 */
-static s8  dir;                    /* カメラの縦の向き(+1 = 降下、-1 = 上昇) */
-static u16 sec_wx;                 /* 区間に入ったときの g_wx */
-static u16 sec_t;                  /* 区間に入ってからのフレーム */
+s16 g_scam_q;                      /* g_scam × 16(面が動かす) */
+u8  g_sky_t;                       /* 高い空の暗さ(0 = 藍 .. 16 = 黒。面が動かす) */
 u16 g_w0;                          /* 地図の列 0 の世界の列(8 ドット単位)。検証(run_game_m3.sh)も読む */
+u8  g_map[MAP_MAX];                /* 地図: 列ごとの短冊の番号(面が読み込む) */
+u16 g_maplen;
+/* ボスの状態(面のオーバレイが動かす。本体・検証も読むので本体に置く) */
+u8  g_boss_state, g_boss_hp, g_boss_dmg;
+u16 g_lg_on[26];
+s16 g_lg_x0;
+void boss_damage(u8 n) { g_boss_dmg = (u8)(g_boss_dmg + n); }   /* LIMIT BREAK など(面が次のフレームで受け取る) */
+
 #define w0 g_w0
-static u8  upper_sky;              /* 1 = s < 0 は高い空(上昇から) */
+static s8  dir;                    /* カメラの縦の向き(+1 = 降下、-1 = 上昇) */
+static u8  upper_sky;              /* UP_SKY = s < 0 は高い空 */
 static s16 tag[NBLK];
-static u8  cmap[CITY_COLS];
-static u16 strip_off;              /* 短冊を ROM から読んだバイト数 */
+static u8  strip_bank;
+static u16 strip_src;
+static u16 strip_off;              /* 短冊を ROM から読んだバイト数(STRIP_LEN で終わり。0xFFFF = 読まない) */
 static u16 col_done;               /* 描いた最後の世界の列 + 1 */
-static u8  turret_i;
 static u16 cur_col;                /* 流している列 */
 static u8  col_b;                  /* その列の次のブロック(NBLK = 列を終えた) */
 static u8  jb0, jn, jstep;         /* 描き替え中のブロック(先頭・個数。jn = 0 で仕事なし)と進み */
@@ -62,92 +65,33 @@ static s16 js;
 static s16 pick_at;                /* 前に描き替えを探して何も無かったときの g_scam(8 行単位) */
 static u8  hs_t;                   /* hs_cur を求めたときの sky_t */
 static u8  banner_t;               /* 面の開始表示の進み(0 = なし) */
-static u8  sky_t;                  /* 高い空の暗さ(0 = 藍 .. 16 = 黒) */
+static const char *banner_text;
 
-/* ---- 区間 ---- */
-static void enter(u8 sec) {
-    g_sec = sec; sec_wx = g_wx; sec_t = 0;
-    switch (sec) {
-    case SEC_AIR1: case SEC_AIR2: enemy_waves(WAVES_AIR); break;
-    case SEC_CITY1: case SEC_CITY2: enemy_waves(WAVES_CITY); break;
-    default: enemy_waves(WAVES_NONE); break;
-    }
-    if (sec == SEC_MID) boss_start(BOSS_LEGION);
-    if (sec == SEC_CITY2) boss_prepare(BOSS_PLUMB);           /* ROTOR で下げ振りの絵を作り始める */
-    if (sec == SEC_BOSS) boss_start(BOSS_PLUMB);
-    if (sec == SEC_ASCENT) { upper_sky = 1; g_scroll_speed = 8; pick_at = 0x7FFF; pawn_reset(); }
-    if (sec == SEC_AIR2) { g_scroll_speed = 4; banner_t = 1; }
-}
+/* ---- 面から使う ---- */
+void stage_set_upper(u8 kind) { upper_sky = kind; pick_at = 0x7FFF; }
+void stage_load_strips(u8 bank, u16 off) { strip_bank = bank; strip_src = off; strip_off = 0; }
+void stage_banner(const char *text) { banner_text = text; banner_t = 1; }
 
+/* 1 面の空中戦から(出撃の終わりに title.c が呼ぶ)。面の中身は 1 面のオーバレイを読み込んでから */
 void stage_start(void) {
     u8 b;
     g_wx = bg_layer_x(2);
-    w0 = (u16)((g_wx + AIR1_LEN) >> 3);
-    scam_q = S_AIR * 16; g_scam = S_AIR; dir = 1;
-    upper_sky = 0; sky_t = 0;
+    g_scam_q = S_AIR * 16; g_scam = S_AIR; dir = 1;
+    upper_sky = UP_AIR; g_sky_t = 0; g_sec = 0; g_maplen = 0; g_boss_state = BS_NONE; g_boss_dmg = 0;
     for (b = 0; b < NBLK; b++) tag[b] = b < BLK_CONST ? (s16)(b * 8 - 188) : TAG_NONE;
     tag[BLK_CONST] = -4;
-    rom_to_ram(ASSET_CITY_MAP_BANK, ASSET_CITY_MAP_OFF, cmap, CITY_COLS);
-    pawn_sheet_load(); pawn_reset();
-    strip_off = 0; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; turret_i = 0; hs_t = 0xFF; banner_t = 0;
-    enter(SEC_AIR1);
+    strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; banner_t = 0;
+    enemy_waves(WAVES_AIR);
+    ovl_request(OVL_S1);
 }
-
-static u16 col_of_screen(void) { return (u16)((g_wx >> 3) - w0); }   /* 画面の左端の地図の列 */
 
 void stage_update(void) {
     s16 target = g_scam;
     g_wx = bg_layer_x(2);
-    sec_t++;
-    switch (g_sec) {
-    case SEC_AIR1:
-        if ((u16)(g_wx - sec_wx) >= AIR1_LEN) enter(SEC_DESCENT);
-        break;
-    case SEC_DESCENT: {
-        u16 d = (u16)(g_wx - sec_wx);
-        if (d >= DESC_LEN) { scam_q = 0; enter(SEC_CITY1); }
-        else scam_q = (s16)(S_AIR * 16 + (s16)((d * 47u) >> 2));   /* 188 行 / 256 ドット = 47/64(× 16) */
-        break;
-    }
-    case SEC_CITY1:
-        if (col_of_screen() + 8 >= CITY_COL_ARENA1) enter(SEC_MID);
-        break;
-    case SEC_MID:
-    case SEC_BOSS:      /* スクロールを止めて戦う。倒すか時間切れ(60 秒)で先へ */
-        if (g_scroll_speed && !(sec_t & 7)) g_scroll_speed--;
-        if (sec_t == 3600) boss_leave();
-        if (g_boss_state == BS_DONE && !g_scroll_speed) {
-            g_boss_state = BS_NONE;
-            if (g_sec == SEC_MID) { g_scroll_speed = 4; enter(SEC_CITY2); }
-            else enter(SEC_ASCENT);
-        }
-        break;
-    case SEC_CITY2:
-        if (col_of_screen() + 8 >= CITY_COL_ARENA2) enter(SEC_BOSS);
-        break;
-    case SEC_ASCENT:
-        scam_q -= 24;                                   /* 1.5 行/フレーム */
-        if (sky_t < 16 && !(sec_t & 7)) sky_t++;
-        if (scam_q <= S_AIR2 * 16) { scam_q = S_AIR2 * 16; enter(SEC_AIR2); }
-        break;
-    default:
-        break;
-    }
-    g_scam = (s16)(scam_q >> 4);
+    if (g_ovl_ready && g_ovl >= OVL_S1) ovl_update();
+    g_scam = (s16)(g_scam_q >> 4);
     if (g_scam != target) dir = g_scam > target ? 1 : -1;
     g_vscroll = (u8)(188 + g_scam);
-
-    /* 街路の Pawn(都市の前半・後半で出す。広場ではもう出さないが、いるものは歩き続ける) */
-    if (g_sec >= SEC_CITY1 && g_sec <= SEC_BOSS && !g_slow)
-        pawn_update((u8)((g_sec == SEC_CITY1 || g_sec == SEC_CITY2) && g_scam == 0));
-
-    /* 屋上の砲台: 列が画面の右端に来たら置く */
-    while (turret_i < CITY_NTURRET) {
-        u16 tx = (u16)((w0 + city_turret_col[turret_i]) * 8u + 4u);
-        if ((s16)(tx - g_wx) > 264) break;
-        if ((s16)(tx - g_wx) > 0) enemy_spawn_spirit(tx, city_turret_row[turret_i]);
-        turret_i++;
-    }
 }
 
 /* ---- 表示リングへの描き込み ----
@@ -159,8 +103,8 @@ void stage_update(void) {
 
 static u8 strip_of(u16 wcol) {
     u16 m = (u16)(wcol - w0);
-    if (wcol < w0 || m >= CITY_COLS) return 0;
-    return cmap[m];
+    if (wcol < w0 || m >= g_maplen) return 0;
+    return g_map[m];
 }
 
 /* 次のコマンド(c_hmmv = 1 なら HMMV、c_star = 1 なら星を打つ) */
@@ -232,7 +176,7 @@ static void job_pick(void) {
     s16 lo = (s16)(g_scam - (dir < 0 ? LOOK_AHEAD : 8));
     s16 best = 0, w;
     s8 bb = -1;
-    u8 b, n, ready = strip_off >= STRIP_LEN;
+    u8 b, n, ready = strip_off == STRIP_LEN;
     for (b = 0; b < NBLK; b++) {
         if (b == BLK_CONST) continue;
         w = want_of(b, lo);
@@ -286,7 +230,7 @@ static u8 stage_work(void) {
 /* メインループの途中で(待たない): 列と描き替え、GHOST の待ち行列。
    ★仕事が無ければ VDP を読まずに戻る(CE を見るだけで I/O 5 回 ≒ 0.7 ライン。1 フレームに 3 回呼ぶ) */
 void stage_pump_nb(void) {
-    if (strip_off >= STRIP_LEN && stage_work()) stage_pump(0);
+    if (strip_off == STRIP_LEN && stage_work()) stage_pump(0);
     if (gq_free() < GQ_N) gq_pump(0);
 }
 
@@ -310,7 +254,7 @@ static void banner_vram(void) {
     else if (banner_t == 2) vdp_hmmv(0, 768 + BAN_ROW - 8, 256, 24, 0x11);
     else if (banner_t == 3) {
         vdp_cmd_wait();
-        font_text(2, 40, (u8)(BAN_ROW + 4), 15, 1, "STAGE 2 / GRAVITY WELL");
+        font_text(2, 40, (u8)(BAN_ROW + 4), 15, 1, banner_text);
         ban_x = 256;
     } else if (banner_t == BAN_END) {
         vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x00);       /* 起動ロゴの黒い区間へ戻す */
@@ -323,13 +267,15 @@ static void banner_vram(void) {
 
 void stage_vram(void) {
     if (banner_t) banner_vram();
-    boss_vram();
-    if (strip_off < STRIP_LEN) {                              /* 空中戦の間に短冊をページ 3 へ(256 バイト/フレーム) */
-        rom_to_vram(ASSET_CITY_STRIPS_BANK, (u16)(ASSET_CITY_STRIPS_OFF + strip_off), 1,
-                    (u16)(0x8000u + strip_off), 256);
-        strip_off += 256;
-        if (strip_off >= STRIP_LEN) { col_done = (u16)((g_wx >> 3) + 64); pick_at = 0x7FFF; }   /* 以降の列は流しながら */
-        return;
+    ovl_step();                                               /* オーバレイの読み込み(1KB/フレーム) */
+    if (g_ovl_ready && g_ovl >= OVL_S1) ovl_vram();
+    if (strip_off != STRIP_LEN) {                             /* 地面がまだ無い(0xFFFF)か、短冊を読んでいる */
+        if (strip_off < STRIP_LEN) {                          /* 空中戦の間に短冊をページ 3 へ(256 バイト/フレーム) */
+            rom_to_vram(strip_bank, (u16)(strip_src + strip_off), 1, (u16)(0x8000u + strip_off), 256);
+            strip_off += 256;
+            if (strip_off >= STRIP_LEN) { strip_off = STRIP_LEN; col_done = (u16)((g_wx >> 3) + 64); pick_at = 0x7FFF; }   /* 以降の列は流しながら */
+        }
+        return;                                               /* ★流す列の仕事は短冊が揃ってから(col_done = 0 から何百列も空回りした) */
     }
     {   /* 予算はフレームの残りから(VRAM の仕事の後はリストを組むだけ。ここで 200 ラインを超えたら出さない) */
         extern u16 g_frame_t0;
@@ -366,17 +312,15 @@ static RasEntry *slot(s16 line, u8 kind) {
     c->line = (u8)line; c->flags = kind;
     return c;
 }
-static void ev_scroll(s16 line, u16 x) {
+void stage_ev_scroll(s16 line, u16 x) {
     RasEntry *c = slot(line, RAS_SCROLL);
     if (c) { c->r26 = VDP_R26(x); c->r27 = VDP_R27(x); }
 }
-static void ev_pal(s16 line, const u8 *rgb) {
+void stage_ev_pal(s16 line, const u8 *rgb) {
     RasEntry *c = slot(line, RAS_PAL);
     if (c) { c->pidx = 1; c->prb = (u8)((rgb[0] << 4) | rgb[2]); c->pg = rgb[1]; }
 }
 
-static const u8 city_sky[6][3] = { { 2, 1, 2 }, { 3, 1, 3 }, { 4, 1, 3 }, { 5, 2, 3 }, { 6, 3, 3 }, { 7, 4, 2 } };
-static const u8 city_sky_s[6] = { 0, 14, 40, 70, 100, 130 };
 static const u8 hs_indigo[8][3] = { { 0, 0, 2 }, { 1, 0, 2 }, { 1, 0, 3 }, { 1, 1, 3 }, { 2, 1, 3 }, { 2, 1, 4 }, { 3, 1, 4 }, { 3, 2, 4 } };
 static const u8 hs_black[8][3]  = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 1, 0, 1 }, { 1, 0, 2 } };
 static u8 hs_cur[8][3];
@@ -397,39 +341,30 @@ void stage_build(void) {
     E[0].line = 0; E[0].flags = RAS_REGS; E[0].haze = rt; E[0].haze_n = 4;
 
     /* s < 0 */
-    if (!upper_sky) {
-        for (i = 0; i < 7; i++) ev_pal((s16)(S_AIR + sky_line[i] - sc), bg_sky(i));
-        ev_scroll((s16)(-88 - sc), bg_layer_x(0));
-        ev_scroll((s16)(-64 - sc), bg_layer_x(1));
-        ev_scroll((s16)(-38 - sc), nx);
+    if (upper_sky == UP_AIR) {
+        for (i = 0; i < 7; i++) stage_ev_pal((s16)(S_AIR + sky_line[i] - sc), bg_sky(i));
+        stage_ev_scroll((s16)(-88 - sc), bg_layer_x(0));
+        stage_ev_scroll((s16)(-64 - sc), bg_layer_x(1));
+        stage_ev_scroll((s16)(-38 - sc), nx);
     } else {
-        if (hs_t != sky_t) {
+        if (hs_t != g_sky_t) {
             u8 j;
-            hs_t = sky_t;
+            hs_t = g_sky_t;
             for (i = 0; i < 8; i++)
                 for (j = 0; j < 3; j++)
-                    hs_cur[i][j] = (u8)((hs_indigo[i][j] * (16u - sky_t) + hs_black[i][j] * sky_t + 8u) >> 4);
+                    hs_cur[i][j] = (u8)((hs_indigo[i][j] * (16u - g_sky_t) + hs_black[i][j] * g_sky_t + 8u) >> 4);
         }
         for (i = 0; i < 8; i++) {
             s16 l = (s16)(S_AIR2 + i * 24 - sc);
-            ev_pal(l, hs_cur[i]);
-            if (i == 0) ev_scroll(l, nx >> 2);                  /* 星の 3 層: 遠い・中・近い */
-            else if (i == 3) ev_scroll(l, nx >> 1);
-            else if (i == 6) ev_scroll(l, nx);
+            stage_ev_pal(l, hs_cur[i]);
+            if (i == 0) stage_ev_scroll(l, nx >> 2);                  /* 星の 3 層: 遠い・中・近い */
+            else if (i == 3) stage_ev_scroll(l, nx >> 1);
+            else if (i == 6) stage_ev_scroll(l, nx);
         }
     }
-    /* s >= 0: 都市。LEGION の揺れの帯(横のずれ)を空の色の帯と行の順に混ぜる */
-    ev_scroll((s16)(0 - sc), nx);
-    {
-        s16 bl[5]; s8 bo[5];
-        u8 nb = boss_bands(bl, bo), kb = 0;
-        for (i = 0; i < 6; i++) {
-            s16 l = (s16)(city_sky_s[i] - sc);
-            while (kb < nb && bl[kb] < l) { ev_scroll(bl[kb], (u16)(nx - bo[kb])); kb++; }
-            ev_pal(l, city_sky[i]);
-        }
-        while (kb < nb) { ev_scroll(bl[kb], (u16)(nx - bo[kb])); kb++; }
-    }
+    /* s >= 0: 地面(面のオーバレイが帯を出す) */
+    stage_ev_scroll((s16)(0 - sc), nx);
+    if (g_ovl_ready && g_ovl >= OVL_S1) ovl_bands(sc, nx);
     if (!sat_done) sat_entry();
     if (banner_t >= BAN_IN && banner_t < BAN_END) {
         s16 line = (s16)(BAN_LINE + (banner_t > BAN_SUCK ? (banner_t - BAN_SUCK) >> 1 : 0));
