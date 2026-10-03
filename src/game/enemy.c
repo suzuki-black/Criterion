@@ -93,6 +93,12 @@ static void spawn_wave(u8 type, s16 y0, s8 dir) {
             e->x = FX(232) - (s16)i * FX(6);
             e->y = dir > 0 ? FX(-16) - (s16)i * FX(22) : FX(PLAY_H + 16) + (s16)i * FX(22);
             e->vx = FX(-1) + 8; e->vy = dir > 0 ? FX(2) + 8 : FX(-2) - 8;
+        } else if (g_wave_mirror) {                      /* 逆走: 左から入る(軌道は左右を返したもの) */
+            e->x = FX(-16) - (s16)i * FX(24);
+            e->y0 = y0;
+            e->vx = FX(1) + 8; e->vy = 0; e->turned = 2;
+            e->phase = type == E_TOCK ? 32 : 0;
+            e->y = y0;
         } else {
             e->x = FX(272) + (s16)i * FX(24);
             e->y0 = y0;
@@ -117,6 +123,7 @@ static const Wave script_city[] = {               /* 都市: 砲台が主役。�
 };
 #define LOOP  1200
 u8 g_wave_set;
+u8 g_wave_mirror;
 static u16 wave_t;
 
 void enemy_waves(u8 set) { g_wave_set = set; wave_t = 0; }
@@ -203,10 +210,15 @@ static void move_enemy(Enemy *e) {
         e->x += e->vx;
         /* 軌道は x で決まる: 後続も同じ場所で同じ高さを通る */
         /* x / 3 と × 5 / 2 は割り算(ライブラリ呼び出し)を避けて掛け算とシフトで */
-        e->y = e->y0 + (((s16)g_sin64[(u8)((u8)(((u16)(PX(e->x) + 32) * 85u) >> 8) + e->phase) & 63] * 5) >> 1);
+        {
+            u16 px = (u16)(e->turned == 2 ? 256 - PX(e->x) : PX(e->x));   /* 左から来る編隊は左右を返す */
+            e->y = e->y0 + (((s16)g_sin64[(u8)((u8)(((px + 32) * 85u) >> 8) + e->phase) & 63] * 5) >> 1);
+        }
         if (e->x < FX(240) && e->x > FX(72) && (rnd8() < 2)) enemy_fire(e);
     }
-    if (e->x < FX(-16) || e->y < FX(-80) || e->y > FX(PLAY_H + 80)) kill_enemy(e, 0);
+    if (e->x < FX(-16) && e->turned != 2) kill_enemy(e, 0);
+    else if (e->x > FX(280) || e->y < FX(-80) || e->y > FX(PLAY_H + 80)) kill_enemy(e, 0);
+    else if (e->turned == 2 && e->x < FX(-200)) kill_enemy(e, 0);
 }
 
 void enemy_update(void) {

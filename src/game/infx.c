@@ -73,6 +73,7 @@ void infx_vram(void) {
     if ((u16)(sys_timer() - g_frame_t0) > INFX_DEADLINE) return;   /* 重いフレーム: 計算は次へ */
     n = 8;
     if (row == 0) angle = (u8)(angle + (mode == 1 ? 4 : 2));
+    rot1_hi = 0x38;
     rotor_1bpp32(ROT1_DST, angle, step, row, n);
     row += n;
     if (row >= 32) { row = 0; to_patterns(); ready = 1; }

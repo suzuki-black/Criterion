@@ -89,7 +89,7 @@ void bg_scroll(void);               /* 1 フレーム分スクロールを進め
 void bg_mix(u8 t);                  /* 空と雲の色: 0 = 夜 〜 16 = 夕焼け */
 const u8 *bg_sky(u8 band);          /* 空の帯(0..6)の今の色 R, G, B */
 u16  bg_layer_x(u8 l);              /* 雲の層(0 遠 / 1 中 / 2 近)の横位置 */
-extern u8 g_scroll_speed;           /* 1/4 ドット/フレーム単位 */
+extern s8 g_scroll_speed;           /* 1/4 ドット/フレーム単位(負 = 逆走。3 面) */
 void bg_fill_hud(RasEntry *e, u8 bi);   /* HUD 帯の項目(188 行)を作る */
 
 /* ---- 場面(指示書 4: 一本のフィルム。暗転しない) ---- */
@@ -123,6 +123,7 @@ void enemy_draw(void);
 void limit_break(void);             /* ∞: 画面の敵と弾を一掃 */
 enum { WAVES_NONE, WAVES_AIR, WAVES_CITY };
 void enemy_waves(u8 set);           /* 出現の台本を区間に合わせて切り替える(時刻は 0 から) */
+extern u8 g_wave_mirror;            /* 1 = 編隊を左から出す(3 面の逆走) */
 void enemy_spawn_spirit(u16 wx, u8 roof);
 void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy);   /* 固定小数点 */
 void enemy_shoot(s16 x, s16 y);     /* 自機を狙う */
@@ -174,6 +175,10 @@ extern u16 g_maplen;
 void stage_set_upper(u8 kind);
 void stage_load_strips(u8 bank, u16 off);   /* 短冊(8x188 × 32 本、24064 バイト)を少しずつページ 3 へ */
 void stage_reset_ground(void);              /* 地面を捨てる(次の面の短冊を読む前。地面が画面に出ていないとき) */
+extern u8 g_col_rev;                        /* 列の窓を左へずらす列数(逆走に備える。31 = 逆走、16 = 前後に揺れる。3 面) */
+extern u8 g_strip_xlat[32];                 /* 短冊の番号の置き換え(描くときに引く。3 面の高速の流線) */
+u8   stage_redraw_col(u16 wcol);            /* 世界の列 wcol を描き直す(地図を書き換えたとき。隔壁の開閉)。0 = 頼みがいっぱい */
+u8   stage_busy(void);                       /* 列の流し込み・描き替えが残っている(画面の BG に上書きする前に待つ) */
 void stage_banner(const char *text);        /* 面の開始表示 */
 void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */
 void stage_ev_pal(s16 line, const u8 *rgb);

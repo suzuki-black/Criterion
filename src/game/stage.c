@@ -57,7 +57,14 @@ static s16 tag[NBLK];
 static u8  strip_bank;
 static u16 strip_src;
 static u16 strip_off;              /* 短冊を ROM から読んだバイト数(STRIP_LEN で終わり。0xFFFF = 読まない) */
-static u16 col_done;               /* 描いた最後の世界の列 + 1 */
+static u16 col_done;               /* 描いた列の窓 [col_lo, col_done)(64 列まで) */
+static u16 col_lo;
+u8  g_col_rev;
+u8  g_strip_xlat[32];
+static u16 redraw_q[8];
+static u8  redraw_n;
+/* 欲しい列の窓 [lo, lo + 64) の左端: 画面の左端から g_col_rev 列だけ左(前進 0 / 逆走 31 / 前後 16) */
+static u16 win_lo(void) { return (u16)((g_wx >> 3) - g_col_rev); }
 static u16 cur_col;                /* 流している列 */
 static u8  col_b;                  /* その列の次のブロック(NBLK = 列を終えた) */
 static u8  jb0, jn, jstep;         /* 描き替え中のブロック(先頭・個数。jn = 0 で仕事なし)と進み */
@@ -92,13 +99,20 @@ void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte) {
 /* ---- 面から使う ---- */
 void stage_set_upper(u8 kind) { upper_sky = kind; pick_at = 0x7FFF; }
 void stage_load_strips(u8 bank, u16 off) { strip_bank = bank; strip_src = off; strip_off = 0; }
+u8 stage_redraw_col(u16 wcol) {
+    if ((u16)(wcol - col_lo) >= (u16)(col_done - col_lo)) return 1;   /* 窓の外(まだ描いていない。流れてきたときに描く) */
+    if (redraw_n >= 8) return 0;
+    redraw_q[redraw_n++] = wcol;
+    return 1;
+}
 u8 g_roll;
 
 /* 地面のブロックを「何も描いていない」にして、列の流し込みを止める(次の面の短冊を読む前) */
 void stage_reset_ground(void) {
     u8 b;
     for (b = 0; b < NBLK; b++) if (b != BLK_CONST && tag[b] >= 0 && tag[b] < 188) tag[b] = TAG_NONE;
-    strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0;
+    strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0; redraw_n = 0;
+    for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
 }
 void stage_banner(const char *text) { banner_text = text; banner_t = 1; }
 
@@ -111,6 +125,8 @@ void stage_start(void) {
     for (b = 0; b < NBLK; b++) tag[b] = b < BLK_CONST ? (s16)(b * 8 - 188) : TAG_NONE;
     tag[BLK_CONST] = -4;
     strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; banner_t = 0;
+    g_col_rev = 0; redraw_n = 0;
+    for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
     enemy_waves(WAVES_AIR);
     ovl_request(OVL_S1);
 }
@@ -130,11 +146,15 @@ void stage_update(void) {
      終える(CPU は待たない)。1 コマンドは最大 3 ブロック(8x24 = 96 バイト ≒ 0.5ms)。 */
 #define PUMP_BUDGET 330            /* S1990 タイマのカウント(≒ 20 ライン) */
 #define RUN_MAX     3
+#define RUN_LAG     12             /* 窓が 8 列以上遅れたら 1 コマンド 12 ブロック(8x96 ≒ 4.6ms)。3 面の最高速
+                                      (8 ドット/フレーム)で 3 ブロックずつでは 1 フレーム 1 列に追いつかず、
+                                      画面に古い列(リングの 64 列前)が見えた */
+static u8 run_max = RUN_MAX;       /* 流している列のコマンドの最大ブロック数 */
 
 static u8 strip_of(u16 wcol) {
     u16 m = (u16)(wcol - w0);
     if (wcol < w0 || m >= g_maplen) return 0;
-    return g_map[m];
+    return g_strip_xlat[g_map[m] & 31];
 }
 
 /* 次のコマンド(c_hmmv = 1 なら HMMV、c_star = 1 なら星を打つ) */
@@ -151,14 +171,28 @@ static void cmd_ring(u8 c, u8 b, u16 wcol, s16 s0, u8 n) {
 static u8 next_col_cmd(void) {
     for (;;) {
         if (col_b >= NBLK) {
-            if (col_done >= (u16)((g_wx >> 3) + 64)) return 0;
-            cur_col = col_done++; col_b = 0;
+            u16 lo = win_lo();
+            if (redraw_n) {                                   /* 描き直しの頼み(窓の中のものだけ) */
+                cur_col = redraw_q[--redraw_n];
+                if ((u16)(cur_col - col_lo) >= (u16)(col_done - col_lo)) continue;
+            } else if ((s16)(col_done - (u16)(lo + 64)) < 0) {   /* 右へ: 画面の左の外の列へ次の列 */
+                if ((s16)(col_done - lo) < 0) col_done = lo;  /* 遅れて窓の後ろへ流れ去った列は描かない */
+                run_max = (s16)(col_done - (u16)(lo + 56)) < 0 ? RUN_LAG : RUN_MAX;
+                cur_col = col_done++;
+                if ((u16)(col_done - col_lo) > 64) col_lo = (u16)(col_done - 64);
+            } else if ((s16)(col_lo - lo) > 0) {              /* 左へ(逆走): 画面の右の外の列へ前の列 */
+                if ((s16)(col_lo - (u16)(lo + 64)) > 0) col_lo = (u16)(lo + 64);
+                run_max = (s16)(col_lo - (u16)(lo + 8)) > 0 ? RUN_LAG : RUN_MAX;
+                cur_col = --col_lo;
+                if ((u16)(col_done - col_lo) > 64) col_done = (u16)(col_lo + 64);
+            } else return 0;
+            col_b = 0;
         }
         while (col_b < NBLK) {
             s16 t0 = tag[col_b];
             u8 n = 1;
             if (col_b == BLK_CONST || t0 < 0 || t0 >= 188) { col_b++; continue; }
-            while (n < RUN_MAX && col_b + n < NBLK && col_b + n != BLK_CONST && tag[col_b + n] == t0 + n * 8) n++;
+            while (n < run_max && col_b + n < NBLK && col_b + n != BLK_CONST && tag[col_b + n] == t0 + n * 8) n++;
             cmd_ring((u8)(cur_col & 63), col_b, cur_col, t0, n);
             col_b += n;
             return 1;
@@ -180,8 +214,8 @@ static u8 next_job_cmd(void) {
     }
     {
         u8 c = jstep;
-        u16 wv = g_wx >> 3;
-        cmd_ring(c, jb0, (u16)(wv + ((u8)(c - (u8)wv) & 63)), js, jn);   /* 窓 [wv, wv + 64) で列 c に入る列 */
+        u16 wv = win_lo();
+        cmd_ring(c, jb0, (u16)(wv + ((u8)(c - (u8)wv) & 63)), js, jn);   /* 窓 [lo, lo + 64) で列 c に入る列 */
         if (++jstep >= 64) jn = 0;
         return 1;
     }
@@ -254,8 +288,11 @@ void stage_pump(u16 budget) {
 
 /* 列と描き替えの仕事が残っているか(VDP の状態を読む前に C だけで調べる) */
 static u8 stage_work(void) {
-    return (u8)(jn || col_b < NBLK || col_done < (u16)((g_wx >> 3) + 64) || pick_at != (s16)(g_scam & ~7));
+    u16 lo = win_lo();
+    return (u8)(jn || col_b < NBLK || redraw_n || (s16)(col_done - (u16)(lo + 64)) < 0 || (s16)(col_lo - lo) > 0 ||
+                pick_at != (s16)(g_scam & ~7));
 }
+u8 stage_busy(void) { return stage_work(); }
 
 /* メインループの途中で(待たない): 列と描き替え、GHOST の待ち行列。
    ★仕事が無ければ VDP を読まずに戻る(CE を見るだけで I/O 5 回 ≒ 0.7 ライン。1 フレームに 3 回呼ぶ) */
@@ -273,18 +310,21 @@ void stage_pump_nb(void) {
      帯の色 1 はその高さの空の色にする(透けて見える)。 */
 #define BAN_LINE  172
 #define BAN_ROW   168              /* (BAN_LINE + 252) & 255 */
-#define BAN_IN    4                /* ここから見せる */
+#define BAN_IN    7                /* ここから見せる(3..6 は文字を書く) */
 #define BAN_SUCK  96               /* ここから吸い込む */
 #define BAN_END   (BAN_SUCK + 22)       /* 吸い込み: 帯の上端を 2 フレームに 1 行下げる(HUD の手前 6 行まで) */
 static u8 ban_regs[2];
 static u16 ban_x;
 
 static void banner_vram(void) {
+    if (banner_t <= 3 && vdp_cmd_busy()) return;            /* 塗りは VDP が空いてから(待つと遅れた。3 面の入り) */
     if (banner_t == 1) vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x11);      /* 1 フレームに 1 つ(VDP を待たない) */
     else if (banner_t == 2) vdp_hmmv(0, 768 + BAN_ROW - 8, 256, 24, 0x11);
-    else if (banner_t == 3) {
+    else if (banner_t >= 3 && banner_t < BAN_IN) {           /* 文字は 1 フレームに 2 行ずつ(一度に書くと 120 ライン。2 面の入りで遅れた) */
+        u8 r = (u8)((banner_t - 3) << 1);
         vdp_cmd_wait();
-        font_text(2, 40, (u8)(BAN_ROW + 4), 15, 1, banner_text);
+        font_text_row(2, 40, (u8)(BAN_ROW + 4), 15, 1, banner_text, r);
+        font_text_row(2, 40, (u8)(BAN_ROW + 4), 15, 1, banner_text, (u8)(r + 1));
         ban_x = 256;
     } else if (banner_t == BAN_END) {
         vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x00);       /* 起動ロゴの黒い区間へ戻す */
@@ -297,13 +337,15 @@ static void banner_vram(void) {
 
 void stage_vram(void) {
     if (banner_t) banner_vram();
-    ovl_step();                                               /* オーバレイの読み込み(1KB/フレーム) */
+    ovl_step();                                               /* オーバレイの読み込み(512 バイト/フレーム) */
     if (g_ovl_ready && g_ovl >= OVL_S1) ovl_vram();
     if (strip_off != STRIP_LEN) {                             /* 地面がまだ無い(0xFFFF)か、短冊を読んでいる */
         if (strip_off < STRIP_LEN) {                          /* 空中戦の間に短冊をページ 3 へ(256 バイト/フレーム) */
             rom_to_vram(strip_bank, (u16)(strip_src + strip_off), 1, (u16)(0x8000u + strip_off), 256);
             strip_off += 256;
-            if (strip_off >= STRIP_LEN) { strip_off = STRIP_LEN; col_done = (u16)((g_wx >> 3) + 64); pick_at = 0x7FFF; }   /* 以降の列は流しながら */
+            if (strip_off >= STRIP_LEN) {                     /* 以降の列は流しながら */
+                strip_off = STRIP_LEN; col_lo = win_lo(); col_done = (u16)(col_lo + 64); pick_at = 0x7FFF;
+            }
         }
         return;                                               /* ★流す列の仕事は短冊が揃ってから(col_done = 0 から何百列も空回りした) */
     }

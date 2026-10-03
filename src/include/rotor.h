@@ -23,7 +23,11 @@ void rotor_rows(u8 *dst, u8 rows);
 /* スプライト用(32x32 の 1bpp)。★元は ROT1_SRC(ページ 0 の RAM の 0x3800、1KB。CODE0 はその手前まで) */
 #define ROT1_SRC ((u8 *)0x3800)
 #define ROT1_DST ((u8 *)0x3C00)        /* 写し先の標準(128 バイト) */
-void rotor_1bpp_src(const u8 *bits);  /* 32x32 の 1bpp(128 バイト)を元として広げる */
+void rotor_1bpp_src(const u8 *bits);  /* 32x32 の 1bpp(128 バイト)を元として広げる(ROT1_SRC へ) */
+#define ROT1_SRC2 ((u8 *)0xE800)       /* 2 つ目の元の置き場(ページ 3、1KB。3 面の回転計の針) */
+#define ROT1_DST2 ((u8 *)0xEC00)       /* その写し先(128 バイト)。★スタック(0xF080 から下)との間は 0x300 ほど */
+void rotor_1bpp_src_at(const u8 *bits, u8 *dst);
+extern u8 rot1_hi;                     /* rotor_1bpp32 が読む元の上位: 0x38(ROT1_SRC)/ 0xE8(ROT1_SRC2) */
 void rotor_1bpp32(u8 *dst, u8 angle, u16 step, u8 row0, u8 rows);   /* 何行かずつ作れる */
 
 #endif /* ROTOR_H */

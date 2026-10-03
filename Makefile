@@ -16,7 +16,7 @@ M0_COMMON := $(BUILD)/m0_world.rel   # M0 の検証 ROM が共有する世界(sr
 
 GAME_SRCS := $(wildcard src/game/*.c)
 GAME_RELS := $(GAME_SRCS:src/game/%.c=$(BUILD)/g_%.rel)
-GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h $(BUILD)/s2_data.h
+GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h $(BUILD)/s2_data.h $(BUILD)/s3_data.h
 
 .PHONY: all m0 clean
 .SECONDARY:
@@ -65,11 +65,16 @@ $(BUILD)/stage2.stamp: tools/gen_stage2.py | $(BUILD)
 	python3 tools/gen_stage2.py $(BUILD) $(BUILD)/s2_data.h
 	touch $@
 $(BUILD)/s2_data.h: $(BUILD)/stage2.stamp
-$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp
+$(BUILD)/stage3.stamp: tools/gen_stage3.py | $(BUILD)
+	python3 tools/gen_stage3.py $(BUILD) $(BUILD)/s3_data.h
+	touch $@
+$(BUILD)/s3_data.h: $(BUILD)/stage3.stamp
+$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
 	    TDF=$(BUILD)/tdf.bin CITY_STRIPS=$(BUILD)/city_strips.bin CITY_MAP=$(BUILD)/city_map.bin \
-	    BOB=$(BUILD)/bob.bin S2_STRIPS=$(BUILD)/s2_strips.bin S2_MAP=$(BUILD)/s2_map.bin KG=$(BUILD)/kg.bin
+	    BOB=$(BUILD)/bob.bin S2_STRIPS=$(BUILD)/s2_strips.bin S2_MAP=$(BUILD)/s2_map.bin KG=$(BUILD)/kg.bin \
+	    S3_STRIPS=$(BUILD)/s3_strips.bin S3_MAP=$(BUILD)/s3_map.bin TACHO=$(BUILD)/tacho.bin
 	touch $@
 $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 
@@ -90,16 +95,18 @@ $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Mak
 #   別にリンクする。本体からは JP 表の番地(ovl_entries.rel)で呼ぶ。
 OVL_BASE := 0x0A00
 OVL_END  := 0x3800
-OVL_DBEG := 0xD000
+OVL_DBEG := 0xD200
 OVL_DEND := 0xD800
 OVL_TITLE_EXPORTS := title_load title_start title_update title_draw title_vram title_build
 OVL_STAGE_EXPORTS := ovl_init ovl_update ovl_logic ovl_draw ovl_vram ovl_bands
-OVLS := title s1 s2
+OVLS := title s1 s2 s3
 OVL_title_RELS := $(patsubst src/ovl/title/%.c,$(BUILD)/ov_title_%.rel,$(wildcard src/ovl/title/*.c))
 OVL_s1_RELS    := $(patsubst src/ovl/s1/%.c,$(BUILD)/ov_s1_%.rel,$(wildcard src/ovl/s1/*.c))
 OVL_s2_RELS    := $(patsubst src/ovl/s2/%.c,$(BUILD)/ov_s2_%.rel,$(wildcard src/ovl/s2/*.c))
 OVL_title_HDR  := title
 OVL_s2_HDR     := stage
+OVL_s3_RELS    := $(patsubst src/ovl/s3/%.c,$(BUILD)/ov_s3_%.rel,$(wildcard src/ovl/s3/*.c))
+OVL_s3_HDR     := stage
 OVL_s1_HDR     := stage
 OVL_BINS := $(OVLS:%=$(BUILD)/ovl_%.bin)
 
@@ -109,6 +116,9 @@ $(BUILD)/ov_s1_%.rel: src/ovl/s1/%.c src/ovl/s1/s1.h $(HDRS) src/game/game.h $(G
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ov_s2_%.rel: src/ovl/s2/%.c src/ovl/s2/s2.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+
+$(BUILD)/ov_s3_%.rel: src/ovl/s3/%.c src/ovl/s3/s3.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ovlhdr_title.s: tools/gen_ovl.py Makefile | $(BUILD)
@@ -149,7 +159,7 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(
 
 GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(OVL_BINS) tools/rompack.mjs
 	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin \
-	    --asset 120 $(BUILD)/ovl_title.bin --asset 122 $(BUILD)/ovl_s1.bin --asset 124 $(BUILD)/ovl_s2.bin
+	    --asset 120 $(BUILD)/ovl_title.bin --asset 122 $(BUILD)/ovl_s1.bin --asset 124 $(BUILD)/ovl_s2.bin --asset 126 $(BUILD)/ovl_s3.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

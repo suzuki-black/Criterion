@@ -509,6 +509,66 @@ pat('SAT', '''
 ................
 ''')
 
+# ---- 3 面 ----
+pat('SCAN', '\n'.join(['.......##.......'] * 16))           # Scanner の測定線(縦に並べる)
+# METRONOME の本体(32x48 の三角錐を 2 x 3 枚)
+_met = []
+for y in range(48):
+    w = 3 + y * 13 // 47
+    row = ''.join('#' if abs(x - 15.5) < w else '.' for x in range(32))
+    if y % 8 == 4: row = ''.join('.' if abs(x - 15.5) < w - 2 and x % 3 == 0 else c for x, c in enumerate(row))   # 目盛り
+    _met.append(row)
+for i, (r0, half) in enumerate([(0, 0), (0, 1), (16, 0), (16, 1), (32, 0), (32, 1)]):
+    pat(f'MET{i}', '\n'.join(r[half * 16:half * 16 + 16] for r in _met[r0:r0 + 16]))
+pat('MW', '''
+................
+................
+...##########...
+..############..
+.##..######..##.
+.##############.
+.#.#.#.#.#.#.#..
+.##############.
+.##############.
+.#.#.#.#.#.#.#..
+.##############.
+.##..######..##.
+..############..
+...##########...
+................
+................
+''')
+pat('DIG', '''
+................
+................
+.....######.....
+....##....##....
+...##.####.##...
+...#.##..##.#...
+...#.#....#.#...
+...#.#....#.#...
+...#.#....#.#...
+...#.##..##.#...
+...##.####.##...
+....##....##....
+.....######.....
+................
+................
+................
+''')
+
+def needle32():
+    """32x32 の回転計の針(右向き。中心の軸から右へ 15 ドット)。ROTOR の元"""
+    out = bytearray()
+    for y in range(32):
+        row = 0
+        for x in range(32):
+            dx, dy = x - 15.5, y - 15.5
+            on = (dx * dx + dy * dy < 12) or (0 <= dx < 15.5 and abs(dy) < 1.6 - dx / 14)
+            row = (row << 1) | (1 if on else 0)
+        out += row.to_bytes(4, 'big')
+    return bytes(out)
+
 def inf32():
     """32x32 の ∞(レムニスケート r^2 = a^2 cos 2θ の太線)。ROTOR(スプライト用)の元。1 行 4 バイト"""
     import math
@@ -544,6 +604,11 @@ def main(path):
         # ROTOR の元(32x32 の 1bpp)。infx.c だけが取り込む
         f.write('#ifdef SPRITE_INF32\nstatic const u8 spr_inf32[128] = {\n')
         b = inf32()
+        for i in range(0, 128, 16):
+            f.write('    ' + ', '.join(f'0x{v:02X}' for v in b[i:i + 16]) + ',\n')
+        f.write('};\n#endif\n\n')
+        f.write('#ifdef SPRITE_NEEDLE32\nstatic const u8 spr_needle32[128] = {\n')
+        b = needle32()
         for i in range(0, 128, 16):
             f.write('    ' + ', '.join(f'0x{v:02X}' for v in b[i:i + 16]) + ',\n')
         f.write('};\n#endif\n\n#endif /* SPRITE_DATA_H */\n')

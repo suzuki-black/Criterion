@@ -122,6 +122,7 @@ void rotor_4bpp(u8 *dst, u8 n, u8 angle, u16 step, u8 bg) {
    元は ROT1_SRC(ページ 0 の RAM、1 ドット 1 バイト = 1KB に広げたもの。rotor_1bpp_src で作る)。
    写し先は 32x32 の 1bpp(1 行 4 バイト、128 バイト)。1 行の中は 4bpp と同じく増分を足すだけ。 */
 static u8 rot1_bytes;
+u8 rot1_hi = 0x38;                 /* 元の置き場の上位(asm が読む) */
 
 /* 1 行(rot1_bytes × 8 ドット)を rot_dst へ */
 static void rotor1_row(void) __naked {
@@ -148,7 +149,9 @@ static void rotor1_row(void) __naked {
         rrca                       ; 上位 3 ビット = (v & 7) << 5、下位 2 ビット = v >> 3
         ld   l, a
         and  #3
-        add  a, #0x38              ; ROT1_SRC の上位
+        ld   h, a
+        ld   a, (_rot1_hi)         ; 元の置き場の上位(ROT1_SRC = 0x38、ROT1_SRC2 = 0xE8)
+        add  a, h
         ld   h, a
         ld   a, l
         and  #0xE0
@@ -180,14 +183,14 @@ static void rotor1_row(void) __naked {
 }
 
 /* 32x32 の 1bpp(128 バイト)を ROT1_SRC へ 1 ドット 1 バイトに広げる */
-void rotor_1bpp_src(const u8 *bits) {
-    u8 *d = ROT1_SRC;
+void rotor_1bpp_src_at(const u8 *bits, u8 *d) {
     u16 i;
     for (i = 0; i < 128; i++) {
         u8 b = bits[i], k;
         for (k = 0; k < 8; k++) { *d++ = (u8)(b >> 7); b <<= 1; }
     }
 }
+void rotor_1bpp_src(const u8 *bits) { rotor_1bpp_src_at(bits, ROT1_SRC); }
 
 /* 32x32 の 1bpp を角度・倍率つきで dst(128 バイト)へ。rows 行だけ(row0 から)作る */
 void rotor_1bpp32(u8 *dst, u8 angle, u16 step, u8 row0, u8 rows) {

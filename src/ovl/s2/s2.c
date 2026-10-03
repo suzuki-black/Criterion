@@ -110,6 +110,12 @@ void ovl_update(void) {
         if (sec_t == 60) { u8 i; for (i = 0; i < MAX_ESHOT; i++) g_eshot[i].on = 0; }
         if (g_scam_q > S_TOP * 16) g_scam_q -= 24;           /* 星空へ上がる */
         else if (sec_t > 120 && g_scroll_speed < 8 && !(sec_t & 15)) g_scroll_speed++;   /* 月の光の線へ加速 */
+        if (sec_t == 200) {                                   /* 3 面へ(このあと 2 面のコードは呼ばれない) */
+            g_scroll_speed = 4;
+            stage_banner("STAGE 3 / OVERDRIVE CORRIDOR");
+            ovl_request(OVL_S3);
+            g_sec = SEC2_OUT + 1;                              /* = 3 面の空中戦(SEC3_AIR) */
+        }
         break;
     default:
         break;

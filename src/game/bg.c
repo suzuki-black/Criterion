@@ -12,7 +12,7 @@
 #define SKY_BANDS 7
 
 static u16 scroll_q;                /* 近景の位置(1/4 ドット単位) */
-u8 g_scroll_speed = 4;              /* 1/4 ドット/フレーム単位(4 = 1 ドット/フレーム) */
+s8 g_scroll_speed = 4;              /* 1/4 ドット/フレーム単位(4 = 1 ドット/フレーム。負 = 逆走) */
 
 static u8 regs_h[2][8];
 u8 g_vscroll;                       /* プレイエリアの縦スクロール(R#23) */
@@ -187,5 +187,5 @@ void bg_init(void) {
 }
 
 void bg_scroll(void) {
-    scroll_q += g_scroll_speed;
+    scroll_q += (u16)(s16)g_scroll_speed;
 }
