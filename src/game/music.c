@@ -30,6 +30,7 @@ static const u8 sec_first[9] = { 7, 15, 24, 33, 44, 52, 55, 65, 255 };   /* 次�
 static const u8 stage_song[8] = { SONG_M04, SONG_M05, SONG_M06, SONG_M07, SONG_M08, SONG_M09, SONG_M10, SONG_M11 };
 static const s8 air_trans[8] = { 0, 2, 3, 4, 5, 6, 7, 8 };     /* 空中戦は面ごとに上がっていく */
 
+extern s8 snd_trans_next;
 static u8  want = 0xFE, sec_prev = 0xFF, ph_prev = 0xFF, bs_prev, calib_prev;
 static u16 mt;                                   /* 区間に入ってからのフレーム */
 static u8  v04;                                  /* 8 面の声を鳴らした */
@@ -110,10 +111,9 @@ void music_frame(u8 over) {
     want = w;
     if (w == SONG_M03 && g_bgm == SONG_M02) return;              /* 出撃のファンファーレが続けて鳴らす */
     if (w == SONG_M13 && g_bgm == SONG_J02) return;
-    g_snd_trans = (w == SONG_M03) ? air_trans[st] : 0;
-    if (w == SONG_M13) { bgm_play(SONG_J02); pcm_req(PCM_V02); return; }   /* 警告 → ボス曲 */
-    if (g_bgm == SONG_M03 && w == stage_song[st]) bgm_next(w);   /* 空中戦から面の曲へは小節の頭で */
-    else bgm_play(w);
+    snd_trans_next = (w == SONG_M03) ? air_trans[st] : 0;   /* 移調は次の曲の頭から(フェード中の曲の音程を変えない) */
+    if (w == SONG_M13) { bgm_fade(SONG_J02, 1); pcm_req(PCM_V02); return; }   /* 警告 → ボス曲(短いフェード) */
+    bgm_fade(w, g_bgm == SONG_M03 ? 4 : 1);         /* ★フェードアウトしてから: 空中戦 → 面の曲は約 1 秒、ほかは約 0.25 秒 */
 }
 
 extern u8 sfx_t, psg_mix;

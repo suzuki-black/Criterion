@@ -38,6 +38,7 @@ void snd_detect(void);        /* MSX-MUSIC を探す。★BIOS を使うので�
 void snd_init(void);          /* 音源の初期化(消音) */
 void bgm_play(u8 id);         /* すぐ切り替える(SND_NONE = 止める) */
 void bgm_next(u8 id);         /* 次の小節の頭で切り替える */
+void bgm_fade(u8 id, u8 step);   /* 今の曲をフェードアウトしてから切り替える(step フレームごとに 1 段、15 段) */
 void bgm_stop(void);
 void sfx(u8 id);
 void pcm_req(u8 id);          /* PCM を鳴らす(鳴っているものより優先度が低ければ無視)。声など必ず鳴らすもの */

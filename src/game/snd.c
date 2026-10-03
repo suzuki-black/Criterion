@@ -31,6 +31,8 @@ u8  g_bgm = SND_NONE;
 s8  g_snd_trans, g_snd_bend, g_snd_detune;
 u8  g_snd_tempo = 128;
 u8  g_snd_atten;
+s8  snd_trans_next;                   /* 次に始める曲の移調(music.c) */
+u8  snd_att;                          /* 実際の減衰 = 演出(g_snd_atten)とフェードの大きい方(asm が使う) */
 u16 g_snd_mute;
 u8  g_snd_bar;
 u16 g_snd_keyons;
@@ -496,7 +498,7 @@ static void seq_core(void) __naked {
         or   a
         ret  nz
     pv1:
-        ld   a, (_g_snd_atten)
+        ld   a, (_snd_att)
         ld   e, a
         ld   a, l
         sub  e
@@ -591,7 +593,7 @@ static void seq_core(void) __naked {
 
         ; ---- fm_volreg: L = 音色 << 4 | 減衰 ----
     fm_volreg:
-        ld   a, (_g_snd_atten)
+        ld   a, (_snd_att)
         add  a, #15
         sub  7 (ix)
         cp   #16
@@ -850,6 +852,7 @@ static void all_off(void) {
 static void start_song(u8 id) {
     all_off();
     g_bgm = id;
+    g_snd_trans = snd_trans_next;
     pend = SND_NONE; pend_bar = 0;
     if (id == SND_NONE || id >= SND_NSONG) { g_bgm = SND_NONE; return; }
     map_bank = song_bank = snd_song_bank[id];
@@ -859,14 +862,22 @@ static void start_song(u8 id) {
     snd_map();
     seq_start(snd_song_addr[id]);
     snd_unmap();
-    bend_w = g_snd_bend; detune_w = g_snd_detune; atten_w = g_snd_atten;
+    bend_w = g_snd_bend; detune_w = g_snd_detune; atten_w = snd_att;
 }
 
 /* ★曲の頭は全チャンネルが一度に鳴り、OPLL へ数十回書く(1 回約 30us)。場面の入りの重いフレームと重ならないよう、
    空き時間のあるフレームまで最大 30 フレーム待って始める(snd_frame) */
 static u8 play_req = 0xFE, play_wait;
-void bgm_play(u8 id) { play_req = id; play_wait = 0; }
+static u8 fade_to = 0xFE, fade_step, fade_t, fade_att;
+void bgm_play(u8 id) { play_req = id; play_wait = 0; fade_to = 0xFE; fade_att = 0; }
 void bgm_next(u8 id) { if (g_bgm == SND_NONE) bgm_play(id); else pend = id; }
+
+/* ★曲から別の曲へは、今の曲をフェードアウトしてから(step フレームごとに 1 段、15 段で無音 → 止めて次の曲)。
+   いきなりつなぐと「何これ?」になる(グラディウス系の作法も空中戦の曲をフェードアウトしてから面の曲) */
+void bgm_fade(u8 id, u8 step) {
+    if (g_bgm == SND_NONE || !step) { bgm_play(id); return; }
+    fade_to = id; fade_step = step; fade_t = 0;
+}
 void bgm_stop(void) { start_song(SND_NONE); }
 
 /* PSG のエンベロープ(毎フレーム) */
@@ -948,11 +959,23 @@ void snd_frame(void) {
         }
     }
     if (play_req != 0xFE && (g_snd_room || ++play_wait >= 30)) { start_song(play_req); play_req = 0xFE; }
+    if (fade_to != 0xFE && ++fade_t >= fade_step) {          /* フェードアウト */
+        fade_t = 0;
+        if (fade_att < 15) fade_att++;
+        else { u8 id = fade_to; start_song(SND_NONE); bgm_play(id); }
+    }
+    snd_att = g_snd_atten > fade_att ? g_snd_atten : fade_att;
     retune_f = (u8)(g_snd_bend != bend_w || g_snd_detune != detune_w);
-    retune_v = (u8)(g_snd_atten != atten_w);
+    retune_v = (u8)(snd_att != atten_w);
     if (retune_f | retune_v) {
-        bend_w = g_snd_bend; detune_w = g_snd_detune; atten_w = g_snd_atten;
+        bend_w = g_snd_bend; detune_w = g_snd_detune; atten_w = snd_att;
         retune();
+        if (retune_v) {                                       /* リズムの音量も(BD 2、HH 4 / SD 2、TOM 2 / CYM 2 に足す) */
+            u8 a = snd_att > 13 ? 13 : snd_att;
+            opll_w(0x36, (u8)(2 + a));
+            opll_w(0x37, (u8)(((4 + a > 15 ? 15 : 4 + a) << 4) | (2 + a)));
+            opll_w(0x38, (u8)(((2 + a) << 4) | (2 + a)));
+        }
     }
     psg_env();
     sfx_frame();
