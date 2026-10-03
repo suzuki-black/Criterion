@@ -181,12 +181,15 @@ extern u8 g_col_rev;                        /* 列の窓を左へずらす列数
 extern u8 g_strip_xlat[32];                 /* 短冊の番号の置き換え(描くときに引く。3 面の高速の流線) */
 u8   stage_redraw_col(u16 wcol);            /* 世界の列 wcol を描き直す(地図を書き換えたとき。隔壁の開閉)。0 = 頼みがいっぱい */
 u8   stage_col_ready(u16 wcol);           /* 世界の列 wcol が描き終わっている(上に BG を写してよい) */
-extern u8 g_bands_all;                      /* 1 = 面の ovl_bands がラスターの帯を全部出す(空 s < 0 の帯も) */
+extern u8 g_bands_all;
+extern u8 g_blk_skip;                       /* リングのブロック 0..n-1 を面が使う(列・描き替えで描かない) */
+RasEntry *stage_ev_raw(u8 line, u8 flags);  /* 並びを調べずに項目を足す(g_bands_all の面で、0 行の項目の後に 244 行など) */                      /* 1 = 面の ovl_bands がラスターの帯を全部出す(空 s < 0 の帯も) */
 void stage_ev_vscroll(s16 line, u8 r23);    /* 帯の縦スクロール(R#23)。スプライトもずれるので自機の入れない帯で */
 u8   stage_busy(void);                       /* 列の流し込み・描き替えが残っている(画面の BG に上書きする前に待つ) */
 void stage_banner(const char *text);        /* 面の開始表示 */
 void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */
 void stage_ev_pal(s16 line, const u8 *rgb);
+void stage_ev_pal_i(s16 line, u8 idx, const u8 *rgb);   /* 色 idx を(1 項目に 1 色)*/
 void stage_ev_haze(s16 line, u8 n, u8 *tbl);  /* HR ポーリング帯(R#27 を毎ライン。tbl は (r26, r27) × n) */
 void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */
 

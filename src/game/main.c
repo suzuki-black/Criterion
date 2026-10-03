@@ -89,11 +89,12 @@ static void screen_init(void) {
 
 /* 上の帯が SCREEN12 の間は、VRAM を下の区間でしか書けない(M0-4)。境界の項目(RAS_MARK)を待つ。
    待ったらフレーム待ちの基準も置き直す(ループの位相が境界に揃うため)。
-   ★g_split_n が 0 になったフレームも待つ(g_split_shown)。表示中のリストは前のフレームに作ったもので、まだ
-     244 行で SCREEN12 に切り替わる。待たずに書いたら、HUD の文字がプレイエリアへ化けて書かれた。 */
+   ★見るのは表示中のリスト(前のフレームに作ったもの)の分割 g_split_shown だけ。g_split_n が 0 になったフレームも
+     表示中のリストはまだ 244 行で SCREEN12 に切り替わる(待たずに書いたら HUD の文字がプレイエリアへ化けた)。
+     逆に g_split_n を立てたフレームの表示中のリストには境界の項目が無いので、待つと 370 ライン空回りした(6 面)。 */
 static void wait_vram_window(void) {
     u8 m0, i;
-    if (!g_split_n && !g_split_shown) return;
+    if (!g_split_shown) return;
     m0 = g_ras_mark;
     for (i = 0; i < 200 && g_ras_mark == m0; i++) {
         u16 t0 = sys_timer();

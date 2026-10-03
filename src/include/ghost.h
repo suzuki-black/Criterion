@@ -11,6 +11,7 @@
 
 void gq_hmmm(u16 sx, u16 sy, u16 dx, u16 dy, u16 nx, u16 ny);
 void gq_hmmv(u16 dx, u16 dy, u16 nx, u16 ny, u8 byte);
+void gq_line(u16 x, u16 y, s16 dx, s16 dy, u8 col);   /* (x, y) から (dx, dy) の線(論理なし) */
 u8   gq_free(void);                /* 空きの数 */
 void gq_pump(u16 budget);          /* budget = S1990 タイマのカウント(1 ライン ≒ 16.27) */
 void gq_clear(void);

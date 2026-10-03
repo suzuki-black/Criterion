@@ -193,7 +193,10 @@ void ovl_update(void) {
         cam_to = S_TOP * 16;
         if (sec_t == 240) {
             palette();
-            g_bands_all = 0;                                  /* ★6 面へのつなぎは 6 面を作るときに */
+            g_bands_all = 0;
+            stage_banner("STAGE 6 / GNOMON CITADEL");
+            ovl_request(OVL_S6);
+            g_sec = SEC5_OUT + 1;                              /* = 6 面の空中戦(SEC6_AIR) */
             return;
         }
         break;

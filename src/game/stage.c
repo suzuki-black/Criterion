@@ -115,7 +115,7 @@ void stage_reset_ground(void) {
     strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0; redraw_n = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
     g_wx &= 511u;                                             /* 世界の位置を面ごとに戻す(リングの位置は同じ) */
-    g_bands_all = 0;
+    g_bands_all = 0; g_blk_skip = 0;
 }
 void stage_banner(const char *text) {
     u8 i;
@@ -206,7 +206,7 @@ static u8 next_col_cmd(void) {
         while (col_b < NBLK) {
             s16 t0 = tag[col_b];
             u8 n = 1;
-            if (col_b == BLK_CONST || t0 < 0 || t0 >= 188) { col_b++; continue; }
+            if (col_b == BLK_CONST || t0 < 0 || t0 >= 188 || col_b < g_blk_skip) { col_b++; continue; }
             while (n < run_max && col_b + n < NBLK && col_b + n != BLK_CONST && tag[col_b + n] == t0 + n * 8) n++;
             cmd_ring((u8)(cur_col & 63), col_b, cur_col, t0, n);
             col_b += n;
@@ -260,6 +260,7 @@ static void job_pick(void) {
         if (b == BLK_CONST) continue;
         w = want_of(b, lo);
         if (w >= 188) continue;                               /* 都市の下(この面では見えない) */
+        if (b < g_blk_skip) continue;                         /* 面が使う行(6 面の YJK の帯) */
         if (w < 0 ? !upper_sky : !ready) continue;
         if (tag[b] == tag_of(w)) continue;
         if (bb < 0 || (dir >= 0 ? w < best : w > best)) { bb = (s8)b; best = w; }
@@ -314,10 +315,13 @@ u8 stage_col_ready(u16 wcol) {
     return (u8)(col_b >= NBLK || cur_col != wcol);
 }
 u8 g_bands_all;
+u8 g_blk_skip;                     /* ブロック 0..g_blk_skip-1(リングの 0..8n-1 行)を描かない */
+
 
 /* メインループの途中で(待たない): 列と描き替え、GHOST の待ち行列。
    ★仕事が無ければ VDP を読まずに戻る(CE を見るだけで I/O 5 回 ≒ 0.7 ライン。1 フレームに 3 回呼ぶ) */
 void stage_pump_nb(void) {
+    if (g_split_shown) return;                                /* ★上の帯が SCREEN12 の間は VRAM に触らない(窓は RAS_MARK の後) */
     if (strip_off == STRIP_LEN && stage_work()) stage_pump(0);
     if (gq_free() < GQ_N) gq_pump(0);
 }
@@ -405,6 +409,14 @@ static RasEntry *slot(s16 line, u8 kind) {
     c->line = (u8)line; c->flags = kind;
     return c;
 }
+/* 並びを調べずに項目を足す(0 行の項目のすぐ後に、帰線の 244 行の項目などを置くため) */
+RasEntry *stage_ev_raw(u8 line, u8 flags) {
+    RasEntry *c;
+    if (K >= RAS_MAX - 1) return 0;
+    c = &E[K++];
+    c->line = line; c->flags = flags;
+    return c;
+}
 void stage_ev_scroll(s16 line, u16 x) {
     RasEntry *c = slot(line, RAS_SCROLL);
     if (c) { c->r26 = VDP_R26(x); c->r27 = VDP_R27(x); }
@@ -435,10 +447,11 @@ void stage_ev_vscroll(s16 line, u8 r23) {
     vs_n++;
 }
 
-void stage_ev_pal(s16 line, const u8 *rgb) {
+void stage_ev_pal_i(s16 line, u8 idx, const u8 *rgb) {
     RasEntry *c = slot(line, RAS_PAL);
-    if (c) { c->pidx = 1; c->prb = (u8)((rgb[0] << 4) | rgb[2]); c->pg = rgb[1]; }
+    if (c) { c->pidx = idx; c->prb = (u8)((rgb[0] << 4) | rgb[2]); c->pg = rgb[1]; }
 }
+void stage_ev_pal(s16 line, const u8 *rgb) { stage_ev_pal_i(line, 1, rgb); }
 
 static const u8 hs_indigo[8][3] = { { 0, 0, 2 }, { 1, 0, 2 }, { 1, 0, 3 }, { 1, 1, 3 }, { 2, 1, 3 }, { 2, 1, 4 }, { 3, 1, 4 }, { 3, 2, 4 } };
 static const u8 hs_black[8][3]  = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 1, 0, 1 }, { 1, 0, 2 } };
@@ -507,4 +520,5 @@ tail:
 
     bg_fill_hud(&E[K], bi); K++;
     ras_commit(K);
+    g_split_shown = g_split_n;                                 /* 6 面の上の帯(SCREEN12)。VRAM の窓は RAS_MARK の後 */
 }

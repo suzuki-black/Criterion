@@ -46,6 +46,17 @@ void gq_hmmv(u16 dx, u16 dy, u16 nx, u16 ny, u8 byte) {
     p[12] = byte; p[14] = 0xC0;
 }
 
+/* LINE: (x, y) から (dx, dy) だけ。色 col(4 ビット)。6 面の GNOMON の針 */
+void gq_line(u16 x, u16 y, s16 dx, s16 dy, u8 col) {
+    u8 *p = push();
+    u16 ax = (u16)(dx < 0 ? -dx : dx), ay = (u16)(dy < 0 ? -dy : dy);
+    u8 arg = (u8)((dx < 0 ? 0x04 : 0) | (dy < 0 ? 0x08 : 0));
+    if (!p) return;
+    if (ay > ax) { u16 t = ax; ax = ay; ay = t; arg |= 0x01; }  /* 長い辺が Y */
+    rect(p, x, y, ax, ay);
+    p[12] = col; p[13] = arg; p[14] = 0x70;
+}
+
 /* ★前のコマンドの終わりを待つのも予算のうち(vdp_cmd_issue に任せると、2KB の HMMM の残りを丸ごと待った) */
 void gq_pump(u16 budget) {
     u16 t0 = sys_timer();
