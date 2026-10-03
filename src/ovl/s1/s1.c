@@ -31,7 +31,10 @@ static void enter(u8 sec) {
     if (sec == SEC_CITY2) boss_prepare(BOSS_PLUMB);           /* ROTOR で下げ振りの絵を作り始める */
     if (sec == SEC_BOSS) boss_start(BOSS_PLUMB);
     if (sec == SEC_ASCENT) { stage_set_upper(UP_SKY); g_scroll_speed = 8; pawn_reset(); }
-    if (sec == SEC_AIR2) { g_scroll_speed = 4; stage_banner("STAGE 2 / GRAVITY WELL"); }
+    if (sec == SEC_AIR2) {
+        g_scroll_speed = 4; stage_banner("STAGE 2 / GRAVITY WELL");
+        ovl_request(OVL_S2);                                  /* 2 面のオーバレイへ(このあと 1 面のコードは呼ばれない) */
+    }
 }
 
 void ovl_init(void) {

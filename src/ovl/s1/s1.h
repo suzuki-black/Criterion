@@ -20,6 +20,5 @@ void pawn_reset(void);
 void pawn_update(u8 active);
 void pawn_cell(s16 x, s16 y, u8 kind);  /* 空の地の 4x4: 0 / 1 = Pawn、2 = 空 */
 void pawn_move(s16 x, s16 y, u8 kind);  /* 4x8: 0 = 上 Pawn・下 空、1 = 上下 Pawn、2 = 上 空・下 Pawn */
-void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */
 
 #endif /* S1_H */

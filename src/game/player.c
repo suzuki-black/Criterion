@@ -11,6 +11,12 @@
 
 Player g_pl;
 Bullet g_pshot[MAX_PSHOT];
+u8  g_grav;
+s16 g_gx, g_gy, g_gcx, g_gcy;
+s16 g_pl_ymin, g_pl_ymax = PLAY_H - 16;
+static s16 gvx, gvy;               /* 重力でついた速さ(固定小数点) */
+
+#define GV_MAX FX(1) + 8            /* 重力の速さの上限(1.5 ドット/フレーム) */
 
 #define START_X  FX(32)
 #define START_Y  FX(84)
@@ -21,6 +27,7 @@ void player_init(void) {
     g_pl.x = START_X; g_pl.y = START_Y;
     g_pl.alive = 1; g_pl.invul = 120; g_pl.fire_cd = 0; g_pl.dead_t = 0;
     g_pl.lives = 3; g_pl.score = 0;
+    gvx = gvy = 0; g_grav = GRAV_NONE; g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16;
     for (i = 0; i < MAX_PSHOT; i++) g_pshot[i].on = 0;
 }
 
@@ -69,10 +76,25 @@ void player_update(void) {
         if (g_in & IN_DOWN)  g_pl.y += sp;
         if (g_in & IN_LEFT)  g_pl.x -= sp;
         if (g_in & IN_RIGHT) g_pl.x += sp;
-        if (g_pl.x < FX(8))  g_pl.x = FX(8);
-        if (g_pl.x > FX(232)) g_pl.x = FX(232);
-        if (g_pl.y < FX(0))  g_pl.y = FX(0);
-        if (g_pl.y > FX(PLAY_H - 16)) g_pl.y = FX(PLAY_H - 16);
+        /* 重力: 放っておくと流される。重力に逆らう向きに入れると、その向きの流れは止まる */
+        if (g_grav) {
+            s16 ax = g_gx, ay = g_gy;
+            if (g_grav == GRAV_CENTER) {
+                ax = (s16)((g_gcx - PX(g_pl.x) - 8) >> 5); ay = (s16)((g_gcy - PX(g_pl.y) - 8) >> 5);
+            }
+            gvx += ax; gvy += ay;
+            if (gvx > GV_MAX) gvx = GV_MAX; else if (gvx < -(GV_MAX)) gvx = -(GV_MAX);
+            if (gvy > GV_MAX) gvy = GV_MAX; else if (gvy < -(GV_MAX)) gvy = -(GV_MAX);
+            if ((g_in & IN_UP) && gvy > 0) gvy = 0;
+            if ((g_in & IN_DOWN) && gvy < 0) gvy = 0;
+            if ((g_in & IN_LEFT) && gvx > 0) gvx = 0;
+            if ((g_in & IN_RIGHT) && gvx < 0) gvx = 0;
+            g_pl.x += gvx; g_pl.y += gvy;
+        } else gvx = gvy = 0;
+        if (g_pl.x < FX(8))  { g_pl.x = FX(8); gvx = 0; }
+        if (g_pl.x > FX(232)) { g_pl.x = FX(232); gvx = 0; }
+        if (g_pl.y < FX(g_pl_ymin)) { g_pl.y = FX(g_pl_ymin); gvy = 0; }   /* 地形(天井)に当たって止まる */
+        if (g_pl.y > FX(g_pl_ymax)) { g_pl.y = FX(g_pl_ymax); gvy = 0; }   /* 地形(床) */
     }
     if (g_pl.fire_cd) g_pl.fire_cd--;
     if ((g_in & IN_A) && !g_pl.fire_cd) { fire(); g_pl.fire_cd = FIRE_CD; }

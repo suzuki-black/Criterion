@@ -471,6 +471,44 @@ def to_bytes(rows):
             out.append(b)
     return out
 
+# ---- 2 面 ----
+# COUNTERWEIGHT の錘(32x32 を 4 枚): 目盛りの刻まれた分銅
+def big32(name, rows):
+    rows = [r.ljust(32, '.')[:32] for r in rows] + ['.' * 32] * (32 - len(rows))
+    pat(name + '_TL', '\n'.join(r[:16] for r in rows[:16]))
+    pat(name + '_TR', '\n'.join(r[16:] for r in rows[:16]))
+    pat(name + '_BL', '\n'.join(r[:16] for r in rows[16:]))
+    pat(name + '_BR', '\n'.join(r[16:] for r in rows[16:]))
+_cw = []
+for y in range(32):
+    if y < 4: w = 4
+    elif y < 7: w = 6
+    else: w = 13 if y < 29 else 11
+    row = ''.join('#' if abs(x - 15.5) < w else '.' for x in range(32))
+    if 4 <= y < 7: row = ''.join('.' if abs(x - 15.5) < 2 else c for x, c in enumerate(row))   # 吊り穴
+    if y in (12, 18, 24): row = ''.join('.' if 6 < x < 25 and x % 2 else c for x, c in enumerate(row))   # 目盛り
+    _cw.append(row)
+big32('CW', _cw)
+# KILOGRAM を回る小衛星
+pat('SAT', '''
+................
+................
+................
+......####......
+.....#....#.....
+....#.####.#....
+####.######.####
+#..#.######.#..#
+####.######.####
+....#.####.#....
+.....#....#.....
+......####......
+................
+................
+................
+................
+''')
+
 def inf32():
     """32x32 の ∞(レムニスケート r^2 = a^2 cos 2θ の太線)。ROTOR(スプライト用)の元。1 行 4 バイト"""
     import math

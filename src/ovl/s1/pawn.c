@@ -40,28 +40,6 @@ void pawn_sheet_load(void) {
     }
 }
 
-/* 画面の矩形 → 表示リング(ページ 0|1)。リングの 512 幅と 256 行の継ぎ目で分ける。
-   fill = 0 なら (sx, sy) から HMMM、それ以外は byte で HMMV */
-void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte) {
-    u16 rx = (u16)((g_wx + (u16)x) & 511u);
-    u8 ry = (u8)(y + g_vscroll);
-    u8 w1 = w, h1 = h;
-    if ((u8)rx <= (u8)(256 - w) && ry <= (u8)(256 - h)) {     /* 継ぎ目をまたがない(ほとんど) */
-        u16 dy = (u16)(rx >= 256 ? 256u + ry : ry);
-        if (fill) gq_hmmv(rx & 255, dy, w, h, byte); else gq_hmmm(sx, sy, rx & 255, dy, w, h);
-        return;
-    }
-    if (rx < 256 && rx + w > 256) w1 = (u8)(256 - rx);
-    else if (rx >= 256 && rx + w > 512) w1 = (u8)(512 - rx);
-    if ((u16)ry + h > 256) h1 = (u8)(256 - ry);
-    {
-        u16 dx = rx & 255, dy = (u16)(rx >= 256 ? 256u + ry : ry);
-        if (fill) gq_hmmv(dx, dy, w1, h1, byte); else gq_hmmm(sx, sy, dx, dy, w1, h1);
-    }
-    if (w1 < w) ring_cmd((u16)(sx + w1), sy, (s16)(x + w1), y, (u8)(w - w1), h1, fill, byte);
-    if (h1 < h) ring_cmd(sx, (u16)(sy + h1), x, (s16)(y + h1), w, (u8)(h - h1), fill, byte);
-}
-
 /* 4x8(x, y = 上のマス): kind 0 = 上 A・下 空、1 = 上 A・下 A、2 = 上 空・下 A */
 void pawn_move(s16 x, s16 y, u8 kind) {
     ring_cmd((u16)(32u + kind * 4u), SHEET_Y, x, y, 4, 8, 0, 0);

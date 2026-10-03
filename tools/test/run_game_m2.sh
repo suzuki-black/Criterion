@@ -1,7 +1,7 @@
 #!/bin/sh
 # M2 の総合検証(GAME.ROM): 起動ロゴ → タイトル → 出撃 → 1 面全区間 → 2 面の空中戦まで、暗転なしで通るか。
 #   無敵・連射・上下移動で流す。ボス戦の間だけ自機をボスの高さへ置く(撃ち合いの腕は見ない。流れを見る)。
-#   1. 区間が順に進む: 空中戦 → 降下 → 都市前半 → 中ボス → 都市後半 → ボス → 上昇 → 2 面の空中戦
+#   1. 区間が順に進む: 空中戦 → 降下 → 都市前半 → 中ボス → 都市後半 → ボス → 上昇 → 2 面の空中戦(その先は M4 の検証)
 #   2. 中ボス・ボスを倒して進む(時間切れではない: 体力が 0 になった)
 #   3. 暗転なし: 起動ロゴが出てから最後まで、表示(R#1 の BL)が一度も切れず、フレームが進み続ける
 #   4. 遅れたフレーム 0(起動から 2 面の空中戦の途中まで)
@@ -63,7 +63,7 @@ for {set t 20} {\$t < 200} {incr t 4} { after time \$t [list key 8 0x20 0.6]; af
 proc finish {} {
   global f
   set late [rd16 [expr {$ST+4}]]
-  check sections [expr {\$::seq eq {0 1 2 3 4 5 6 7}}] "順=\$::seq"
+  check sections [expr {[lrange \$::seq 0 7] eq {0 1 2 3 4 5 6 7}}] "順=\$::seq"
   check legion [expr {\$::minhp(3) == 0}] "最小の体力=\$::minhp(3)"
   check plumb [expr {\$::minhp(5) == 0}] "最小の体力=\$::minhp(5)"
   check no_blackout [expr {\$::blank == 0 && \$::stall == 0}] "表示が切れた回数=\$::blank 止まった回数=\$::stall"
@@ -78,7 +78,7 @@ proc finish {} {
   close \$f; exit
 }
 # 2 面の空中戦に入って 12 秒で終える(入らなければ 200 秒で打ち切り)
-proc wait_end {} { if {\$::last == 7 && [machine_info time] > \$::t_sec(7) + 12} { finish } elseif {[machine_info time] > 200} { finish } else { after time 0.5 wait_end } }
+proc wait_end {} { if {[info exists ::t_sec(7)] && [machine_info time] > \$::t_sec(7) + 12} { finish } elseif {[machine_info time] > 200} { finish } else { after time 0.5 wait_end } }
 after time 30 wait_end
 after time 60 { screenshot -raw "$OUT/m2_city.png" }
 TCL

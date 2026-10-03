@@ -67,9 +67,39 @@ static u8  hs_t;                   /* hs_cur を求めたときの sky_t */
 static u8  banner_t;               /* 面の開始表示の進み(0 = なし) */
 static const char *banner_text;
 
+/* 画面の矩形 → 表示リング(ページ 0|1)。リングの 512 幅と 256 行の継ぎ目で分ける。
+   fill = 0 なら (sx, sy) から HMMM、それ以外は byte で HMMV */
+void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte) {
+    u16 rx = (u16)((g_wx + (u16)x) & 511u);
+    u8 ry = (u8)(y + g_vscroll);
+    u8 w1 = w, h1 = h;
+    if ((u8)rx <= (u8)(256 - w) && ry <= (u8)(256 - h)) {     /* 継ぎ目をまたがない(ほとんど) */
+        u16 dy = (u16)(rx >= 256 ? 256u + ry : ry);
+        if (fill) gq_hmmv(rx & 255, dy, w, h, byte); else gq_hmmm(sx, sy, rx & 255, dy, w, h);
+        return;
+    }
+    if (rx < 256 && rx + w > 256) w1 = (u8)(256 - rx);
+    else if (rx >= 256 && rx + w > 512) w1 = (u8)(512 - rx);
+    if ((u16)ry + h > 256) h1 = (u8)(256 - ry);
+    {
+        u16 dx = rx & 255, dy = (u16)(rx >= 256 ? 256u + ry : ry);
+        if (fill) gq_hmmv(dx, dy, w1, h1, byte); else gq_hmmm(sx, sy, dx, dy, w1, h1);
+    }
+    if (w1 < w) ring_cmd((u16)(sx + w1), sy, (s16)(x + w1), y, (u8)(w - w1), h1, fill, byte);
+    if (h1 < h) ring_cmd(sx, (u16)(sy + h1), x, (s16)(y + h1), w, (u8)(h - h1), fill, byte);
+}
+
 /* ---- 面から使う ---- */
 void stage_set_upper(u8 kind) { upper_sky = kind; pick_at = 0x7FFF; }
 void stage_load_strips(u8 bank, u16 off) { strip_bank = bank; strip_src = off; strip_off = 0; }
+u8 g_roll;
+
+/* 地面のブロックを「何も描いていない」にして、列の流し込みを止める(次の面の短冊を読む前) */
+void stage_reset_ground(void) {
+    u8 b;
+    for (b = 0; b < NBLK; b++) if (b != BLK_CONST && tag[b] >= 0 && tag[b] < 188) tag[b] = TAG_NONE;
+    strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0;
+}
 void stage_banner(const char *text) { banner_text = text; banner_t = 1; }
 
 /* 1 面の空中戦から(出撃の終わりに title.c が呼ぶ)。面の中身は 1 面のオーバレイを読み込んでから */
@@ -77,7 +107,7 @@ void stage_start(void) {
     u8 b;
     g_wx = bg_layer_x(2);
     g_scam_q = S_AIR * 16; g_scam = S_AIR; dir = 1;
-    upper_sky = UP_AIR; g_sky_t = 0; g_sec = 0; g_maplen = 0; g_boss_state = BS_NONE; g_boss_dmg = 0;
+    upper_sky = UP_AIR; g_sky_t = 0; g_sec = 0; g_maplen = 0; g_roll = 0; g_boss_state = BS_NONE; g_boss_dmg = 0;
     for (b = 0; b < NBLK; b++) tag[b] = b < BLK_CONST ? (s16)(b * 8 - 188) : TAG_NONE;
     tag[BLK_CONST] = -4;
     strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; banner_t = 0;
@@ -316,6 +346,17 @@ void stage_ev_scroll(s16 line, u16 x) {
     RasEntry *c = slot(line, RAS_SCROLL);
     if (c) { c->r26 = VDP_R26(x); c->r27 = VDP_R27(x); }
 }
+/* HR ポーリング帯(R#27 だけ毎ライン。tbl は (r26, r27) の組 × n)。前の項目からは RAS_GAP あける */
+void stage_ev_haze(s16 line, u8 n, u8 *tbl) {
+    RasEntry *c;
+    if (line < 0) line = 0;
+    c = &E[K - 1];
+    if (line < (s16)c->line + RAS_GAP) line = (s16)(c->line + RAS_GAP);
+    if (line + n >= PLAY_H - RAS_GAP || K >= RAS_MAX - 1) return;
+    c = &E[K++];
+    c->line = (u8)line; c->flags = RAS_HAZE | RAS_HAZE_FINE; c->haze = tbl; c->haze_n = n;
+}
+
 void stage_ev_pal(s16 line, const u8 *rgb) {
     RasEntry *c = slot(line, RAS_PAL);
     if (c) { c->pidx = 1; c->prb = (u8)((rgb[0] << 4) | rgb[2]); c->pg = rgb[1]; }
@@ -337,7 +378,7 @@ void stage_build(void) {
     sat_regs = regs_b[bi];
     sat_regs[0] = 5; sat_regs[1] = spr_regs.r5b; sat_regs[2] = 11; sat_regs[3] = spr_regs.r11b;
     rt[0] = 5; rt[1] = spr_regs.r5a; rt[2] = 11; rt[3] = spr_regs.r11a;
-    rt[4] = 2; rt[5] = 0x3F; rt[6] = 23; rt[7] = g_vscroll;
+    rt[4] = 2; rt[5] = 0x3F; rt[6] = 23; rt[7] = (u8)(g_vscroll + g_roll);
     E[0].line = 0; E[0].flags = RAS_REGS; E[0].haze = rt; E[0].haze_n = 4;
 
     /* s < 0 */

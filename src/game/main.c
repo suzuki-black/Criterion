@@ -186,7 +186,7 @@ void main(void) {
             g_slow = 1; g_stat.slow++;   /* ここまでで重かった: スプライトは前のフレームのまま */
         }
         if (!g_slow) {
-            spr_voff = g_vscroll;        /* スプライトの Y はプレイエリアの R#23 を足して表へ */
+            spr_voff = (u8)(g_vscroll + g_roll);   /* スプライトの Y はプレイエリアの R#23 を足して表へ(ロールは画面だけ) */
             spr_begin();
             if (g_phase <= PH_TITLE) title_draw();
             else { player_draw(); infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */

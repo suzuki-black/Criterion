@@ -135,6 +135,15 @@ extern u8  g_boss_dmg;              /* 受け取っていない傷(boss_damage �
 extern u16 g_lg_on[26];             /* LEGION の積んであるマス(検証も読む) */
 extern s16 g_lg_x0;
 void boss_damage(u8 n);             /* LIMIT BREAK など: 次のフレームで面が受け取る */
+
+/* ---- 重力(2 面。指示書 5.2)。自機・敵弾・アイテムに効く ----
+   g_grav: GRAV_NONE / GRAV_DIR(一様: g_gx, g_gy。1/16 ドット/フレーム² 単位)/ GRAV_CENTER(画面の (g_gcx, g_gcy)
+   へ、距離に比例: 1 ドット離れるごとに 1/512 ドット/フレーム²)。g_pl_ymin / g_pl_ymax: 自機の上下の限り(地形) */
+enum { GRAV_NONE, GRAV_DIR, GRAV_CENTER };
+extern u8  g_grav;
+extern s16 g_gx, g_gy, g_gcx, g_gcy;
+extern s16 g_pl_ymin, g_pl_ymax;    /* ドット(自機の左上の y) */
+extern u8  g_roll;                  /* 画面の縦のロール(R#23 に足す。スプライトは動かさない) */
 /* ---- ∞ の紋章(infx.c。ROTOR のスプライト用) ---- */
 void infx_start(s16 x, s16 y);      /* 確定の演出: (x, y) から画面の中央へ */
 void infx_title(u8 on);             /* タイトルの紋章 */
@@ -164,8 +173,11 @@ extern u8  g_map[MAP_MAX];
 extern u16 g_maplen;
 void stage_set_upper(u8 kind);
 void stage_load_strips(u8 bank, u16 off);   /* 短冊(8x188 × 32 本、24064 バイト)を少しずつページ 3 へ */
+void stage_reset_ground(void);              /* 地面を捨てる(次の面の短冊を読む前。地面が画面に出ていないとき) */
 void stage_banner(const char *text);        /* 面の開始表示 */
 void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */
 void stage_ev_pal(s16 line, const u8 *rgb);
+void stage_ev_haze(s16 line, u8 n, u8 *tbl);  /* HR ポーリング帯(R#27 を毎ライン。tbl は (r26, r27) × n) */
+void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */
 
 #endif /* GAME_H */

@@ -218,6 +218,10 @@ void enemy_update(void) {
     for (i = 0; i < MAX_ESHOT; i++) {
         Bullet *b = &g_eshot[i];
         if (!b->on) continue;
+        if (g_grav) {                                    /* 重力: 弾は放物線(中心へはらせん)を描く */
+            if (g_grav == GRAV_DIR) { b->vx += g_gx; b->vy += g_gy; }
+            else { b->vx += (s16)((g_gcx - PX(b->x)) >> 5); b->vy += (s16)((g_gcy - PX(b->y)) >> 5); }
+        }
         b->x += b->vx; b->y += b->vy;
         if (b->x < FX(-8) || b->x > FX(264) || b->y < FX(-8) || b->y > FX(PLAY_H)) { b->on = 0; continue; }
         if (g_pl.alive) {
@@ -270,8 +274,12 @@ void enemy_update(void) {
         if (!it->on) continue;
         it->t++;
         it->x += it->vx; it->y += it->vy;
-        if (it->vy > 0) it->vy -= 1; else if (it->vy < 0) it->vy += 1;   /* 散らばった後は止まる */
-        if (it->vx > FX(-1) + 8) it->vx -= 1;
+        if (g_grav == GRAV_DIR) { it->vx += g_gx; it->vy += g_gy; }   /* 重力: Quanta も落ちる */
+        else if (g_grav == GRAV_CENTER) { it->vx += (s16)((g_gcx - PX(it->x)) >> 6); it->vy += (s16)((g_gcy - PX(it->y)) >> 6); }
+        else {
+            if (it->vy > 0) it->vy -= 1; else if (it->vy < 0) it->vy += 1;   /* 散らばった後は止まる */
+            if (it->vx > FX(-1) + 8) it->vx -= 1;
+        }
         if (it->x < FX(-16) || it->y < FX(-8) || it->y > FX(PLAY_H)) { it->on = 0; continue; }
         if (g_pl.alive) {
             s16 dx = PX(it->x) - (PX(g_pl.x) + 8), dy = PX(it->y) - (PX(g_pl.y) + 8);
