@@ -36,6 +36,8 @@ volatile u16 pcm_left;
 volatile u8  pcm_pend;         /* 1 = 次の VBLANK で pcm_on にする(フレームの途中から始めない) */
 const u8 *volatile pcm_next_ptr;   /* 鳴り終わったら続けて鳴らすデータ(pcm_queue)。切れ目を作らない */
 volatile u16 pcm_next_left;
+volatile u8  ras_pstep = 2;     /* 刻みの幅(ライン)。2 = 7.9kHz(M0)、4 = 3.9kHz(本体。CPU の消費が半分。M7) */
+volatile u8  ras_pmask = 1;     /* ras_pstep - 1 */
 volatile u8  ras_regs_hit;      /* 刻み方式: この刻みでレジスタ列(RAS_REGS)の項目を適用した */
 volatile u8  pcm_end;          /* 1 = 刻み 212 で刻み方式をやめる(pcm_stop) */
 
@@ -181,9 +183,11 @@ void ras_isr_bios(void) __naked {
         ; -- 刻み方式: 1) 次の刻みを先に仕込む(D = この刻みの表示ライン) --
         ld   a, (_ras_tl)
         ld   d, a
-        add  a, #2
+        ld   e, a
+        ld   a, (_ras_pstep)
+        add  a, e
         cp   #246
-        jr   nz, 00011$
+        jr   c, 00011$
         xor  a                     ; 244 の次は 0(246..255 の割込みは起きない)
     00011$:
         call ras_arm_tl
@@ -270,7 +274,9 @@ void ras_isr_bios(void) __naked {
         ld   a, (_ras_tl)
         cp   #212
         jr   z, 00017$             ; 刻み 212(VBLANK の仕事)は飛ばさない
-        add  a, #2
+        ld   e, a
+        ld   a, (_ras_pstep)
+        add  a, e
         cp   #246
         jr   c, 00017$
         xor  a
@@ -397,8 +403,10 @@ void ras_isr_bios(void) __naked {
         in   a, (0x99)
         and  #0x20
         jr   z, 00041$
-        bit  0, b
-        call nz, pcm_out
+        ld   a, (_ras_pmask)       ; 刻みの幅ごとに 1 つ(2 なら 8 個、4 なら 4 個)
+        and  b
+        dec  a
+        call z, pcm_out
         djnz 00040$
         ld   a, (_g_vdp_status_rest)
         out  (0x99), a
@@ -517,7 +525,8 @@ void ras_apply_next(void) __naked {
         ld   a, (_pcm_on)
         or   a
         jr   z, 00020$
-        ld   d, #2                 ; 今の刻みのサンプルは出し済み。次は HR 2 本目
+        ld   a, (_ras_pstep)       ; 今の刻みのサンプルは出し済み。次は刻みの幅だけ後の HR
+        ld   d, a
     00020$:
         ld   e, 7 (ix)             ; ライン数
         ld   l, 8 (ix)
@@ -583,11 +592,18 @@ void ras_apply_next(void) __naked {
         ld   a, (_pcm_fill)
         or   a
         call nz, pcm_out
+        ld   a, (_ras_pstep)
+        ld   b, a
         ld   a, (_ras_tl)
-        sub  #2                    ; 帯を始めた刻み(入口で +2 を仕込み済み)
+        sub  b                     ; 帯を始めた刻み(入口で 1 つ先を仕込み済み)
         add  a, 7 (ix)
         add  a, #4
-        and  #0xFE
+        add  a, b
+        dec  a
+        ld   c, a                  ; 刻みの幅の倍数へ切り上げ
+        ld   a, (_ras_pmask)
+        cpl
+        and  c
         call ras_arm_tick
     00013$:
         pop  bc
@@ -628,7 +644,8 @@ void ras_apply_next(void) __naked {
         ret  z
         dec  d
         ret  nz
-        ld   d, #2
+        ld   a, (_ras_pstep)
+        ld   d, a
         ld   a, (_pcm_fill)
         or   a
         ret  z

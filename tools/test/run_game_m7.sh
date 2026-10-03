@@ -49,7 +49,12 @@ proc key {row bit dur} { keymatrixdown \$row \$bit; after time \$dur [list keyma
 set ::seq {}; set ::last -1; set ::blank 0; set ::stall 0; set ::fr_prev 0; set ::late_prev 0; set ::late_at {}
 set ::ending_done 0; set ::g7 0; set ::z3 0
 set ::pcms {}; set ::da 0; set ::phsong {}; set ::k_prev 0
-proc pcm_w {} { if {\$::wp_last_value != 255 && [lsearch \$::pcms \$::wp_last_value] < 0} { lappend ::pcms \$::wp_last_value } }
+proc pcm_w {} {
+  set v \$::wp_last_value
+  if {\$v == 255} return
+  if {[lsearch \$::pcms \$v] < 0} { lappend ::pcms \$v }
+  if {[info exists ::pcmn(\$v)]} { incr ::pcmn(\$v) } else { set ::pcmn(\$v) 1 }
+}
 debug set_watchpoint write_mem $PCMC {} pcm_w
 debug set_watchpoint write_io 0xA4 {} {incr ::da}
 set ::tf [open "$OUT/opll.log" w]; set ::oad 0
@@ -162,6 +167,7 @@ proc finish {} {
   check ticks [expr {\$rr == 0}] "刻みの張り直し=\$rr"
   puts \$f "区間: \$::seq"
   puts \$f "PCM が鳴っていた(0.25 秒単位): [array get ::pcmt]"
+  puts \$f "PCM ごとの鳴らした回数(番号 回数): [array get ::pcmn]"
   if {\$::fails} { puts \$f "判定: NG (\$::fails)" } else { puts \$f "判定: OK" }
   close \$f; exit
 }

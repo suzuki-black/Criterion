@@ -9,7 +9,31 @@
 """
 import math, random
 
-RATE = 15734.264 / 2
+RATE = 15734.264 / 4                  # 出力: 4 ラインに 1 回(3.9kHz)。★2 ライン(7.9kHz)は刻み方式が CPU の約 4 割を使い、ゲーム中ほぼ鳴らせなかった(M7)
+OS = 8
+RH = RATE * OS                        # 合成はこの 8 倍で行い、低域通過をかけて間引く(低い周波数で直接作ると折り返し雑音が出る)
+
+
+def decimate(sig):
+    """窓つき sinc の低域通過(出力のナイキストの 9 割)をかけて OS 分の 1 に間引く"""
+    taps = 8 * OS + 1
+    fc = 0.45 / OS
+    h = []
+    for k in range(taps):
+        m = k - taps // 2
+        v = 2 * fc if m == 0 else math.sin(2 * math.pi * fc * m) / (math.pi * m)
+        w = 0.42 - 0.5 * math.cos(2 * math.pi * k / (taps - 1)) + 0.08 * math.cos(4 * math.pi * k / (taps - 1))
+        h.append(v * w)
+    out = []
+    n = len(sig)
+    for i in range(0, n, OS):
+        acc = 0.0
+        for k in range(taps):
+            j = i + k - taps // 2
+            if 0 <= j < n:
+                acc += sig[j] * h[k]
+        out.append(acc)
+    return out
 
 
 def to_u8(sig, gain=1.0, bits=8):
@@ -30,11 +54,11 @@ def to_u8(sig, gain=1.0, bits=8):
 
 def orch(notes, dur, tau, seed):
     rnd = random.Random(seed)
-    n = int(RATE * dur)
+    n = int(RH * dur)
     ph = [rnd.random() for _ in notes]
     out = []
     for i in range(n):
-        t = i / RATE
+        t = i / RH
         env = min(1.0, t / 0.004) * math.exp(-t / tau)
         v = 0.0
         for k, f in enumerate(notes):
@@ -57,11 +81,11 @@ def noise_lp(n, seed, a):
 
 def cymbal_rev(dur):
     rnd = random.Random(77)
-    n = int(RATE * dur)
+    n = int(RH * dur)
     fr = [540, 800, 1230, 1660, 2210, 2970, 3400]
     out = []
     for i in range(n):
-        t = i / RATE
+        t = i / RH
         v = sum(1.0 if ((f * t) % 1.0) < 0.5 else -1.0 for f in fr) / len(fr)
         v = v * 0.5 + (rnd.random() * 2 - 1) * 0.8
         env = math.exp(-(dur - t) / 0.28) * min(1.0, (dur - t) / 0.01)
@@ -71,22 +95,22 @@ def cymbal_rev(dur):
 
 def snare(dur):
     rnd = random.Random(55)
-    n = int(RATE * dur)
+    n = int(RH * dur)
     out = []
     for i in range(n):
-        t = i / RATE
+        t = i / RH
         v = (rnd.random() * 2 - 1) * math.exp(-t / 0.05) + math.sin(2 * math.pi * 185 * t) * math.exp(-t / 0.03)
         out.append(v)
     return out
 
 
 def explosion(dur):
-    n = int(RATE * dur)
+    n = int(RH * dur)
     lo = noise_lp(n, 99, 0.08)
     hi = noise_lp(n, 98, 0.5)
     out = []
     for i in range(n):
-        t = i / RATE
+        t = i / RH
         env = min(1.0, t / 0.005) * math.exp(-t / 0.22)
         out.append((lo[i] * 3.0 + hi[i] * math.exp(-t / 0.05)) * env)
     return out
@@ -115,8 +139,8 @@ PH = {   # 長さ, 有声, 雑音, 雑音の中心(Hz)
 
 
 def resonator(f, bw):
-    r = math.exp(-math.pi * bw / RATE)
-    c1 = 2 * r * math.cos(2 * math.pi * f / RATE)
+    r = math.exp(-math.pi * bw / RH)
+    c1 = 2 * r * math.cos(2 * math.pi * f / RH)
     c2 = -r * r
     return c1, c2, 1 - c1 - c2
 
@@ -126,7 +150,7 @@ def voice(phs, f0=105.0, f1=None, speed=1.0, seed=1):
     seg = []
     for p in phs:
         d, vo, no, nc = PH[p]
-        seg.append((p, int(RATE * d / 1000 * speed), vo, no, nc))
+        seg.append((p, int(RH * d / 1000 * speed), vo, no, nc))
     total = sum(s[1] for s in seg)
     f1 = f1 if f1 is not None else f0 * 0.8
     out = []
@@ -151,7 +175,7 @@ def voice(phs, f0=105.0, f1=None, speed=1.0, seed=1):
                 cur = [fm[k] * (1 - w) + nxt[k] * w for k in range(3)]
             else:
                 cur = list(fm)
-            phase += f0t / RATE
+            phase += f0t / RH
             src = 0.0
             if phase >= 1.0:
                 phase -= 1.0
@@ -159,13 +183,13 @@ def voice(phs, f0=105.0, f1=None, speed=1.0, seed=1):
             src = src * vo
             v = src
             for k, (f, bw) in enumerate(zip(cur, (70, 100, 160))):
-                c1, c2, g = resonator(min(f, RATE / 2 - 200), bw)
+                c1, c2, g = resonator(min(f, RH / 2 - 200), bw)
                 yk = g * v + c1 * y[k][0] + c2 * y[k][1]
                 y[k][1] = y[k][0]
                 y[k][0] = yk
                 v = yk
             if no:
-                c1, c2, g = resonator(min(nc, RATE / 2 - 250), 900)
+                c1, c2, g = resonator(min(nc, RH / 2 - 250), 900)
                 x = rnd.random() * 2 - 1
                 z = g * x + c1 * yn[0] + c2 * yn[1]
                 yn[1] = yn[0]
@@ -183,18 +207,18 @@ def voice(phs, f0=105.0, f1=None, speed=1.0, seed=1):
 def build():
     """[(名前, 優先度, バイト列)]。優先度: 音声 4 > オケヒ 3 > 爆発 2 > スネア 1"""
     res = []
-    res.append(('P01', 3, to_u8(orch([73.42, 146.83, 220.0, 293.66, 369.99, 440.0, 587.33], 0.40, 0.11, 1990))))
-    res.append(('P02', 3, to_u8(orch([73.42, 146.83, 220.0, 293.66, 349.23, 440.0, 587.33], 0.40, 0.11, 1991))))
-    res.append(('P03', 3, to_u8(orch([61.74, 123.47, 174.61, 246.94, 293.66, 415.30], 0.60, 0.20, 1992))))
-    res.append(('P04', 2, to_u8(cymbal_rev(0.80))))
-    res.append(('P05', 1, to_u8(snare(0.15))))
-    res.append(('P06', 2, to_u8(explosion(0.70))))
-    res.append(('V01', 4, to_u8(voice('IH N F IH N IH T AH S _ L AO N CH'.split(), 112, 96, 1.05, 11), 1.0, 6)))
-    res.append(('V02', 4, to_u8(voice('W AO R N IH NG'.split(), 118, 104, 1.0, 12), 1.0, 6)))
-    res.append(('V03', 4, to_u8(voice('S IH S T AH M _ AA N L AY N'.split(), 108, 100, 1.0, 13), 1.0, 6)))
-    res.append(('V04', 4, to_u8(voice('AH N M EH ZH ER AH B AH L'.split(), 78, 66, 1.15, 14), 1.0, 5)))
-    res.append(('V05', 4, to_u8(voice('G EY M _ OW V ER'.split(), 96, 80, 1.1, 15), 1.0, 6)))
-    res.append(('V06', 4, to_u8(voice('K AE L IH B R EY SH AH N'.split(), 110, 100, 1.0, 16), 1.0, 6)))
+    res.append(('P01', 3, to_u8(decimate(orch([73.42, 146.83, 220.0, 293.66, 369.99, 440.0, 587.33], 0.40, 0.11, 1990)))))
+    res.append(('P02', 3, to_u8(decimate(orch([73.42, 146.83, 220.0, 293.66, 349.23, 440.0, 587.33], 0.40, 0.11, 1991)))))
+    res.append(('P03', 3, to_u8(decimate(orch([61.74, 123.47, 174.61, 246.94, 293.66, 415.30], 0.60, 0.20, 1992)))))
+    res.append(('P04', 2, to_u8(decimate(cymbal_rev(0.80)))))
+    res.append(('P05', 1, to_u8(decimate(snare(0.15)))))
+    res.append(('P06', 2, to_u8(decimate(explosion(0.70)))))
+    res.append(('V01', 4, to_u8(decimate(voice('IH N F IH N IH T AH S _ L AO N CH'.split(), 112, 96, 1.05, 11)), 1.0, 6)))
+    res.append(('V02', 4, to_u8(decimate(voice('W AO R N IH NG'.split(), 118, 104, 1.0, 12)), 1.0, 6)))
+    res.append(('V03', 4, to_u8(decimate(voice('S IH S T AH M _ AA N L AY N'.split(), 108, 100, 1.0, 13)), 1.0, 6)))
+    res.append(('V04', 4, to_u8(decimate(voice('AH N M EH ZH ER AH B AH L'.split(), 78, 66, 1.15, 14)), 1.0, 5)))
+    res.append(('V05', 4, to_u8(decimate(voice('G EY M _ OW V ER'.split(), 96, 80, 1.1, 15)), 1.0, 6)))
+    res.append(('V06', 4, to_u8(decimate(voice('K AE L IH B R EY SH AH N'.split(), 110, 100, 1.0, 16)), 1.0, 6)))
     return res
 
 

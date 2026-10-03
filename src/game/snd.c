@@ -913,7 +913,7 @@ void pcm_req_seq(u8 id) {
 
 /* 任意の PCM(4 小節ごとのオケヒ、爆発など): ★刻み方式は CPU を約 4 割使うので、余裕のあるフレームが 1 秒続いているときだけ */
 void pcm_req_opt(u8 id) {
-    if (quiet >= 60 && (g_pcm_cur == SND_NONE || pcm_opt)) { pcm_req(id); pcm_q |= 0x80; }
+    if (quiet >= 20 && (g_pcm_cur == SND_NONE || pcm_opt)) { pcm_req(id); pcm_q |= 0x80; }
 }
 
 u8  g_pcm_off;                                /* 検証用: 1 = PCM を鳴らさない(m1..m6 はエンジンの時間を見るので切る) */

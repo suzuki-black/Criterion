@@ -49,7 +49,7 @@ def main(path):
     bad = checked = 0
     for t0, t1, (sid, plain) in spans:
         song = ids.get(sid)
-        if not song or not plain or song.id not in STEADY or t1 - t0 < 2.0:
+        if not song or not plain or song.id not in STEADY or t1 - t0 < 4.0:
             continue
         chname, ticks = STEADY[song.id]
         ci = gen_sound.CHN.index(chname)

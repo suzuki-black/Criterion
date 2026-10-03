@@ -126,6 +126,7 @@ extern u8 psg_mix_w;
 extern u16 last_jiffy;
 void opll_w(u8 reg, u8 val);
 void snd_init(void) {
+    ras_pstep = 4; ras_pmask = 3;                 /* ★PCM は 4 ラインに 1 回(3.9kHz)。2 ラインでは CPU の約 4 割を使い、ゲーム中ほぼ鳴らせなかった */
     u8 i;
     if (g_opll) {
         for (i = 0; i < 0x39; i++) opll_w(i, 0);
@@ -195,7 +196,7 @@ void pcm_keep(void) {
     }
     if (pcm_q != SND_NONE) {                      /* ★鳴り始めは空き時間のあるフレームが続いてから(試験の入りや出撃は重い
                                                      フレームが続き、声の間に遅れた)。1 秒までは 45 フレーム、その後は 15 */
-        u8 need = pcm_qwait < 60 ? 45 : 15;
+        u8 need = pcm_qwait < 60 ? 15 : 5;
         if (quiet < need) {                       /* 4 秒そろわなければ鳴らさない(重い場面で強制すると遅れた) */
             if (++pcm_qwait >= 240) { extern u8 g_pcm_drops; pcm_q = SND_NONE; pcm_qwait = 0; g_pcm_drops++; }
             return;

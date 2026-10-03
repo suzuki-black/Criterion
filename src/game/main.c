@@ -148,17 +148,16 @@ void main(void) {
         u8 ph;
         idle = frame_sync(1);
         g_frame_t0 = sys_timer();
-        if (g_pcm_cur != SND_NONE) g_frame_t0 -= 64u * 16u;   /* ★PCM の刻みが CPU の約 4 割を使うので、締め切り(g_frame_t0 からの
-                                                                ライン数)を 64 ライン前倒しにする */
+        if (g_pcm_cur != SND_NONE) g_frame_t0 -= 32u * 16u;   /* ★PCM の刻み(4 ラインに 1 回)が CPU の約 2 割を使うので、
+                                                                締め切り(g_frame_t0 からのライン数)を 32 ライン前倒しにする */
         if (g_frame_late != late0) g_stat.late++;
         g_slow = slow_next;
         slow_next = (u8)(!g_slow && g_phase >= PH_AIR && (g_frame_late != late0 || idle < (g_stat.base >> 2)));
-        /* PCM(刻み方式)は CPU の約 4 割を使う: 声(出撃・警告・試験の入りなど敵の少ない場面)の間は論理を止め、
-           ほかの PCM(余裕のあるときだけ鳴る)の間は 1 フレームおきに */
-        if (g_pcm_cur != SND_NONE && (g_pcm_cur >= PCM_V01 || !g_slow)) slow_next = 1;
+        /* PCM(刻み方式)の間は論理を 1 フレームおきに(CPU の約 2 割を使う) */
+        if (g_pcm_cur != SND_NONE && !g_slow) slow_next = 1;
         if (g_slow) g_stat.slow++;
         if (idle < g_stat.idle_min) g_stat.idle_min = idle;
-        g_snd_room = (u8)(idle >= (g_stat.base >> 1));
+        g_snd_room = (u8)(idle >= (g_stat.base >> 2) + (g_stat.base >> 4));   /* 空き時間が平常の 3 割以上(PCM は約 2 割を使う) */
         g_stat.frames++;
         g_stat.idle_sum += idle;
 
