@@ -72,7 +72,7 @@ static s16 js;
 static s16 pick_at;                /* 前に描き替えを探して何も無かったときの g_scam(8 行単位) */
 static u8  hs_t;                   /* hs_cur を求めたときの sky_t */
 static u8  banner_t;               /* 面の開始表示の進み(0 = なし) */
-static const char *banner_text;
+static char banner_text[32];       /* ★写しを持つ(呼ぶのは古いオーバレイで、その文字列は次のオーバレイの読み込みで消える) */
 
 /* 画面の矩形 → 表示リング(ページ 0|1)。リングの 512 幅と 256 行の継ぎ目で分ける。
    fill = 0 なら (sx, sy) から HMMM、それ以外は byte で HMMV */
@@ -114,14 +114,19 @@ void stage_reset_ground(void) {
     strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0; redraw_n = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
 }
-void stage_banner(const char *text) { banner_text = text; banner_t = 1; }
+void stage_banner(const char *text) {
+    u8 i;
+    for (i = 0; i < sizeof banner_text - 1 && text[i]; i++) banner_text[i] = text[i];
+    banner_text[i] = 0;
+    banner_t = 1;
+}
 
 /* 1 面の空中戦から(出撃の終わりに title.c が呼ぶ)。面の中身は 1 面のオーバレイを読み込んでから */
 void stage_start(void) {
     u8 b;
     g_wx = bg_layer_x(2);
     g_scam_q = S_AIR * 16; g_scam = S_AIR; dir = 1;
-    upper_sky = UP_AIR; g_sky_t = 0; g_sec = 0; g_maplen = 0; g_roll = 0; g_boss_state = BS_NONE; g_boss_dmg = 0;
+    upper_sky = UP_AIR; g_sky_t = 0; g_sec = 0; g_maplen = 0; g_roll = 0; g_boss_state = BS_NONE; g_boss_dmg = 0; g_boss_aim = -1;
     for (b = 0; b < NBLK; b++) tag[b] = b < BLK_CONST ? (s16)(b * 8 - 188) : TAG_NONE;
     tag[BLK_CONST] = -4;
     strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; banner_t = 0;
@@ -439,6 +444,7 @@ void stage_build(void) {
         }
         for (i = 0; i < 8; i++) {
             s16 l = (s16)(S_AIR2 + i * 24 - sc);
+            if (l + 24 <= 0 && i < 7) continue;                       /* 画面の上の外で終わる帯は出さない(0 行へまとまるだけ) */
             stage_ev_pal(l, hs_cur[i]);
             if (i == 0) stage_ev_scroll(l, nx >> 2);                  /* 星の 3 層: 遠い・中・近い */
             else if (i == 3) stage_ev_scroll(l, nx >> 1);

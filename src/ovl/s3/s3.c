@@ -147,6 +147,11 @@ void ovl_update(void) {
     case SEC3_OUT:
         if (g_scroll_speed < 32 && !(sec_t & 3)) g_scroll_speed++;
         if (g_scam_q > S_TOP * 16) g_scam_q -= 24;             /* 射出口から宇宙へ */
+        if (sec_t == 240) {                                   /* 4 面へ(このあと 3 面のコードは呼ばれない) */
+            stage_banner("STAGE 4 / STRATA");
+            ovl_request(OVL_S4);
+            g_sec = SEC3_OUT + 1;                              /* = 4 面の空中戦(SEC4_AIR) */
+        }
         break;
     default:
         break;

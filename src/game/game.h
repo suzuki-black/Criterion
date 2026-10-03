@@ -132,6 +132,7 @@ void enemy_shoot(s16 x, s16 y);     /* 自機を狙う */
 enum { BS_NONE, BS_ENTER, BS_FIGHT, BS_DYING, BS_DONE };
 extern u8  g_boss_state;
 extern u8  g_boss_hp;
+extern s16 g_boss_aim;              /* 今撃てる弱点の画面の y(-1 = なし)。検証の自機をそこへ寄せる */
 extern u8  g_boss_dmg;              /* 受け取っていない傷(boss_damage が足す) */
 extern u16 g_lg_on[26];             /* LEGION の積んであるマス(検証も読む) */
 extern s16 g_lg_x0;

@@ -87,6 +87,7 @@ static void met_update(void) {
     g_scroll_speed = (s8)((s16)g_sin64[(u8)(ph >> 8) & 63] * 24 / 127);
     wx_ = (s16)(MET_X + ((g_sin64[(u8)ang & 63] * ROD) >> 7));
     wy_ = (s16)(MET_PY - ((g_sin64[(u8)(ang + 16) & 63] * ROD) >> 7));
+    g_boss_aim = wy_;
     {   /* 錘(弱点) */
         u8 n = shot_hit(wx_, wy_, 9);
         while (n--) { if (g_boss_hp > 1) g_boss_hp--; else { g_boss_hp = 0; g_boss_state = BS_DYING; t = 0; score_add(400); return; } }
@@ -168,17 +169,19 @@ static void tacho_update(void) {
         if (needle >= 44) rush_t = 1;
     }
     /* 目盛りの数字 */
+    g_boss_aim = -1;
     for (k = 0; k < NMARK; k++) {
         s16 mx, my;
         if (!mark_hp[k]) continue;
         a = screen_ang((u8)mark_a[k]);
         mx = (s16)(cx + ((g_sin64[(u8)(a + 16) & 63] * 50) >> 7)); my = (s16)(cy - ((g_sin64[a & 63] * 50) >> 7));
+        if (g_boss_aim < 0 && mx > PX(g_pl.x) + 24) g_boss_aim = my;
         if (shot_hit(mx, my, 7) && --mark_hp[k] == 0) { fx_spawn(FX(mx), FX(my)); score_add(50); }
     }
     g_boss_hp = 0;
     for (k = 0; k < NMARK; k++) g_boss_hp += mark_hp[k];
     if (!g_boss_hp) { g_boss_state = BS_DYING; t = 0; score_add(1000); return; }
-    shot_hit(cx, cy, 8);                                      /* 軸は弾を止める(盤の全体で止めると右半分の目盛りに届かなかった) */
+    /* ★盤も軸も弾を止めない(止めると右半分の目盛り、軸のすぐ下の目盛りに届かなかった) */
     touch(cx, cy, 48);
     if ((t & 63) == 0) { enemy_shoot(FX(cx), FX(cy)); }
 }
@@ -236,6 +239,7 @@ void b3_update(void) {
             } else if (g_boss_hp > d) g_boss_hp -= d; else g_boss_hp = 1;
         }
     }
+    g_boss_aim = -1;
     if (g_boss_state == BS_NONE || g_boss_state == BS_DONE) return;
     t++;
     shots_prepare();
