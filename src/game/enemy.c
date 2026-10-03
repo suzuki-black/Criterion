@@ -7,6 +7,7 @@
    ・敵弾: Tick / Tock がときどき自機を狙って撃つ(2 ドット/フレーム)。
    ・台本は区間ごと(g_wave_set): 空中戦は 1200 フレームで一周、都市はまばらな編隊、それ以外は出さない。 */
 #include "game.h"
+#include "snd.h"
 #include "spr.h"
 #include "sprite_data.h"
 
@@ -186,7 +187,7 @@ static void enemy_fire(const Enemy *e) { enemy_shoot(e->x, e->y); }
 
 static void kill_enemy(Enemy *e, u8 by_player) {
     u8 f = e->form;
-    if (by_player) { fx_spawn(e->x, e->y); score_add(10); }   /* 画面外へ逃げた敵は爆発も得点もなし */
+    if (by_player) { fx_spawn(e->x, e->y); score_add(10); sfx(SFX_KILL); }   /* 画面外へ逃げた敵は爆発も得点もなし */
     if (f < MAX_FORM && form_left[f]) {
         form_left[f]--;
         if (!by_player) form_lost[f] = 1;
@@ -274,7 +275,7 @@ void enemy_update(void) {
                 e = &g_enemy[eidx[k]];
                 if (!e->type) continue;
                 if (!b->pierce) b->on = 0;
-                if (--e->hp == 0) kill_enemy(e, 1);
+                if (--e->hp == 0) kill_enemy(e, 1); else sfx(SFX_HIT);
                 if (!b->on) break;
             }
         }

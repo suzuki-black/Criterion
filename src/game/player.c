@@ -5,6 +5,7 @@
    ・被弾: 残機 -1、強化はすべて失い、その場に Quanta を 3 個散らす。復活後 2 秒は無敵(点滅)。
    ★ECHO / AEGIS / DROP の効果は以降の段階(段階の数だけはゲージで増える)。 */
 #include "game.h"
+#include "snd.h"
 #include "input.h"
 #include "spr.h"
 #include "sprite_data.h"
@@ -56,8 +57,10 @@ static void fire(void) {
 
 void player_update(void) {
     u8 i;
-    /* ショット(画面外で消える) */
+    /* ショット(画面外で消える)。★処理落ちのフレームは弾も止める: 当たり判定(敵・ボス)は処理落ちのフレームに
+       走らないので、動かすと 2 フレームぶん進んで小さな的をすり抜けた(M7。音で処理落ちが増えて目立った) */
     for (i = 0; i < MAX_PSHOT; i++) {
+        if (g_slow) break;
         Bullet *b = &g_pshot[i];
         if (!b->on) continue;
         b->x += b->vx; b->y += b->vy;
@@ -96,8 +99,10 @@ void player_update(void) {
         if (g_pl.y < FX(g_pl_ymin)) { g_pl.y = FX(g_pl_ymin); gvy = 0; }   /* 地形(天井)に当たって止まる */
         if (g_pl.y > FX(g_pl_ymax)) { g_pl.y = FX(g_pl_ymax); gvy = 0; }   /* 地形(床) */
     }
-    if (g_pl.fire_cd) g_pl.fire_cd--;
-    if ((g_in & IN_A) && !g_pl.fire_cd) { fire(); g_pl.fire_cd = FIRE_CD; }
+    if (!g_slow) {
+        if (g_pl.fire_cd) g_pl.fire_cd--;
+        if ((g_in & IN_A) && !g_pl.fire_cd) { fire(); sfx(SFX_SHOT); g_pl.fire_cd = FIRE_CD; }
+    }
     if (g_in_edge & IN_B) gauge_confirm();
     if (g_pl.invul) g_pl.invul--;
 }
@@ -107,6 +112,7 @@ void player_hit(void) {
     if (!g_pl.alive || g_pl.invul) return;
     g_pl.alive = 0;
     g_pl.dead_t = 90;
+    sfx(SFX_DIE);
     if (g_pl.lives) g_pl.lives--;
     fx_spawn(g_pl.x + FX(8), g_pl.y + FX(8));                       /* 爆発・アイテムの座標は中心 */
     for (i = 0; i < 3; i++) item_spawn(g_pl.x + FX(8), g_pl.y + FX(8), 0);

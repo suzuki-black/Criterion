@@ -17,9 +17,11 @@ MACHINE=${MACHINE:-My_FS-A1ST_512K}
 mkdir -p "$OUT"
 sym() { awk -v s="$1" '$2==s{print $3}' "$NOI"; }
 ST=$(sym _g_stat); GA=$(sym _g_gauge); PL=$(sym _g_pl); EN=$(sym _g_enemy); ES=$(sym _g_eshot); INV=$(sym _g_dbg_invul); IT=$(sym _g_item)
+PCMOFF=$(awk '$2=="_g_pcm_off"{print $3}' "$NOI")   # ★PCM は切る(エンジンの時間を見る。PCM は run_game_m7.sh)
 T="$OUT/game_m1.tcl"
 cat > "$T" <<TCL
 set throttle on
+after time 6 { debug write memory $PCMOFF 1 }
 set f [open "$OUT/game_m1.log" w]
 set fails 0
 proc rd16 {a} { binary scan [debug read_block memory \$a 2] su v; return \$v }

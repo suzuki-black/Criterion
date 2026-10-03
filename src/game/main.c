@@ -14,10 +14,14 @@
 #include "rom.h"
 #include "ghost.h"
 #include "ovl.h"
+#include "snd.h"
+#include "snd_data.h"
 #define SPRITE_PATTERNS                 /* 絵の表はここだけに置く(sprite_data.h) */
 #include "sprite_data.h"
 
 enum { ST_PLAY, ST_OVER };
+static u8 snd_skip;
+extern u8 g_snd_room;
 
 /* 計測・検証用(デバッガから読む / 書く) */
 typedef struct {
@@ -126,9 +130,11 @@ void main(void) {
     bg_init();
     spr_init(spr_pat, PAT_COUNT);
     sys_ram_exec();
+    snd_detect();                    /* ★BIOS(RDSLT)を使うので直接割込み方式の前に */
     ras_init();
     ras_set_isr(RAS_ISR_DIRECT);
-    code0_load();                    /* ここから先でページ 0 のコード(ROTOR / GHOST)を呼べる */
+    code0_load();                    /* ここから先でページ 0 のコード(ROTOR / GHOST / 選曲と効果音)を呼べる */
+    snd_init();
     ovl_load_sync(OVL_TITLE);        /* タイトルのオーバレイ */
     title_load();                    /* ROM の素材(ページ 1-2 を一時的にカートリッジへ戻して読む) */
     game_start();
@@ -143,15 +149,25 @@ void main(void) {
         u8 ph;
         idle = frame_sync(1);
         g_frame_t0 = sys_timer();
+        if (g_pcm_cur != SND_NONE) g_frame_t0 -= 64u * 16u;   /* ★PCM の刻みが CPU の約 4 割を使うので、締め切り(g_frame_t0 からの
+                                                                ライン数)を 64 ライン前倒しにする */
         if (g_frame_late != late0) g_stat.late++;
         g_slow = slow_next;
         slow_next = (u8)(!g_slow && g_phase >= PH_AIR && (g_frame_late != late0 || idle < (g_stat.base >> 2)));
+        /* PCM(刻み方式)は CPU の約 4 割を使う: 声(出撃・警告・試験の入りなど敵の少ない場面)の間は論理を止め、
+           ほかの PCM(余裕のあるときだけ鳴る)の間は 1 フレームおきに */
+        if (g_pcm_cur != SND_NONE && (g_pcm_cur >= PCM_V01 || !g_slow)) slow_next = 1;
         if (g_slow) g_stat.slow++;
         if (idle < g_stat.idle_min) g_stat.idle_min = idle;
+        g_snd_room = (u8)(idle >= (g_stat.base >> 1));
         g_stat.frames++;
         g_stat.idle_sum += idle;
 
         prof_t = sys_timer();
+        /* 音: 選曲と演出 → ドライバ。★前のフレームに空き時間が無ければ 5 フレームまで先送り(テンポは JIFFY で
+           数えているので次でまとめて進む)。PCM の補充だけは毎フレーム */
+        if (g_snd_room || ++snd_skip > 5) { snd_skip = 0; music_frame(state == ST_OVER); snd_frame(); }
+        pcm_keep();
         if (g_phase >= PH_AIR) stage_pump_nb();   /* 列の描き込みと GHOST: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
         input_read();
         prof(0);

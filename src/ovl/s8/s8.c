@@ -110,7 +110,8 @@ static void mid_update(void) {
         if (!tu_hp[i]) continue;
         left++;
         if (g_boss_aim < 0) g_boss_aim = (s16)(y + 6);
-        if (shot_rect(x - 8, y - 4, 16, 16) && --tu_hp[i] == 0) {   /* 押し戻す */
+        if (shot_rect(x - 20, y - 4, 28, 16) && --tu_hp[i] == 0) {   /* 押し戻す。★左へ広げる: 処理落ちのフレームは判定しないので、
+                                                                     速い弾が 2 フレームで砲台をすり抜けた(M7) */
             fx_spawn(FX(x), FX(y + 6)); score_add(200);
             if (i < 4) top_e = top_e - 16 < TOP0 ? TOP0 : top_e - 16; else bot_e = bot_e + 16 > BOT0 ? BOT0 : bot_e + 16;
             if (g_boss_hp >= 3) g_boss_hp -= 3;

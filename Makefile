@@ -16,7 +16,7 @@ M0_COMMON := $(BUILD)/m0_world.rel   # M0 の検証 ROM が共有する世界(sr
 
 GAME_SRCS := $(wildcard src/game/*.c)
 GAME_RELS := $(GAME_SRCS:src/game/%.c=$(BUILD)/g_%.rel)
-GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h $(BUILD)/s2_data.h $(BUILD)/s3_data.h $(BUILD)/s4_data.h $(BUILD)/s5_data.h $(BUILD)/s6_data.h $(BUILD)/s8_data.h
+GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h $(BUILD)/s2_data.h $(BUILD)/s3_data.h $(BUILD)/s4_data.h $(BUILD)/s5_data.h $(BUILD)/s6_data.h $(BUILD)/s8_data.h $(BUILD)/snd_data.h
 
 .PHONY: all m0 clean
 .SECONDARY:
@@ -85,6 +85,11 @@ $(BUILD)/stage8.stamp: tools/gen_stage8.py | $(BUILD)
 	python3 tools/gen_stage8.py $(BUILD) $(BUILD)/s8_data.h
 	touch $@
 $(BUILD)/s8_data.h: $(BUILD)/stage8.stamp
+# 音(tools/gen_sound.py: 曲の MML と PCM の合成 → snd.bin、ROM のバンク 40 から)
+$(BUILD)/snd.stamp: tools/gen_sound.py tools/songs.py tools/snd_pcm.py | $(BUILD)
+	python3 tools/gen_sound.py $(BUILD)/snd.bin $(BUILD)/snd_data.h
+	touch $@
+$(BUILD)/snd_data.h $(BUILD)/snd.bin: $(BUILD)/snd.stamp
 $(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp $(BUILD)/stage4.stamp $(BUILD)/stage5.stamp $(BUILD)/stage6.stamp $(BUILD)/stage8.stamp
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
@@ -103,19 +108,24 @@ $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 # ---- 本体(GAME.ROM, 1MB) ----
 # ★割込み処理(raster)と ROM 読み出し(rom)はページ 1(0x8000 未満)に置く。ROM を読む間はページ 2 が
 #   カートリッジの別のバンクになるため(rom.c)。リンクの先頭に並べ、リンク後に番地を検査する。
-GAME_FIRST := $(BUILD)/raster.rel $(BUILD)/rom.rel
-GAME_REST  := $(filter-out $(GAME_FIRST),$(CORE))
+#   音のドライバ(snd)も曲を読む間はページ 2 が曲のバンクになるので、同じくページ 1 に置く(snd.c)。
+GAME_FIRST := $(BUILD)/raster.rel $(BUILD)/rom.rel $(BUILD)/g_snd.rel
+GAME_REST  := $(filter-out $(GAME_FIRST) $(BUILD)/pcmb.rel,$(CORE))   # 方式 B(pcmb)は M0 の比較用で本体は使わない
+GAME_MID   := $(filter-out $(GAME_FIRST),$(GAME_RELS))
 # ★ページ 0 のコード(CODE0、0x0100-OVL_BASE): 共通のエンジン(ROTOR / GHOST)。起動時に ROM の bank4-5 から
 #   RAM へ複製する(main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前には呼ばないこと。
 CODE0_CORE := rotor ghost
 GAME_CODE0_CORE := $(CODE0_CORE:%=$(BUILD)/%.rel)
+# 選曲と効果音(music.c)は CODE0 へ(常駐に空きが無い)
+$(BUILD)/g_music.rel: src/game/music.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) --opt-code-size $(DEFS) --codeseg CODE0 --constseg CODE0 -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 # ---- オーバレイ(src/include/ovl.h): ページ 0 の OVL_BASE..OVL_END へ ROM から読み込む場面のコード ----
 #   本体を先にリンクし、本体の .noi から大域シンボルを絶対番地で定義した resident.rel を作って、オーバレイを
 #   別にリンクする。本体からは JP 表の番地(ovl_entries.rel)で呼ぶ。
-OVL_BASE := 0x0A00
+OVL_BASE := 0x1000
 OVL_END  := 0x3800
 OVL_DBEG := 0xD200
 OVL_DEND := 0xD800
@@ -200,7 +210,7 @@ $(BUILD)/ovl_%.bin: $(BUILD)/ovl_%.ihx tools/gen_ovl.py
 
 $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(GAME_CODE0_CORE) $(BUILD)/ovl_entries.rel
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
-	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_RELS) $(GAME_REST) $(GAME_CODE0_CORE) \
+	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_MID) $(GAME_REST) $(GAME_CODE0_CORE) \
 	    $(BUILD)/ovl_entries.rel -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
@@ -208,14 +218,14 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(
 	    if [ $$E -gt $$(($(OVL_BASE))) ]; then echo "ERROR: CODE0 の末尾 $$E がオーバレイの窓 $(OVL_BASE) に入った(ovl.h)"; rm -f $@; exit 1; fi
 	@E=$$(awk '$$2=="s__DATA"{s=$$3} $$2=="l__DATA"{l=$$3} END{printf "%d", s+l}' $(@:.ihx=.noi)); \
 	    if [ $$E -gt $$(($(OVL_DBEG))) ]; then echo "ERROR: _DATA の末尾 $$E がオーバレイの変数 $(OVL_DBEG) に入った(ovl.h)"; rm -f $@; exit 1; fi
-	@for S in _ras_isr_direct _ras_isr_bios _ras_apply_next _ras_vblank _rom_copy; do \
+	@for S in _ras_isr_direct _ras_isr_bios _ras_apply_next _ras_vblank _rom_copy _snd_frame _snd_end; do \
 	    A=$$(awk -v n=$$S '$$2==n{print $$3}' $(@:.ihx=.noi)); \
 	    if [ -z "$$A" ] || [ $$(printf '%d' $$A) -ge 32768 ]; then \
 	        echo "ERROR: $$S=$$A がページ 1(0x8000 未満)に無い。ROM を読む間に壊れる(rom.c)"; rm -f $@; exit 1; fi; \
 	done
 
-GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(OVL_BINS) tools/rompack.mjs
-	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin \
+GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/snd.bin $(OVL_BINS) tools/rompack.mjs
+	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 40 $(BUILD)/snd.bin \
 	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、

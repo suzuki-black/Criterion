@@ -19,9 +19,11 @@ mkdir -p "$OUT"
 sym() { awk -v s="$1" '$2==s{print $3}' "$NOI"; }
 ST=$(sym _g_stat); GQD=$(sym _g_gq_drop); PL=$(sym _g_pl); SEC=$(sym _g_sec); BS=$(sym _g_boss_state); INV=$(sym _g_dbg_invul)
 WX=$(sym _g_wx); W0=$(sym _g_w0); LGON=$(sym _g_lg_on); LGX=$(sym _g_lg_x0); SCAM=$(sym _g_scam)
+PCMOFF=$(awk '$2=="_g_pcm_off"{print $3}' "$NOI")   # ★PCM は切る(エンジンの時間を見る。PCM は run_game_m7.sh)
 T="$OUT/game_m3.tcl"
 cat > "$T" <<TCL
 set throttle off
+after time 6 { debug write memory $PCMOFF 1 }
 set f [open "$OUT/game_m3.log" w]
 proc rd16 {a} { binary scan [debug read_block memory \$a 2] su v; return \$v }
 proc rd {a} { return [debug read memory \$a] }

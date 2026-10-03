@@ -3,6 +3,7 @@
    右半分: スコア / 残機 / カーソルの指すノードと段階。変わったところだけ書く(VDP への書き込みは 1 バイト 8.6us)。
    ★確定時の「∞が拡大回転して画面中央に飛び出す」演出は回転拡縮エンジン ROTOR(M3)で入れる。今は光点の点滅のみ。 */
 #include "game.h"
+#include "snd.h"
 #include "vdp.h"
 #include "font.h"
 #include "spr.h"
@@ -151,6 +152,7 @@ void hud_sprites(void) {
 void gauge_quanta(void) {
     g_gauge.cursor = (u8)((g_gauge.cursor + 1) % N_STEPS);
     g_gauge.armed = 1;
+    sfx(SFX_ITEM);
     g_gauge.anim = PATH_STEPS;
 }
 
@@ -158,6 +160,7 @@ void gauge_shard(void) {
     g_gauge.cursor = N_INF;
     g_gauge.armed = 1;
     g_gauge.anim = 0;
+    sfx(SFX_SHARD);
 }
 
 static void down1(u8 *v) { if (*v) (*v)--; }
@@ -169,10 +172,11 @@ void gauge_confirm(void) {
     if (node == N_INF || node == N_INF2) {
         /* LIMIT BREAK: 一掃。引き換えに THRUST 以外の強化が 1 段ずつ下がる */
         limit_break();
+        sfx(SFX_LIMIT);
         down1(&g_gauge.echo); down1(&g_gauge.aegis); down1(&g_gauge.drop);
         down1(&g_gauge.split); down1(&g_gauge.ray);
     } else {
-        if (*lv >= node_max[node]) return;      /* 上限: 確定しない */
+        if (*lv >= node_max[node]) { sfx(SFX_DENY); return; }   /* 上限: 確定しない */
         (*lv)++;
         if (node == N_SPLIT) g_gauge.ray = 0;   /* SPLIT と RAY は排他 */
         if (node == N_RAY) g_gauge.split = 0;

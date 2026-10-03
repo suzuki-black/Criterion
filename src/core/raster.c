@@ -17,8 +17,10 @@ RasEntry *volatile ras_ptr;    /* 次に適用する項目 */
 volatile u8 ras_left;          /* 残り項目数 */
 volatile u8 ras_armed;         /* 今 R#19 に仕込んである値 */
 volatile u8 ras_r19;           /* ラスターの次の項目の R#19(ras_left > 0 のとき有効) */
-volatile u8 ras_vs;            /* 今の R#23(RAS_REGS で R#23 を書くと更新)。R#19 はこれを足した値で仕込む。
-                                  ★刻み方式(PCM)の刻みには未対応: 縦スクロールと PCM の併用は M7 で */
+volatile u8 ras_vs;            /* 今の R#23(RAS_REGS で R#23 を書くと更新)。R#19 はこれを足した値で仕込む */
+volatile u8 ras_tl;            /* 刻み方式: 仕込んだ刻みの表示ライン(0, 2, .., 244)。R#19 = ras_tl + ras_vs。
+                                  ★刻みを R#19 の値で数えると、帯で R#23 が変わったところで鎖が切れる(M7) */
+volatile u8 ras_lkey;          /* 次の項目の表示ラインのキー(line - g_ras_bias。R#23 を足さない)。刻み方式で比べる */
 volatile u16 g_ras_irqs;       /* 割込みの総数(計測用) */
 volatile u16 g_ras_fh;         /* うち FH(走査線)の数 */
 volatile u16 g_ras_vb;         /* うち VBLANK の数 */
@@ -34,6 +36,7 @@ volatile u16 pcm_left;
 volatile u8  pcm_pend;         /* 1 = 次の VBLANK で pcm_on にする(フレームの途中から始めない) */
 const u8 *volatile pcm_next_ptr;   /* 鳴り終わったら続けて鳴らすデータ(pcm_queue)。切れ目を作らない */
 volatile u16 pcm_next_left;
+volatile u8  pcm_end;          /* 1 = 刻み 212 で刻み方式をやめる(pcm_stop) */
 
 volatile u8 g_ras_bias = 4;    /* openMSX(FS-A1ST)で境界のずれが 0 になる値。実機で取り直す */
 volatile u8 g_ras_busy_border;
@@ -173,15 +176,16 @@ void ras_isr_bios(void) __naked {
         ld   d, a                  ; D = 今の割込みライン(R#19 値)
         ld   a, (_pcm_on)
         or   a
-        jr   z, 00020$
-        ; -- 刻み方式: 1) 次の刻みを先に仕込む --
-        ld   a, d
+        jp   z, 00020$
+        ; -- 刻み方式: 1) 次の刻みを先に仕込む(D = この刻みの表示ライン) --
+        ld   a, (_ras_tl)
+        ld   d, a
         add  a, #2
         cp   #246
         jr   nz, 00011$
         xor  a                     ; 244 の次は 0(246..255 の割込みは起きない)
     00011$:
-        call ras_arm
+        call ras_arm_tl
         ; -- 2) サンプル --
         call pcm_out
         ld   a, d
@@ -197,14 +201,35 @@ void ras_isr_bios(void) __naked {
         push de
         call _ras_vblank           ; 表の差し替え、先頭(line 0)の適用
         pop  de
+        ; -- 刻み方式の終わり(pcm_stop): ★ここ(VBLANK の仕事を済ませた所)でやめる。本体からすぐ VBLANK 割込みを
+        ;   戻すと、このフレームの JIFFY を刻み 212 と VBLANK で 2 回数え、遅れたフレームになった(M7) --
+        ld   a, (_pcm_end)
+        or   a
+        jr   z, 00012$
+        xor  a
+        ld   (_pcm_end), a
+        ld   (_pcm_on), a
+        out  (0x99), a
+        ld   a, #0x8F              ; R#15 = 0
+        out  (0x99), a
+        in   a, (0x99)             ; S#0: このフレームの VBLANK のフラグを落とす
+        ld   a, (_g_vdp_status_rest)
+        out  (0x99), a
+        ld   a, #0x8F
+        out  (0x99), a
+        ld   a, (0xF3E0)           ; RG1SAV(IE0 = 1)
+        out  (0x99), a
+        ld   a, #0x81
+        out  (0x99), a
+        jp   ras_arm_item          ; 次のフレームの最初の項目
     00012$:
         ; -- 3) この刻み(と次のライン)までに来ているラスター項目 --
         ld   a, (_ras_left)
         or   a
         jr   z, 00015$
-        ld   a, (_ras_r19)
+        ld   a, (_ras_lkey)
         sub  #212
-        ld   e, a                  ; E = 項目のキー(VBLANK からの順番)
+        ld   e, a                  ; E = 項目のキー(VBLANK からの順番、表示ライン)
         ld   a, d
         sub  #212
         inc  a                     ; 今の刻みのキー + 1
@@ -219,6 +244,31 @@ void ras_isr_bios(void) __naked {
         ;     切り替えで約 2 ライン)で割込みを抜けるのが次のフレームの 2 ライン目近くになり、刻み 0 の処理が
         ;     遅れて刻み 2 を仕込み損ねた(M0-4)。
     00015$:
+        ; -- 項目が R#23 を変えたら、刻みを新しい R#23 で仕込み直す --
+        ;   ★割込みは表示ライン (R#19 - R#23) ちょうどで来る。項目を適用し終えた頃には 2 ライン先の刻みが
+        ;     過ぎていることがあり、取りこぼすと 1 フレーム近く止まった(M7、起動ロゴの 130 行で R#23 が 58 → 8)。
+        ;     1 つ先(4 ライン先)を仕込み、飛ばしたサンプルはここで出す。
+        ld   a, (_ras_vs)
+        ld   e, a
+        ld   a, (_ras_tl)
+        add  a, e
+        ld   e, a
+        ld   a, (_ras_armed)
+        cp   e
+        jr   z, 00016$
+        ld   a, (_ras_tl)
+        cp   #212
+        jr   z, 00017$             ; 刻み 212(VBLANK の仕事)は飛ばさない
+        add  a, #2
+        cp   #246
+        jr   c, 00017$
+        xor  a
+    00017$:
+        call ras_arm_tl
+        ld   a, (_pcm_fill)
+        or   a
+        call nz, pcm_out
+    00016$:
         ld   a, d
         cp   #244
         ret  nz
@@ -253,6 +303,25 @@ void ras_isr_bios(void) __naked {
 
         ; ---- VBLANK ----
     ras_on_vb:
+        ; ★刻み方式の最中に VBLANK 割込みが来た = 本体が R#1 を書き直して IE0 が戻った(表示の on/off など)。
+        ;   刻み 212 が VBLANK の仕事をするので、ここでは IE0 を止め直すだけ(JIFFY の二重の +1 も戻す)。
+        ;   放っておくと項目方式の R#19 が仕込まれ、刻みが 1 フレームに 1 つになった(M7、起動ロゴの声)。
+        ld   a, (_pcm_on)
+        or   a
+        jr   z, 00030$
+        ld   a, (_ras_kick)
+        or   a
+        jr   nz, 00030$            ; 見張りが張り直しを頼んだ VBLANK は通す
+        ld   hl, (0xFC9E)
+        dec  hl
+        ld   (0xFC9E), hl
+        ld   a, (0xF3E0)           ; RG1SAV
+        and  #0xDF                 ; IE0 = 0
+        out  (0x99), a
+        ld   a, #0x81
+        out  (0x99), a
+        ret
+    00030$:
         ld   hl, (_g_ras_vb)
         inc  hl
         ld   (_g_ras_vb), hl
@@ -276,6 +345,14 @@ void ras_isr_bios(void) __naked {
         ld   a, #0x81              ; R#1
         out  (0x99), a
         ld   a, #212
+        jp   ras_arm_tl
+
+        ; ---- 刻み方式の仕込み: 刻みの表示ライン A → R#19 = A + R#23(E を使う) ----
+    ras_arm_tl:
+        ld   (_ras_tl), a
+        ld   e, a
+        ld   a, (_ras_vs)
+        add  a, e
         jp   ras_arm
 
         ; ---- 項目方式の仕込み: 次の項目の行 ----
@@ -493,7 +570,7 @@ void ras_apply_next(void) __naked {
         ld   a, (_pcm_fill)
         or   a
         call nz, pcm_out
-        ld   a, (_ras_armed)
+        ld   a, (_ras_tl)
         sub  #2                    ; 帯を始めた刻み(入口で +2 を仕込み済み)
         add  a, 7 (ix)
         add  a, #4
@@ -513,6 +590,7 @@ void ras_apply_next(void) __naked {
         ld   a, 0 (ix)
         sub  b
         ld   b, a
+        ld   (_ras_lkey), a
         ld   a, (_ras_vs)
         add  a, b                  ; ★R#19 は「表示の行 + R#23」で比べられる(縦スクロール中は足す)
         ld   (_ras_r19), a
@@ -520,6 +598,10 @@ void ras_apply_next(void) __naked {
 
         ; R#19 = A(刻み方式で帯の後に張り直す)
     ras_arm_tick:
+        ld   (_ras_tl), a          ; 表示ライン → R#19 = + R#23
+        ld   b, a
+        ld   a, (_ras_vs)
+        add  a, b
         ld   (_ras_armed), a
         out  (0x99), a
         ld   a, #0x93
@@ -576,6 +658,7 @@ void ras_vblank(void) __naked {
         ld   a, b
         sub  d
         ld   b, a
+        ld   (_ras_lkey), a
         ld   a, (_ras_vs)
         add  a, b
         ld   (_ras_r19), a
@@ -699,6 +782,7 @@ u8 ras_set_isr(u8 mode) {
 void pcm_play(const u8 *p, u16 n, u8 fill) {
     g_stall_hook = ras_kick_ticks;
     __asm di __endasm;
+    pcm_end = 0;
     pcm_ptr = p;
     pcm_left = n;
     pcm_fill = fill;
@@ -725,8 +809,7 @@ static void ras_kick_ticks(void) {
 
 void pcm_stop(void) {
     __asm di __endasm;
-    if (pcm_on) vblank_irq_on();   /* 項目方式へ戻る: VBLANK 割込みを戻す */
-    pcm_on = 0;
+    if (pcm_on) pcm_end = 1;       /* 刻み 212 で項目方式へ戻る(VBLANK 割込みもそこで戻す) */
     pcm_pend = 0;
     pcm_left = 0;
     pcm_next_left = 0;

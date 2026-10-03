@@ -13,7 +13,7 @@
 
 #include "types.h"
 
-#define OVL_BASE   0x0A00
+#define OVL_BASE   0x1000
 #define OVL_END    0x3800
 #define OVL_SIZE   (OVL_END - OVL_BASE)
 #define OVL_DATA   0xD200              /* 〜0xD7FF(本体の変数は 0xD200 まで。Makefile が検査) */

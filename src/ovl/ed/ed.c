@@ -26,7 +26,7 @@ enum { SECE_SPACE = 65, SECE_EARTH, SECE_ROLL, SECE_FINAL };
 static u16 sec_t;
 static u8  yrow, split;
 static u8  regs_top[2][14], regs_n[2][12];
-static u8  next_line;              /* 次に書く名前 */
+static u8  next_line, roll_row;    /* 次に書く名前、その文字の行 */
 static const u8 black[3] = { 0, 0, 0 };
 
 static const char *const roll[] = {
@@ -42,7 +42,7 @@ void ovl_init(void) {
     stage_reset_ground();
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; g_hall = 0; g_sky_t = 16;
     enemy_waves(WAVES_NONE);
-    yrow = 0; split = 0; next_line = 0;
+    yrow = 0; split = 0; next_line = 0; roll_row = 0;
     g_blk_base = YJK_ROW / 8; g_blk_skip = YJK_H / 8;         /* リングの 64..119 行 = 地球 */
     stage_sky_redraw();                                       /* 8 面の縦穴の壁を星空に */
     enter(SECE_SPACE);
@@ -100,14 +100,15 @@ void ovl_vram(void) {
             else rom_to_vram(ASSET_TITLE_ODD_BANK, (u16)(ASSET_TITLE_ODD_OFF + (YJK_SRC0 + r) * 128u), 1, (u16)((YJK_ROW + r) * 128u), 128);
         }
     }
-    if (g_sec == SECE_ROLL && sec_t > 50 && next_line < NROLL) {   /* 画面の下に入る直前の名前を書く */
+    if (g_sec == SECE_ROLL && sec_t > 50 && next_line < NROLL) {   /* 画面の下に入る前の名前を書く */
         s16 s = (s16)(ROLL_S0 + next_line * 16);
-        if (s < g_scam + PLAY_H + 4) {
+        if (s < g_scam + PLAY_H + 12) {               /* ★1 フレームに文字の 1 行ずつ(8 フレームで 1 つ。ロールは 2 フレームに 1 ライン)。
+                                                         まとめて書くと空き時間が平常の 8% まで減った(M7) */
             const char *str = roll[next_line];
             u8 n = 0;
             while (str[n]) n++;
-            if (n) { vdp_cmd_wait(); font_text(0, (u8)(128 - n * 4), (u8)(s + 188), (u8)(next_line >= NROLL - 3 ? 11 : 15), 1, str); }
-            next_line++;
+            if (n) { vdp_cmd_wait(); font_text_row(0, (u8)(128 - n * 4), (u8)(s + 188), (u8)(next_line >= NROLL - 3 ? 11 : 15), 1, str, roll_row); }
+            if (!n || ++roll_row == 8) { roll_row = 0; next_line++; }
         }
     }
 }
