@@ -28,9 +28,19 @@ typedef struct {
     u8  state;
     u8  dropped;       /* スプライトが表に入りきらなかった累計(255 で止める) */
     u8  phase;         /* 今の場面(PH_*) */
+    u16 slow;          /* 処理落ちさせたフレーム(敵の更新を飛ばした) */
 } GameStat;
 volatile GameStat g_stat;
-volatile u8 g_dbg_invul;      /* 1 = 被弾しない(自動テスト用) */
+volatile u8 g_dbg_invul;
+/* 処理落ち(指示書 8.3「重い場面では 30fps に落としても構わない。スクロールが滑らかなまま敵だけ処理落ち」):
+   前のフレームが遅れたか、余りが少なかったら、このフレームは敵・ボス・Pawn の更新とスプライトの描き直しを
+   飛ばす(続けては飛ばさない = ゲームの進みは最低 30fps)。スクロール・ラスター・自機の操作は毎フレーム */
+u8 g_slow;
+static u8 slow_next;
+u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
+#define HUD_DEADLINE (170u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
+#define SPR_DEADLINE (100u * 16u)  /* スプライトの段に入る時点でこれを過ぎていたら、そのフレームは描き直さない
+                                      (スプライト・属性表・VRAM の仕事で残り 140 ライン前後かかる) */      /* 1 = 被弾しない(自動テスト用) */
 /* 段ごとの所要時間(S1990 タイマのカウント。1 ライン ≒ 16.27): 入力・自機・敵・スプライト・ラスター・HUD */
 #define NPROF 6
 volatile u16 g_prof_max[NPROF];
@@ -121,13 +131,17 @@ void main(void) {
         u16 late0 = g_frame_late, idle;
         u8 ph;
         idle = frame_sync(1);
+        g_frame_t0 = sys_timer();
         if (g_frame_late != late0) g_stat.late++;
+        g_slow = slow_next;
+        slow_next = (u8)(!g_slow && g_phase >= PH_AIR && (g_frame_late != late0 || idle < (g_stat.base >> 2)));
+        if (g_slow) g_stat.slow++;
         if (idle < g_stat.idle_min) g_stat.idle_min = idle;
         g_stat.frames++;
         g_stat.idle_sum += idle;
 
         prof_t = sys_timer();
-        if (g_phase >= PH_AIR) gq_pump(0);   /* GHOST の待ち行列: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
+        if (g_phase >= PH_AIR) stage_pump_nb();   /* 列の描き込みと GHOST: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
         input_read();
         prof(0);
         ph = g_phase;
@@ -138,7 +152,7 @@ void main(void) {
             if (g_dbg_invul) g_pl.invul = 2;
             player_update();
             prof(1);
-            if (ph >= PH_AIR) { gq_pump(0); enemy_update(); boss_update(); gq_pump(0); }
+            if (ph >= PH_AIR) { stage_pump_nb(); if (!g_slow) { enemy_update(); boss_update(); } }
             prof(2);
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
                 state = ST_OVER;
@@ -155,18 +169,29 @@ void main(void) {
             frame_begin();
         }
 
-        spr_voff = g_vscroll;            /* スプライトの Y はプレイエリアの R#23 を足して表へ */
-        spr_begin();
-        if (g_phase <= PH_TITLE) title_draw();
-        else { player_draw(); boss_draw(); enemy_draw(); hud_sprites(); }
+        /* ★処理落ちのフレームはスプライトも描き直さない(前のフレームの属性表のまま。敵は動いていないので
+           止まって見えるのは同じ。スプライトの段は 1 フレームで 70 ライン前後かかる) */
+        if (!g_slow && g_phase >= PH_AIR && (u16)(sys_timer() - g_frame_t0) > SPR_DEADLINE) {
+            g_slow = 1; g_stat.slow++;   /* ここまでで重かった: スプライトは前のフレームのまま */
+        }
+        if (!g_slow) {
+            spr_voff = g_vscroll;        /* スプライトの Y はプレイエリアの R#23 を足して表へ */
+            spr_begin();
+            if (g_phase <= PH_TITLE) title_draw();
+            else { player_draw(); boss_draw(); enemy_draw(); hud_sprites(); }
+        }
         wait_vram_window();              /* ここから先は VRAM を書く */
-        spr_end();
-        if (g_phase >= PH_AIR) gq_pump(0);
+        /* ★CPU で VRAM を書く仕事(属性表・HUD の文字)を先に、VDP のコマンドを出す仕事(stage_vram)を後に。
+           VDP がコマンドを実行している間は CPU の VRAM の書き込みも遅くなる(Pawn を足したら 1 フレームが
+           90 ライン延びた)。コマンドはフレームの頭とここで出し、次のフレームの論理の間に VDP が進める */
+        if (!g_slow) spr_end();
+        /* HUD の文字は次のフレームへ回してよい: フレームの残りが少なければ書かない(VDP のコマンドと重なると
+           2 行の書き込みが 50 ライン近くかかることがある) */
+        if (g_hud_on && (g_phase < PH_AIR || (u16)(sys_timer() - g_frame_t0) < HUD_DEADLINE)) hud_update();
         prof(3);
         if (g_phase <= PH_SORTIE) { title_vram(); title_build(); }
         else { stage_vram(); stage_build(); }
         prof(4);
-        if (g_hud_on) hud_update();
         if (g_phase == PH_LOGO && g_pt == 2) {                 /* 起動ロゴのラスターリストが効いてから表示を戻す */
             *(volatile u8 *)0xF3E0 |= 0x40;
             vdp_wreg(1, *(volatile u8 *)0xF3E0);

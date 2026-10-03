@@ -75,7 +75,7 @@ GAME_FIRST := $(BUILD)/raster.rel $(BUILD)/rom.rel
 GAME_REST  := $(filter-out $(GAME_FIRST),$(CORE))
 # ★ページ 0 のコード(CODE0、0x0100-0x3FFF): 場面ごとのコード。起動時に ROM の bank4-5 から RAM へ複製する
 #   (main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前(起動の最初)には呼ばないこと。
-CODE0_GAME := title boss
+CODE0_GAME := title boss pawn
 CODE0_CORE := rotor ghost
 GAME_CODE0_CORE := $(CODE0_CORE:%=$(BUILD)/%.rel)
 CODE0_FLAGS = $(if $(filter $(CODE0_GAME),$*),--codeseg CODE0 --constseg CODE0)

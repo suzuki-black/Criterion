@@ -24,6 +24,7 @@
 #include "city_data.h"
 #include "sys.h"
 #include "font.h"
+#include "ghost.h"
 
 #define AIR1_LEN   512             /* 空中戦(ドット) */
 #define DESC_LEN   256             /* 降下(この間に g_scam が -188 → 0) */
@@ -46,7 +47,8 @@ static s16 scam_q;                 /* g_scam × 16 */
 static s8  dir;                    /* カメラの縦の向き(+1 = 降下、-1 = 上昇) */
 static u16 sec_wx;                 /* 区間に入ったときの g_wx */
 static u16 sec_t;                  /* 区間に入ってからのフレーム */
-static u16 w0;                     /* 地図の列 0 の世界の列(8 ドット単位) */
+u16 g_w0;                          /* 地図の列 0 の世界の列(8 ドット単位)。検証(run_game_m3.sh)も読む */
+#define w0 g_w0
 static u8  upper_sky;              /* 1 = s < 0 は高い空(上昇から) */
 static s16 tag[NBLK];
 static u8  cmap[CITY_COLS];
@@ -73,7 +75,7 @@ static void enter(u8 sec) {
     if (sec == SEC_MID) boss_start(BOSS_LEGION);
     if (sec == SEC_CITY2) boss_prepare(BOSS_PLUMB);           /* ROTOR で下げ振りの絵を作り始める */
     if (sec == SEC_BOSS) boss_start(BOSS_PLUMB);
-    if (sec == SEC_ASCENT) { upper_sky = 1; g_scroll_speed = 8; pick_at = 0x7FFF; }
+    if (sec == SEC_ASCENT) { upper_sky = 1; g_scroll_speed = 8; pick_at = 0x7FFF; pawn_reset(); }
     if (sec == SEC_AIR2) { g_scroll_speed = 4; banner_t = 1; }
 }
 
@@ -86,6 +88,7 @@ void stage_start(void) {
     for (b = 0; b < NBLK; b++) tag[b] = b < BLK_CONST ? (s16)(b * 8 - 188) : TAG_NONE;
     tag[BLK_CONST] = -4;
     rom_to_ram(ASSET_CITY_MAP_BANK, ASSET_CITY_MAP_OFF, cmap, CITY_COLS);
+    pawn_sheet_load(); pawn_reset();
     strip_off = 0; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; turret_i = 0; hs_t = 0xFF; banner_t = 0;
     enter(SEC_AIR1);
 }
@@ -133,6 +136,10 @@ void stage_update(void) {
     g_scam = (s16)(scam_q >> 4);
     if (g_scam != target) dir = g_scam > target ? 1 : -1;
     g_vscroll = (u8)(188 + g_scam);
+
+    /* 街路の Pawn(都市の前半・後半で出す。広場ではもう出さないが、いるものは歩き続ける) */
+    if (g_sec >= SEC_CITY1 && g_sec <= SEC_BOSS && !g_slow)
+        pawn_update((u8)((g_sec == SEC_CITY1 || g_sec == SEC_CITY2) && g_scam == 0));
 
     /* 屋上の砲台: 列が画面の右端に来たら置く */
     while (turret_i < CITY_NTURRET) {
@@ -246,13 +253,17 @@ static void job_pick(void) {
     jn = n;
 }
 
-static void pump(void) {
-    u16 t0 = sys_timer();
+/* budget = 待ってよい時間(0 = VDP が空いている間だけ出して、待たない) */
+static u8 stage_work(void);
+void stage_pump(u16 budget) {
+    u16 t0;
+    if (!stage_work()) return;
+    t0 = sys_timer();
     for (;;) {
         /* ★VDP が動いている間(GHOST の大きな HMMM など)は、予算の間だけ待つ。vdp_hmmm に待たせると
            PLUMB の 64x64 の写し(約 12ms)を丸ごと待った */
         if (vdp_cmd_busy()) {
-            if ((u16)(sys_timer() - t0) > PUMP_BUDGET) return;
+            if ((u16)(sys_timer() - t0) >= budget) return;
             continue;
         }
         if (!jn && pick_at != (s16)(g_scam & ~7)) job_pick();
@@ -265,6 +276,18 @@ static void pump(void) {
         else vdp_hmmm(c_sx, c_sy, c_dx, c_dy, c_nx, c_ny);
         if ((u16)(sys_timer() - t0) > PUMP_BUDGET) return;
     }
+}
+
+/* 列と描き替えの仕事が残っているか(VDP の状態を読む前に C だけで調べる) */
+static u8 stage_work(void) {
+    return (u8)(jn || col_b < NBLK || col_done < (u16)((g_wx >> 3) + 64) || pick_at != (s16)(g_scam & ~7));
+}
+
+/* メインループの途中で(待たない): 列と描き替え、GHOST の待ち行列。
+   ★仕事が無ければ VDP を読まずに戻る(CE を見るだけで I/O 5 回 ≒ 0.7 ライン。1 フレームに 3 回呼ぶ) */
+void stage_pump_nb(void) {
+    if (strip_off >= STRIP_LEN && stage_work()) stage_pump(0);
+    if (gq_free() < GQ_N) gq_pump(0);
 }
 
 /* ---- 面の開始表示(指示書 4.2): HUD 帯の上に 16 行の帯を出し、「STAGE 2 / GRAVITY WELL」を左から滑り込ませ、
@@ -308,7 +331,11 @@ void stage_vram(void) {
         if (strip_off >= STRIP_LEN) { col_done = (u16)((g_wx >> 3) + 64); pick_at = 0x7FFF; }   /* 以降の列は流しながら */
         return;
     }
-    pump();
+    {   /* 予算はフレームの残りから(VRAM の仕事の後はリストを組むだけ。ここで 200 ラインを超えたら出さない) */
+        extern u16 g_frame_t0;
+        u16 used = (u16)(sys_timer() - g_frame_t0), lim = 200u * 16u;
+        stage_pump(used >= lim ? 0 : (lim - used < PUMP_BUDGET ? (u16)(lim - used) : PUMP_BUDGET));
+    }
 }
 
 /* ---- ラスターリスト ----
@@ -391,9 +418,18 @@ void stage_build(void) {
             else if (i == 6) ev_scroll(l, nx);
         }
     }
-    /* s >= 0: 都市 */
+    /* s >= 0: 都市。LEGION の揺れの帯(横のずれ)を空の色の帯と行の順に混ぜる */
     ev_scroll((s16)(0 - sc), nx);
-    for (i = 0; i < 6; i++) ev_pal((s16)(city_sky_s[i] - sc), city_sky[i]);
+    {
+        s16 bl[5]; s8 bo[5];
+        u8 nb = boss_bands(bl, bo), kb = 0;
+        for (i = 0; i < 6; i++) {
+            s16 l = (s16)(city_sky_s[i] - sc);
+            while (kb < nb && bl[kb] < l) { ev_scroll(bl[kb], (u16)(nx - bo[kb])); kb++; }
+            ev_pal(l, city_sky[i]);
+        }
+        while (kb < nb) { ev_scroll(bl[kb], (u16)(nx - bo[kb])); kb++; }
+    }
     if (!sat_done) sat_entry();
     if (banner_t >= BAN_IN && banner_t < BAN_END) {
         s16 line = (s16)(BAN_LINE + (banner_t > BAN_SUCK ? (banner_t - BAN_SUCK) >> 1 : 0));

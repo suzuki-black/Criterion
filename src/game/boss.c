@@ -1,6 +1,10 @@
 /* boss.c — 1 面の中ボス LEGION と ボス PLUMB(指示書 5.1)。
-   ・LEGION(仮。M3 の後段で BG の Pawn の群体にする): 9 体の Pawn が人型に積み上がり、胸に核(隊長機)。
-     撃たれた Pawn は剥がれて地面に落ち、しばらくすると這い上がって穴を埋める。核を壊すと全体が崩れる。
+   ・LEGION: 地上の Pawn(BG の 4x4、pawn.c)が地面から這い上がって、12 x 26 マスの人型に積み上がる(約 170 体)。
+     胸に核(隊長機、スプライト)。撃たれたマスの Pawn は剥がれて落ち、しばらく待って這い上がって穴を埋める。
+     核を壊すと上から崩れ、Pawn は地面へ落ちて左右へ逃げ散る。
+     ★動いている Pawn(粒子)は最大 NPART 体。2 フレームに 1 回 1 マス(4 ドット)動き、そのたびに前のマスを
+       「積んであれば Pawn、なければ空」で描き戻す。人型の揺れは、人型の行の帯ごとにラスターで横位置を
+       ずらして見せる(VRAM の描き直し 0。広場の背景は空と街路で一様なので背景のずれは見えない)。
    ・PLUMB: 上空から鎖(スプライト 12 節)で吊られた直径約 44 ドット(64x64 の枠)の真鍮の下げ振り。BG に描く。
      振り子で揺れる傾きは ROTOR(rotor.c)で前もって作った 7 枚(±34 度)から選ぶ。自転は胴の経線の縞
      (色 2..5)のパレットを回して見せる。体力が半分を切ると鎖が切れ、縮小した 3 枚(遠近)を使って跳ね回り、
@@ -19,7 +23,6 @@
 #include "ghost.h"
 #include "assets.h"
 
-#define GROUND   152               /* 都市の歩道(158)の少し上 */
 #define LEGION_HP 40
 #define PLUMB_HP  70
 #define PLUMB_HALF 35
@@ -30,15 +33,28 @@ static u8  kind;
 static u16 t;
 static s16 bx, by;
 
-/* ---- LEGION(仮) ---- */
-#define NPAWN 9
-static const s8 pawn_dx[NPAWN] = { 0, -14, 14, -24, 24, -8, 8, -10, 10 };   /* 頭・肩・腕・腰・脚 */
-static const s8 pawn_dy[NPAWN] = { -34, -20, -20, -6, -6, 6, 6, 22, 22 };
-static u8  pawn_off[NPAWN];        /* 0 = 体にいる / それ以外 = 剥がれてからのフレーム */
-static u8  pawn_hp[NPAWN];
-static s16 pawn_y[NPAWN], pawn_vy[NPAWN];   /* 剥がれている Pawn(固定小数点) */
-static s16 pawn_x[NPAWN], pawn_vx[NPAWN];   /* 崩れて逃げ散るとき */
+/* ---- LEGION ---- */
+#define LG_W   12
+#define LG_H   26
+#define NPART  16
+#define LG_X   152                 /* 人型の左端(画面。リングで 4 の倍数に寄せる) */
+#define LG_Y   54                  /* 上端。最下段(25)の下端が歩道の上 157 */
+/* 人型のマス(bit 11 = 左端の列) */
+static const u16 lg_mask[LG_H] = {
+    0x0F0, 0x1F8, 0x1F8, 0x0F0, 0x060, 0x3FC, 0x7FE, 0xFFF, 0xEF7, 0xCF3, 0xCF3, 0xCF3, 0xCF3,
+    0x8F1, 0x0F0, 0x0F0, 0x1F8, 0x198, 0x198, 0x198, 0x198, 0x198, 0x198, 0x39C, 0x39C, 0x79E };
+u16 g_lg_on[LG_H];                 /* 積んであるマス(検証 run_game_m3.sh も読む) */
+s16 g_lg_x0;                       /* 人型の左端(画面)。同上 */
+#define lg_on g_lg_on
+#define gx0 g_lg_x0
+static u8  asm_j, asm_i;           /* 組み上げの次のマス(下の行から) */
+static u8  lg_left;                /* 積んであるマスの数 */
+static u8  col_j;                  /* 崩落: 次に崩す行 */
+enum { P_OFF, P_CLIMB, P_FALL, P_WAIT, P_RUN };
+typedef struct { u8 mode, i, j, tj, t; s8 dir; } Part;
+static Part part[NPART];
 static u8  spread_t, aim_t;        /* 撃つ間隔(割り算・余りを毎フレーム使わない) */
+static s8  sway[5];                /* 帯ごとの横のずれ(頭 → 脚)。人型の行 j の帯は j / 4(16 行から先は 4) */
 
 /* ---- PLUMB ---- */
 #define CHAIN_N 12
@@ -72,8 +88,10 @@ void boss_start(u8 k) {
     u8 i;
     kind = k; t = 0; g_boss_state = BS_ENTER;
     if (k == BOSS_LEGION) {
-        g_boss_hp = LEGION_HP; bx = 300; by = 118; spread_t = 0;
-        for (i = 0; i < NPAWN; i++) { pawn_off[i] = 0; pawn_hp[i] = 2; }
+        g_boss_hp = LEGION_HP; spread_t = 0; aim_t = 0; asm_j = LG_H - 1; asm_i = 0; lg_left = 0; gx0 = -1;
+        for (i = 0; i < LG_H; i++) lg_on[i] = 0;
+        for (i = 0; i < NPART; i++) part[i].mode = P_OFF;
+        for (i = 0; i < 5; i++) sway[i] = 0;
     } else {
         g_boss_hp = PLUMB_HP; bx = 128; anchor_y = -110; broken = 0; aim_t = 0; spin = 0; dr_w = 0;
         cur_fr = FR_UP; swing = 0;
@@ -88,16 +106,7 @@ void boss_damage(u8 n) {
     if (g_boss_hp > n) { g_boss_hp -= n; return; }
     g_boss_hp = 0; g_boss_state = BS_DYING; t = 0;
     score_add(kind == BOSS_LEGION ? 200 : 500);
-    if (kind == BOSS_LEGION) {
-        u8 i;
-        for (i = 0; i < NPAWN; i++) {                         /* 崩落: 四方へ逃げ散る */
-            pawn_x[i] = FX(bx + pawn_dx[i]);
-            pawn_y[i] = FX(by + pawn_dy[i]);
-            pawn_vx[i] = (s16)((s8)(rnd8() & 63) - 32);
-            pawn_vy[i] = (s16)(-(s16)(rnd8() & 31) - 16);
-            pawn_off[i] = 0;
-        }
-    }
+    if (kind == BOSS_LEGION) col_j = 0;                       /* 崩落は上の行から */
 }
 
 /* 自機のショット: 毎フレーム最初に画面座標(8 ビット)の表にしておき、部位ごとの判定は 8 ビットの比較だけにする
@@ -147,52 +156,153 @@ static void spread5(s16 x, s16 y) {
     enemy_bullet(FX(x), FX(y), -26, 18);  enemy_bullet(FX(x), FX(y), -26, -18);
 }
 
+/* ---- LEGION のマス ---- */
+static u8 band_of(u8 j) { return j < 16 ? (u8)(j >> 2) : 4; }
+static s16 cell_x(u8 i, u8 j) { return (s16)(gx0 + i * 4 + sway[band_of(j)]); }   /* 画面での見た目の位置 */
+static u8 is_on(u8 i, u8 j) { return (u8)((lg_on[j] >> (11 - i)) & 1); }
+/* マスを描く(リングには揺れなしの位置で。揺れはラスターで見せる)。kind 0 / 1 = Pawn、2 = 空 */
+static void cell_draw(u8 i, u8 j, u8 k) { pawn_cell((s16)(gx0 + i * 4), (s16)(LG_Y + j * 4), k); }
+
+static Part *part_new(void) {
+    u8 k;
+    for (k = 0; k < NPART; k++) if (part[k].mode == P_OFF) return &part[k];
+    return 0;
+}
+
+/* 粒子を 1 マス動かす。前のマスは積んであれば Pawn、なければ空で描き戻す。
+   ★上下の 1 マスの移動は、動いた先と元のマスを 4x8 の 1 回の HMMM で済ませる(pawn_move) */
+static void part_step(Part *p) {
+    u8 oj = p->j, oi = p->i;
+    switch (p->mode) {
+    case P_CLIMB:
+        if (p->j > p->tj) {
+            p->j--;
+            pawn_move((s16)(gx0 + oi * 4), (s16)(LG_Y + p->j * 4), is_on(oi, oj));
+        }
+        break;
+    case P_FALL:
+        if (p->j < LG_H - 1) {
+            p->j++;
+            pawn_move((s16)(gx0 + oi * 4), (s16)(LG_Y + oj * 4), (u8)(is_on(oi, oj) ? 1 : 2));
+        } else { p->mode = p->tj == 0xFF ? P_RUN : P_WAIT; p->t = 0; }   /* tj = 0xFF: 崩落(戻らず逃げる) */
+        break;
+    case P_RUN:                                               /* 地面を左右へ逃げる */
+        cell_draw(oi, oj, is_on(oi, oj) ? 0 : 2);
+        if (++p->t > 12 || (p->dir < 0 ? p->i == 0 : p->i >= LG_W - 1)) { p->mode = P_OFF; return; }
+        p->i = (u8)(p->i + p->dir);
+        cell_draw(p->i, p->j, (u8)(p->t & 1));
+        return;
+    default:
+        return;
+    }
+    if (p->mode == P_CLIMB && p->j == p->tj) {                /* 着いた: 積む(絵は A のまま) */
+        lg_on[p->j] |= (u16)(1u << (11 - p->i)); lg_left++;
+        p->mode = P_OFF;
+    }
+}
+
+/* マスを剥がして落とす(粒子が足りなければ消すだけ) */
+static void knock(u8 i, u8 j, u8 run) {
+    Part *p = part_new();
+    lg_on[j] &= (u16)~(1u << (11 - i)); lg_left--;
+    if (!p) { cell_draw(i, j, 2); return; }
+    p->mode = P_FALL; p->i = i; p->j = j; p->t = 0; p->tj = run ? 0xFF : j; p->dir = (rnd8() & 1) ? 1 : -1;
+}
+
 static void legion_update(void) {
-    u8 i;
+    u8 k, i, j;
     if (g_boss_state == BS_ENTER) {
-        bx -= 2;
-        if (bx <= 196) g_boss_state = BS_FIGHT;
-        return;
-    }
-    if (g_boss_state == BS_DYING) {
-        for (i = 0; i < NPAWN; i++) { pawn_x[i] += pawn_vx[i]; pawn_y[i] += pawn_vy[i]; pawn_vy[i] += 2; }
-        if (!(t & 7)) fx_spawn(FX(bx - 16 + (rnd8() & 31)), FX(by - 30 + (rnd8() & 63)));
-        if (t >= 90) g_boss_state = BS_DONE;
-        return;
-    }
-    /* 揺れながら左右に歩く */
-    bx = (s16)(176 + (g_sin64[(u8)(t >> 2) & 63] >> 3));
-    by = (s16)(118 + (g_sin64[(u8)(t >> 1) & 63] >> 6));
-    for (i = 0; i < NPAWN; i++) {
-        s16 x = bx + pawn_dx[i], y = by + pawn_dy[i];
-        if (pawn_off[i]) {                                    /* 剥がれている: 落ちて、待って、這い上がる */
-            pawn_off[i]++;
-            if (pawn_off[i] < 60) {
-                pawn_y[i] += pawn_vy[i]; pawn_vy[i] += 3;
-                if (pawn_y[i] > FX(GROUND)) { pawn_y[i] = FX(GROUND); pawn_vy[i] = 0; }
-            } else if (pawn_off[i] < 150) {
-                s16 ty = FX(y);
-                pawn_y[i] += (s16)((ty - pawn_y[i]) >> 4);   /* 這い上がる */
-            } else { pawn_off[i] = 0; pawn_hp[i] = 2; }
-            continue;
+        if (g_scroll_speed) return;                            /* スクロールが止まってから */
+        if (gx0 < 0) gx0 = (s16)(LG_X - (u8)((g_wx + LG_X) & 3));   /* リングで 4 の倍数に */
+        /* 組み上げ: 下の行から順に、空いている粒子で地面から這い上がらせる(2 フレームに 1 体) */
+        if (!(t & 1) && asm_j < LG_H) {
+            while (asm_j < LG_H && !((lg_mask[asm_j] >> (11 - asm_i)) & 1)) {
+                if (++asm_i >= LG_W) { asm_i = 0; asm_j--; }
+            }
+            if (asm_j < LG_H) {
+                Part *p = part_new();
+                if (p) {
+                    p->mode = P_CLIMB; p->i = asm_i; p->j = LG_H - 1; p->tj = asm_j;
+                    if (p->j == p->tj) { lg_on[asm_j] |= (u16)(1u << (11 - asm_i)); lg_left++; cell_draw(asm_i, asm_j, 0); p->mode = P_OFF; }
+                    if (++asm_i >= LG_W) { asm_i = 0; asm_j--; }
+                }
+            }
         }
-        if (shot_hit(x, y, 7) && --pawn_hp[i] == 0) {
-            pawn_off[i] = 1; pawn_y[i] = FX(y); pawn_vy[i] = -16;
-            fx_spawn(FX(x), FX(y)); score_add(1);
+        if (asm_j >= LG_H) {                                  /* 全部出した: 粒子が着き終わったら戦う */
+            for (k = 0; k < NPART && part[k].mode == P_OFF; k++) { }
+            if (k == NPART) g_boss_state = BS_FIGHT;
         }
-        touch(x, y, 8);
-    }
-    {
-        s16 cx = bx, cy = (s16)(by - 12);
-        u8 n = shot_hit(cx, cy, 8);
-        while (n--) boss_damage(1);
-        touch(cx, cy, 8);
-        if ((t & 63) == 32) {                                 /* 腕の Pawn が狙って撃つ */
-            if (!pawn_off[3]) enemy_shoot(FX(bx + pawn_dx[3]), FX(by + pawn_dy[3]));
-            if (!pawn_off[4]) enemy_shoot(FX(bx + pawn_dx[4]), FX(by + pawn_dy[4]));
+    } else if (g_boss_state == BS_DYING) {
+        /* 戻る途中・待っている Pawn も逃げる */
+        for (k = 0; k < NPART; k++) {
+            Part *p = &part[k];
+            if (p->mode == P_WAIT) { p->mode = P_RUN; p->t = 0; }
+            else if (p->mode == P_CLIMB) { p->mode = P_FALL; p->tj = 0xFF; }
         }
-        if (++spread_t >= 150) { spread_t = 0; spread5(cx, cy); }
+        /* 上の行から崩す(1 フレームに 4 マスまで。1 行まとめると重いフレームになった) */
+        if (col_j < LG_H) {
+            u8 n = 0;
+            for (i = 0; i < LG_W && n < 4 && gq_free() >= 8; i++) if (is_on(i, col_j)) { knock(i, col_j, 1); n++; }
+            if (i == LG_W) col_j++;
+        }
+        if (!(t & 7)) fx_spawn(FX(gx0 + 8 + (rnd8() & 31)), FX(LG_Y + (rnd8() & 63) + (col_j << 2)));
+        if (col_j >= LG_H) {
+            for (k = 0; k < NPART && part[k].mode == P_OFF; k++) { }
+            if (k == NPART) g_boss_state = BS_DONE;
+        }
+    } else {
+        /* 戦う: 揺れ、撃つ、当たり */
+        s8 w = g_sin64[(u8)(t >> 1) & 63];
+        sway[0] = (s8)(w >> 5); sway[1] = (s8)(w >> 5); sway[2] = (s8)(w >> 6); sway[3] = (s8)(w >> 7); sway[4] = 0;
+        for (k = 0; k < nsh; k++) {                            /* ショット → マス */
+            s16 y = (s16)shy[k] - LG_Y, x;
+            Bullet *b;
+            if (y < 0 || y >= LG_H * 4) continue;
+            j = (u8)(y >> 2);
+            x = (s16)shx[k] - (gx0 + sway[band_of(j)]);
+            if (x < 0 || x >= LG_W * 4) continue;
+            i = (u8)(x >> 2);
+            if (!is_on(i, j)) continue;
+            if ((j >= 7 && j <= 9) && (i == 5 || i == 6)) continue;   /* 核の上は素通り(核が受ける) */
+            b = &g_pshot[shi[k]];
+            if (!b->on) continue;
+            if (!b->pierce) b->on = 0;
+            knock(i, j, 0);
+            fx_spawn(FX(cell_x(i, j) + 2), FX(LG_Y + j * 4 + 2)); score_add(1);
+        }
+        {
+            s16 cx = (s16)(gx0 + 24 + sway[2]), cy = LG_Y + 34;
+            u8 n = shot_hit(cx, cy, 8);
+            while (n--) boss_damage(1);
+            touch(cx, cy, 8);
+            touch((s16)(gx0 + 24 + sway[1]), LG_Y + 20, 12);   /* 上半身に体当たり */
+            if (++aim_t >= 64) {                              /* 腕(13 行の両端)が狙って撃つ */
+                aim_t = 0;
+                if (is_on(0, 13)) enemy_shoot(FX(cell_x(0, 13)), FX(LG_Y + 52));
+                if (is_on(11, 13)) enemy_shoot(FX(cell_x(11, 13)), FX(LG_Y + 52));
+            }
+            if (++spread_t >= 150) { spread_t = 0; spread5(cx, cy); }
+        }
+        /* 落ちた Pawn: 待って、這い上がって穴を埋める */
+        for (k = 0; k < NPART; k++) {
+            Part *p = &part[k];
+            if (p->mode == P_WAIT && ++p->t >= 60) { p->mode = P_CLIMB; }
+        }
     }
+    /* 粒子を動かす(半分ずつ、2 フレームに 1 回)。★GHOST の待ち行列に 1 歩分(最大 2 コマンド × 継ぎ目)の
+       空きが無ければ、その粒子はこのフレームは動かさない(積めずに捨てると描き戻しが抜けて絵が崩れる) */
+    for (k = (u8)(t & 1); k < NPART; k += 2) {
+        Part *p = &part[k];
+        if (p->mode != P_OFF && gq_free() >= 8) part_step(p);
+    }
+}
+
+/* LEGION の揺れの帯(stage.c のラスターリストに入れる): 画面の行と横のずれ。戦っている間だけ */
+u8 boss_bands(s16 *line, s8 *off) {
+    u8 k;
+    if (kind != BOSS_LEGION || g_boss_state != BS_FIGHT) return 0;
+    for (k = 0; k < 5; k++) { line[k] = (s16)(LG_Y + k * 16); off[k] = sway[k]; }
+    return 5;
 }
 
 static void plumb_pos(void) {
@@ -296,24 +406,8 @@ void boss_vram_gen(void) {
     if (++gen_ph >= 24) { gen_ph = 0; gen_k++; }
 }
 
-/* 画面の矩形 → 表示リング(ページ 0|1)。リングの 512 幅と 256 行の継ぎ目で分ける */
-static void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill) {
-    u16 rx = (u16)((g_wx + (u16)x) & 511u);
-    u8 ry = (u8)(y + g_vscroll);
-    u8 w1 = w, h1 = h;
-    if (rx < 256 && rx + w > 256) w1 = (u8)(256 - rx);
-    else if (rx >= 256 && rx + w > 512) w1 = (u8)(512 - rx);
-    if ((u16)ry + h > 256) h1 = (u8)(256 - ry);
-    {
-        u16 dx = rx & 255, dy = (u16)(rx >= 256 ? 256u + ry : ry);
-        if (fill) gq_hmmv(dx, dy, w1, h1, 0x11); else gq_hmmm(sx, sy, dx, dy, w1, h1);
-    }
-    if (w1 < w) ring_cmd((u16)(sx + w1), sy, (s16)(x + w1), y, (u8)(w - w1), h1, fill);
-    if (h1 < h) ring_cmd(sx, (u16)(sy + h1), x, (s16)(y + h1), w, (u8)(h - h1), fill);
-}
-
 static void erase(s16 x, s16 y, s16 w, s16 h) {
-    if (w > 0 && h > 0) ring_cmd(0, 0, x, y, (u8)w, (u8)h, 1);
+    if (w > 0 && h > 0) ring_cmd(0, 0, x, y, (u8)w, (u8)h, 1, 0x11);
 }
 
 static void plumb_blit(u8 show) {
@@ -336,14 +430,14 @@ static void plumb_blit(u8 show) {
             erase(ix0, y + h, ix1 - ix0, oy1 - (y + h));      /* 下 */
         }
     }
-    if (w) ring_cmd((u16)(SLOT_X(cur_fr) + ox), (u16)(SLOT_Y(cur_fr) + oy), x, y, (u8)w, (u8)h, 0);
+    if (w) ring_cmd((u16)(SLOT_X(cur_fr) + ox), (u16)(SLOT_Y(cur_fr) + oy), x, y, (u8)w, (u8)h, 0, 0);
     dr_x = x; dr_y = y; dr_w = (u8)w; dr_h = (u8)h;
 }
 
 /* VRAM の窓で毎フレーム(stage.c): 絵を作る段と、PLUMB を写す */
 void boss_vram(void) {
     if (gen_k < NFRAME) boss_vram_gen();
-    if (kind != BOSS_PLUMB) return;
+    if (kind != BOSS_PLUMB) { gq_pump(0); return; }
     /* ★1 回の描き替えは最大 20 コマンド(写し 4 + 消し 4 方向 × リングの継ぎ目)。入りきらないときは見送る
        (途中まで積むと、消し残しや描き残しが出る) */
     if (gq_free() >= 20) {
@@ -351,7 +445,7 @@ void boss_vram(void) {
             if (dr_w) plumb_blit(0);                          /* 最後に消す */
         } else if (!(t & 1)) plumb_blit(1);                   /* 30Hz */
     }
-    gq_pump(250);
+    gq_pump(0);                                               /* 待たない(メインループの数か所でも出す) */
 }
 
 void boss_update(void) {
@@ -365,13 +459,7 @@ void boss_draw(void) {
     u8 i;
     if (g_boss_state == BS_NONE || g_boss_state == BS_DONE) return;
     if (kind == BOSS_LEGION) {
-        for (i = 0; i < NPAWN; i++) {
-            s16 x, y;
-            if (g_boss_state == BS_DYING) { x = PX(pawn_x[i]); y = PX(pawn_y[i]); }
-            else { x = bx + pawn_dx[i]; y = pawn_off[i] ? PX(pawn_y[i]) : by + pawn_dy[i]; }
-            spr_put(x - 8, y - 8, PAT_PAWN, G_ENEMY, 0);
-        }
-        if (g_boss_state != BS_DYING) spr_put(bx - 8, by - 20, PAT_LEGION_CORE, G_ENEMY, 0);
+        if (g_boss_state == BS_FIGHT) spr_put((s16)(gx0 + 24 + sway[2]) - 8, LG_Y + 34 - 8, PAT_LEGION_CORE, G_ENEMY, 0);
         return;
     }
     if (!broken && g_boss_state != BS_DYING) {               /* 吊り元から吊り輪まで 13 等分(1/13 ≒ 20/256) */

@@ -246,11 +246,63 @@ static u8 table_y(s16 y, u8 voff) {
     return t == 216 ? 217 : t;
 }
 
-void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs) {
-    if ((u16)x > 255 || y <= -16 || y >= SPR_LIMIT_Y - 8) return;
-    spr_bx = (u8)x; spr_bp = (u8)(pat << 2); spr_bg = group; spr_bcs = cs;
-    spr_bmask = (u8)((y < SPR_SPLIT ? 1 : 0) | (y > SPR_SPLIT - 16 ? 2 : 0));
-    spr_add(table_y(y, spr_voff));
+/* ★asm(C では 1 枚約 1 ライン。敵・弾・爆発で 1 フレームに 50 回呼ぶ)。sdcccall(1): HL = x、DE = y、
+   スタックに pat / group / cs(呼ばれた側が 3 バイト下ろす) */
+void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs) __naked {
+    (void)x; (void)y; (void)pat; (void)group; (void)cs;
+    __asm
+        ld   a, h
+        or   a
+        jr   nz, 00090$            ; x が 0..255 の外
+        ld   a, l
+        ld   (_spr_bx), a
+        ld   hl, #16
+        add  hl, de                ; HL = y + 16(y > -16 かつ y < SPR_LIMIT_Y - 8 = 180)
+        ld   a, h
+        or   a
+        jr   nz, 00090$
+        ld   a, l
+        or   a
+        jr   z, 00090$
+        cp   #(SPR_LIMIT_Y - 8 + 16)
+        jr   nc, 00090$
+        ld   b, #0                 ; 帯: y < SPR_SPLIT → 上、y > SPR_SPLIT - 16 → 下
+        cp   #(SPR_SPLIT + 16)
+        jr   nc, 00001$
+        inc  b
+    00001$:
+        cp   #(SPR_SPLIT + 1)
+        jr   c, 00002$
+        set  1, b
+    00002$:
+        ld   a, b
+        ld   (_spr_bmask), a
+        ld   hl, #2
+        add  hl, sp                ; pat / group / cs
+        ld   a, (hl)
+        add  a, a
+        add  a, a
+        ld   (_spr_bp), a
+        inc  hl
+        ld   a, (hl)
+        ld   (_spr_bg), a
+        inc  hl
+        ld   a, (hl)
+        ld   (_spr_bcs), a
+        ld   a, (_spr_voff)        ; 表の Y = y - 1 + R#23(216 は 217 に)
+        add  a, e
+        dec  a
+        cp   #216
+        jr   nz, 00003$
+        inc  a
+    00003$:
+        call _spr_add
+    00090$:
+        pop  hl
+        pop  af
+        inc  sp
+        jp   (hl)
+    __endasm;
 }
 
 void spr_put_hud(s16 x, s16 y, u8 pat, u8 cs) {

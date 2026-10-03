@@ -11,9 +11,11 @@ u8 gq_count;                      /* 積んである数(計測用に非 static) 
 void gq_clear(void) { head = tail = count = 0; }
 u8 gq_free(void) { return (u8)(GQ_N - count); }
 
+u16 g_gq_drop;                     /* 入りきらずに捨てたコマンドの数(0 であること。検証が読む) */
+
 static u8 *push(void) {
     u8 *p;
-    if (count >= GQ_N) return 0;
+    if (count >= GQ_N) { g_gq_drop++; return 0; }
     p = q[tail];
     if (++tail >= GQ_N) tail = 0;
     count++;

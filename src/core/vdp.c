@@ -64,6 +64,7 @@ volatile u8 vdpcbuf[15];
 
 static void cmd_flush(void) {
     __asm
+    _cmd_flush_entry::
         ld   hl, #_vdpcbuf
         ld   c, #0x9B
         ld   e, #32
@@ -143,10 +144,18 @@ u8 vdp_cmd_busy(void) __naked {
     __endasm;
 }
 
-/* 詰め済みの 15 バイト(R#32..46 の順)を出す。前のコマンドの終わりは待つ */
-void vdp_cmd_issue(const u8 *p) {
-    u8 i;
-    vdp_cmd_wait();
-    for (i = 0; i < 15; i++) vdpcbuf[i] = p[i];
-    cmd_flush();
+/* 詰め済みの 15 バイト(R#32..46 の順)を出す。前のコマンドの終わりは待つ。HL = p(sdcccall(1))
+   ★毎回 15 本すべて書く。VDP はコマンドを実行しながら NY / DY(SY)のレジスタを書き換えるので、「前と同じ
+     値なら書かない」とすると、次のコマンドが減った NY で動き、表示リングが全面崩れた(M3)。 */
+void vdp_cmd_issue(const u8 *p) __naked {
+    (void)p;
+    __asm
+        push hl
+        call _vdp_cmd_wait
+        pop  hl
+        ld   de, #_vdpcbuf
+        ld   bc, #15
+        ldir
+        jp   _cmd_flush_entry
+    __endasm;
 }

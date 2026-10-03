@@ -32,20 +32,22 @@ proc check {name cond detail} {
 proc key {row bit dur} { keymatrixdown \$row \$bit; after time \$dur [list keymatrixup \$row \$bit] }
 # 区間の記録: 入った時刻、ボス区間の最小の体力
 set ::seq {}; set ::last -1; set ::blank 0; set ::stall 0; set ::fr_prev 0; set ::minhp(3) 255; set ::minhp(5) 255
-set ::ban_seen 0
+set ::ban_seen 0; set ::late_prev 0; set ::late_at {}
 proc watch {} {
   set ph [rd [expr {$ST+14}]]
   set fr [rd16 [expr {$ST+6}]]
   if {[expr {[debug read {VDP regs} 1] & 0x40}] == 0} { incr ::blank }
   if {\$fr == \$::fr_prev} { incr ::stall }
+  set lt [rd16 [expr {$ST+4}]]
+  if {\$lt != \$::late_prev} { lappend ::late_at "[format %.2f [machine_info time]](+[expr {\$lt - \$::late_prev}] 区間 [rd $SEC])"; set ::late_prev \$lt }
   set ::fr_prev \$fr
   if {\$ph == 3} {
     set s [rd $SEC]
     if {\$s != \$::last} { lappend ::seq \$s; set ::last \$s; set ::t_sec(\$s) [machine_info time] }
     if {\$s == 3 || \$s == 5} {
       set b [rd $BS]; if {(\$b == 2 || \$b == 3) && [rd $BHP] < \$::minhp(\$s)} { set ::minhp(\$s) [rd $BHP] }
-      # ボスの高さへ(LEGION の核 ≒ 106、PLUMB の振れの下端 ≒ 86)
-      debug write_block memory [expr {$PL+2}] [binary format s [expr {\$s == 3 ? 1568 : 1248}]]
+      # ボスの高さへ(LEGION の核 ≒ 88、PLUMB の振れの下端 ≒ 86)
+      debug write_block memory [expr {$PL+2}] [binary format s [expr {\$s == 3 ? 1280 : 1248}]]
     }
     if {\$s == 7} {
       binary scan [debug read_block VRAM [expr {0x10000 + 172*128 + 20}] 88] cu* row
@@ -65,7 +67,7 @@ proc finish {} {
   check legion [expr {\$::minhp(3) == 0}] "最小の体力=\$::minhp(3)"
   check plumb [expr {\$::minhp(5) == 0}] "最小の体力=\$::minhp(5)"
   check no_blackout [expr {\$::blank == 0 && \$::stall == 0}] "表示が切れた回数=\$::blank 止まった回数=\$::stall"
-  check no_late [expr {\$late == 0}] "遅れたフレーム=\$late"
+  check no_late [expr {\$late == 0}] "遅れたフレーム=\$late \$::late_at"
   check banner [expr {\$::ban_seen}] "帯の文字"
   binary scan [debug read_block VRAM [expr {0x10000 + 160*128}] 3072] cu* band
   set dirty 0; foreach v \$band { if {\$v != 0} { incr dirty } }

@@ -74,6 +74,7 @@ extern Fx g_fx[MAX_FX];
 
 /* ---- 共通の小物 ---- */
 extern u16 g_frame;                 /* ゲーム開始からのフレーム */
+extern u8  g_slow;                  /* 1 = このフレームは処理落ち(敵・ボス・Pawn の更新を飛ばす。main.c) */
 extern const s8 g_sin64[64];        /* 正弦(±127) */
 u8   rnd8(void);
 void fx_spawn(s16 x, s16 y);
@@ -140,6 +141,14 @@ void boss_leave(void);              /* 時間切れ: 倒さずに去る */
 void boss_prepare(u8 kind);         /* 先に絵を作り始める(PLUMB: 都市後半に入ったとき) */
 void boss_vram(void);               /* VRAM の窓で毎フレーム(絵を作る段・BG に描く) */
 void boss_vram_gen(void);
+u8   boss_bands(s16 *line, s8 *off);   /* LEGION の揺れの帯(数を返す) */
+/* ---- Pawn(pawn.c) ---- */
+void pawn_sheet_load(void);
+void pawn_reset(void);
+void pawn_update(u8 active);
+void pawn_cell(s16 x, s16 y, u8 kind);  /* 空の地の 4x4: 0 / 1 = Pawn、2 = 空 */
+void pawn_move(s16 x, s16 y, u8 kind);  /* 4x8: 0 = 上 Pawn・下 空、1 = 上下 Pawn、2 = 上 空・下 Pawn */
+void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */
 
 /* ---- 面の進行と縦に長い世界(stage.c) ----
    縦の座標 s: 都市の画面の行と同じ(0 = 雲の底、158 = 歩道)。空中戦の空と雲は s = -188..-1。
@@ -152,5 +161,6 @@ void stage_start(void);             /* 1 面の空中戦から(PH_AIR に入る�
 void stage_update(void);            /* 区間を進める(スクロールの後) */
 void stage_vram(void);              /* 列と行の描き込み(VRAM の窓で) */
 void stage_build(void);             /* ラスターリスト */
+void stage_pump_nb(void);           /* VDP が空いていれば列の描き込みと GHOST を出す(待たない) */
 
 #endif /* GAME_H */
