@@ -149,6 +149,14 @@ void enemy_spawn_spirit(u16 wx, u8 roof) {
     e->x = FX((s16)(wx - g_wx)); e->y = FX((s16)roof - g_scam - 6);
 }
 
+/* 1 機だけの Notch(5 面の格納庫から上へ飛び出す): 自機の高さで急旋回する */
+void enemy_spawn_notch(s16 x, s16 y) {
+    Enemy *e = alloc_enemy();
+    if (!e) return;
+    e->type = E_NOTCH; e->t = 0; e->hp = 1; e->turned = 0; e->form = 0xFF;
+    e->x = x; e->y = y; e->vx = FX(-1) + 8; e->vy = FX(-2) - 8;
+}
+
 /* 敵弾を 1 発(位置と速さは固定小数点)。空きが無ければ撃たない */
 void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy) {
     u8 i;

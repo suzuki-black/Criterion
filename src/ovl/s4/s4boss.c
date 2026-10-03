@@ -175,6 +175,7 @@ static u8  seg_l[NSEG];
 static u8  tur_hp[NSEG];
 static u8  r_pass, r_phase;        /* 何回目 / 0 = 描く、1 = 泳ぐ、2 = 消す(r_cmd = 消した節の数) */
 static u8  r_cmd;                  /* 描いた命令の数 */
+static u8  r_wait;                 /* 始めの描き込みを待つ(VERNIER の爆発のスプライトと重なって遅れた) */
 static u8  r_amp;                  /* うねりの振れ幅: 正弦(±127)を右へずらす数(7 = ±1 → 3 = ±15) */
 #define R_CMDS NSEG                /* 体節は部品から 1 回ずつ写す */
 static const u8 r_path[R_PASS][NSEG] = {
@@ -204,7 +205,7 @@ static void ruler_cmd(u8 k) { parts_copy(k ? 0 : 32, 0, seg_rx[k], seg_s(k), SEG
 
 static void ruler_start(void) {
     u8 l;
-    r_base = s4_band_x(0); r_q = 0; r_amp = 7; r_pass = 0;
+    r_base = s4_band_x(0); r_q = 0; r_amp = 7; r_pass = 0; r_wait = 30;
     for (l = 0; l < S4_NL; l++) { r_off[l] = (s16)(s4_band_x(l) - r_base); s4_band_hold(l, s4_band_x(l)); }
     ruler_place();
     g_boss_hp = 0;
@@ -212,6 +213,7 @@ static void ruler_start(void) {
 
 static void ruler_update(void) {
     u8 k, l;
+    if (r_wait) r_wait--;
     r_q += 6;                                                 /* 大河の流れ 1.5 ドット/フレーム */
     r_base += r_q >> 2; r_q &= 3;
     if (r_amp > 3 && !(t & 31)) r_amp--;
@@ -403,7 +405,7 @@ void b4_vram(void) {
         if (kind == B4_VERNIER)
             while (v_drawn < V_CMDS && gq_free() > 4 && n++ < 8) vern_cmd(v_drawn++);   /* 1 フレーム 8 個まで */
         else if (kind == B4_RULER && r_phase == 0) {
-            while (r_cmd < R_CMDS && gq_free() > 4 && n++ < 8) ruler_cmd(r_cmd++);
+            while (!r_wait && r_cmd < R_CMDS && gq_free() > 4 && n++ < 4) ruler_cmd(r_cmd++);
             if (r_cmd >= R_CMDS) r_phase = 1;
         } else if (kind == B4_STRATUM && !f_load && f_cmd < F_H / 8 && gq_free() > 8) {
             for (n = 0; n < 2 && f_cmd < F_H / 8; n++, f_cmd++)   /* 8 行ずつ(1KB ≒ 6ms) */

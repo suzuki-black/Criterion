@@ -1,0 +1,254 @@
+/* s5.c — 5 面「規格戦艦ノルム」のオーバレイ: 区間・カメラ・帯・当たり・接近・撃沈(指示書 5.5)。
+   宇宙 → 雲海の上へ降りる → 接近(世界を止め、雲だけ帯で流す。遠くの戦艦が 8 段で大きくなり、閃光で実寸の
+   BG へ)→ 艦首(機銃)→ 艦体上面(主砲塔 4 基)→ 中ボス HANGAR DECK(誘爆で艦体に穴)→ 穴から艦底へ(上半分が
+   艦底、下半分が雲海)→ 装甲の破れ目から機関部(天井と床のプレスが R#23 の帯で上下)→ 出口の縦穴から艦橋へ →
+   ボス GAUGE BLOCK → 撃沈(前後の帯が離れながら沈む)→ 宇宙へ。
+   ・カメラ: 甲板の上は s = -60(上 60 行は高い空)、艦底と機関部は s = 0。
+   ・当たり: 区間ではなく自機のいる側で決める(艦体の上 / 下 / 室内)。穴と縦穴の列はどちらにも行ける。
+   ・色 6 は空の色(短冊の 0..3 行 = ブロック 23 が空に溶ける)。艦の暗い色は 2。
+   ★読み込まれるのは 5 面の空中戦が始まってから(4 面のオーバレイが頼む)。 */
+#include "s5.h"
+#include "ovl.h"
+#include "vdp.h"
+#include "rom.h"
+#include "assets.h"
+#include "s5_data.h"
+#include "ghost.h"
+
+#define AIR_LEN  256
+#define SINK_LEN 256
+#define S_TOP    (-192)
+
+static u16 sec_wx, sec_t;
+static u8  side;                   /* 自機のいる側: 0 = 艦体の上、1 = 下、2 = 室内 */
+static s16 cam_to;                 /* カメラの行き先(s × 16) */
+static u16 cq;                     /* 接近の間の雲の流れ(1/4 ドット) */
+static u8  far_k, far_drawn, flash_t, far_t;
+static u8  vortex;
+static u8  press_on;
+s8 s5_press_c, s5_press_f;
+static s16 wreck_a, wreck_b;       /* 撃沈: 前後の沈み(ドット) */
+static u16 wreck_x;                /* 撃沈: 離れる量 */
+
+static const u8 sky0[3] = { 1, 0, 2 }, sky1[3] = { 2, 1, 3 }, sky2[3] = { 3, 2, 4 }, sky3[3] = { 4, 3, 5 };
+static const u8 white[3] = { 7, 7, 7 }, inside[3] = { 1, 1, 2 }, gap[3] = { 2, 2, 4 };
+
+s16 s5_sx(u16 col) { return (s16)((u16)((g_w0 + col) << 3) - g_wx); }
+s16 s5_sy(s16 s) { return (s16)(s - g_scam); }
+u16 s5_col_at(s16 sx) { return (u16)(((u16)(g_wx + (u16)sx) >> 3) - g_w0); }
+static u16 col_of_screen(void) { return s5_col_at(0); }
+
+static void enter(u8 sec) {
+    g_sec = sec; sec_wx = g_wx; sec_t = 0;
+    switch (sec) {
+    case SEC5_AIR: case SEC5_APPROACH: enemy_waves(WAVES_AIR); break;
+    case SEC5_BOW: case SEC5_DECK: enemy_waves(WAVES_CITY); break;
+    default: enemy_waves(WAVES_NONE); break;
+    }
+    if (sec == SEC5_HANGAR) b5_hangar_start();
+    if (sec == SEC5_BOSS) b5_gauge_start();
+}
+
+static void palette(void) {
+    vdp_set_pal(6, 1, 0, 2);                                  /* = 空(ブロック 23 を空に溶かす) */
+    vdp_set_pal(2, 1, 1, 2);                                  /* 艦の暗い色 */
+    vdp_set_pal(3, 3, 3, 4); vdp_set_pal(4, 5, 5, 6); vdp_set_pal(5, 6, 6, 7); vdp_set_pal(7, 7, 7, 7);   /* 雲海 */
+}
+
+void ovl_init(void) {
+    stage_reset_ground();
+    g_w0 = (u16)((g_wx + AIR_LEN) >> 3);
+    rom_to_ram(ASSET_S5_MAP_BANK, ASSET_S5_MAP_OFF, g_map, S5_COLS);
+    g_maplen = S5_COLS;
+    stage_load_strips(ASSET_S5_STRIPS_BANK, ASSET_S5_STRIPS_OFF);
+    g_boss_state = BS_NONE; g_grav = GRAV_NONE; g_col_rev = 0; g_sky_t = 16;
+    side = 0; far_k = 0; far_drawn = 0xFF; flash_t = 0; far_t = 0; press_on = 0; cq = 0; vortex = 0;
+    s5_press_c = s5_press_f = 0; cam_to = S_TOP * 16;
+    b5_init();
+    enter(SEC5_AIR);
+}
+
+/* ---- 当たり(自機の上下の限り) ---- */
+static void terrain(void) {
+    u16 c0 = s5_col_at(PX(g_pl.x)), c;
+    s16 lo = 0, hi = PLAY_H - 16, py = PX(g_pl.y) + 8 + g_scam;   /* 自機の中心の s */
+    u8 k;
+    /* いる側: 室内の列にいれば室内、艦体の列では今の側のまま(穴の列でだけ上下が替わる) */
+    k = c0 < S5_COLS ? g_map[c0] : 0;
+    if (s5_kind[k] == 2) side = 2;
+    else if (s5_kind[k] == 0) side = py > S5_HULL_B - 30 ? 1 : 0;
+    else if (side == 2) side = py < 70 ? 0 : 1;              /* 室内から出た */
+    for (c = c0; c <= (u16)(c0 + 2); c++) {
+        s16 t, b;
+        if (c >= S5_COLS) continue;
+        k = g_map[c];
+        t = s5_top[k]; b = s5_bot[k];
+        if (s5_kind[k] == 1) {
+            if (side == 1) { if (b - g_scam > lo) lo = b - g_scam; }
+            else if (t - 16 - g_scam < hi) hi = t - 16 - g_scam;
+        } else if (s5_kind[k] == 2) {
+            if (k != 27) { t += s5_press_c; b -= s5_press_f; }   /* 出口の縦穴(27)だけはプレスが無い */
+            if (t - g_scam > lo) lo = t - g_scam;
+            if (b - 16 - g_scam < hi) hi = b - 16 - g_scam;
+        }
+    }
+    if (hi < lo) { if (side == 2) player_hit(); hi = lo; }    /* プレスに挟まれた */
+    g_pl_ymin = lo < 0 ? 0 : lo;
+    g_pl_ymax = hi > PLAY_H - 16 ? PLAY_H - 16 : hi;
+}
+
+/* 接近: 遠くの戦艦(8 段)を空の帯に描く。下の中央を (180, 104) にそろえる(大きいコマが前のコマを覆う) */
+static void far_draw(void) {
+    const u8 *f = s5_far[far_k];
+    if (far_drawn == far_k || gq_free() < 8) return;
+    ring_cmd(f[0], (u16)(512u + 64u + f[1]), (s16)(180 - (f[2] >> 1)), (s16)(104 - f[3] - g_scam), f[2], f[3], 0, 0);
+    far_drawn = far_k;
+}
+
+void ovl_update(void) {
+    u16 c;
+    sec_t++;
+    switch (g_sec) {
+    case SEC5_AIR:                                            /* 宇宙(短冊を読む間) */
+        if (g_scroll_speed != 4 && !(sec_t & 3)) g_scroll_speed += g_scroll_speed < 4 ? 1 : -1;
+        if ((u16)(g_wx - sec_wx) >= AIR_LEN) { palette(); enter(SEC5_SINK); }
+        break;
+    case SEC5_SINK: {                                         /* 雲海の上へ降りる */
+        u16 d = (u16)(g_wx - sec_wx);
+        if (d < SINK_LEN) g_scam_q = (s16)(S_TOP * 16 + (s16)(d * 12u));
+        else if (!stage_busy()) { g_scam_q = 0; g_scroll_speed = 0; enter(SEC5_APPROACH); }
+        break;
+    }
+    case SEC5_APPROACH:                                       /* 世界は止め、雲だけ流す。戦艦がだんだん大きくなる */
+        if (flash_t == 0) {
+            cq += 6;
+            if (sec_t > 120 && ++far_t >= 110) { far_t = 0; if (far_k < 7) far_k++; else flash_t = 1; }   /* 1 段 1.8 秒 */
+        } else if (++flash_t == 2) {                          /* 閃光: 遠くの絵を消して、実寸の艦が来る */
+            cq = 0;                                           /* 雲の帯も世界の位置へ戻す(跳ぶのは閃光の間) */
+            vdp_set_pal(3, 7, 7, 7); vdp_set_pal(4, 7, 7, 7); vdp_set_pal(14, 7, 7, 7); vdp_set_pal(2, 7, 7, 7);
+            ring_cmd(0, 0, 180 - 88, (s16)(104 - 35 - g_scam), 176, 35, 1, 0x11);
+        } else if (flash_t == 8) {
+            palette(); vdp_set_pal(14, 4, 4, 5);
+            g_scroll_speed = 8;                               /* 艦首を急いで連れてくる */
+        } else if (flash_t > 8 && col_of_screen() + 32 >= S5_COL_BOW) {
+            enter(SEC5_BOW); cam_to = S_DECKVIEW * 16;
+        }
+        break;
+    case SEC5_BOW:
+        if (g_scroll_speed > 4 && !(sec_t & 7)) g_scroll_speed--;
+        if (col_of_screen() + 16 >= S5_COL_DECK) enter(SEC5_DECK);
+        break;
+    case SEC5_DECK:
+        if (s5_col_at(160) >= S5_COL_DOOR + 4) { g_scroll_speed = 0; enter(SEC5_HANGAR); }   /* 扉が画面の右寄りで止まる */
+        break;
+    case SEC5_HANGAR:
+        if (sec_t == 5400) g_boss_state = BS_DONE;
+        if (g_boss_state == BS_DONE) { g_boss_state = BS_NONE; g_scroll_speed = 4; enter(SEC5_UNDER); }
+        break;
+    case SEC5_UNDER:
+        c = s5_col_at(PX(g_pl.x));
+        if (c > S5_COL_DOOR + 8 || sec_t > 300) cam_to = 0;  /* 穴を抜けたら艦底の眺め */
+        if (col_of_screen() >= S5_COL_ENGINE + 1) { g_scroll_speed = 3; enter(SEC5_ENGINE); }
+        break;
+    case SEC5_ENGINE:
+        /* 画面がすべて室内の間だけプレスを動かす(帯は画面の全幅なので、艦体や雲の列が見えている間は使えない) */
+        c = col_of_screen();
+        press_on = c > S5_COL_ENGINE && c + 33 < S5_COL_ENGINE + 88;
+        if (press_on) {
+            s5_press_c = (s8)(2 + ((u8)(g_sin64[(u8)(sec_t >> 1) & 63] + 128) >> 4));
+            s5_press_f = (s8)(2 + ((u8)(g_sin64[(u8)((sec_t >> 1) + 32) & 63] + 128) >> 4));
+        } else {
+            if (s5_press_c) s5_press_c--;
+            if (s5_press_f) s5_press_f--;
+        }
+        if (c + 16 >= S5_COL_BOSS) { cam_to = S_DECKVIEW * 16; g_scroll_speed = 4; }
+        if (c + 8 >= S5_COL_BOSS + 8) { g_scroll_speed = 0; enter(SEC5_BOSS); }
+        break;
+    case SEC5_BOSS:
+        if (sec_t == 5400) g_boss_state = BS_DONE;
+        if (g_boss_state == BS_DONE) { g_boss_state = BS_NONE; wreck_a = wreck_b = 0; wreck_x = 0; enter(SEC5_WRECK); }
+        break;
+    case SEC5_WRECK:                                          /* 撃沈: 2 秒爆発 → 前後の帯が離れながら沈む */
+        if (sec_t < 120) {
+            if (!(sec_t & 3)) fx_spawn(FX(100 + (rnd8() & 63)), FX(s5_sy(40 + (rnd8() & 31))));
+            if (sec_t == 100 && gq_free() >= 8) {             /* 艦体の中央に裂け目(前後の帯が離れると、上と下で逆へずれて見える) */
+                ring_cmd(0, 0, 120, s5_sy(S5_DECK - 6), 16, 34, 1, 0x22);
+                ring_cmd(0, 0, 126, s5_sy(S5_DECK + 28), 16, 36, 1, 0x22);
+                ring_cmd(0, 0, 122, s5_sy(S5_DECK + 10), 4, 30, 1, 0xDD);
+            }
+        } else {
+            if (sec_t & 1) { if (wreck_a < 60) wreck_a++; if (wreck_b < 120) wreck_b += 2; }
+            wreck_x += 2;
+            if (!(sec_t & 3)) {                               /* 雲海の渦(パレットを回す) */
+                u8 p = vortex;
+                if (++vortex >= 3) vortex = 0;
+                vdp_set_pal(4, (u8)(4 + p), (u8)(4 + p), (u8)(5 + p));   /* 雲のきめ(4, 5)だけ回す(3 は雲の地で、回すと全面が光った) */
+                vdp_set_pal(5, (u8)(6 - p), (u8)(6 - p), 7);
+            }
+            if (wreck_b >= 120 && sec_t > 400) { enter(SEC5_OUT); g_scroll_speed = 4; }
+        }
+        g_pl_ymin = 0; g_pl_ymax = 30;                        /* 自機は空へ(沈む帯ではスプライトがずれる) */
+        break;
+    case SEC5_OUT:                                            /* 宇宙へ上がる(沈んだ帯のまま) */
+        cam_to = S_TOP * 16;
+        if (sec_t == 240) {
+            palette();
+            g_bands_all = 0;                                  /* ★6 面へのつなぎは 6 面を作るときに */
+            return;
+        }
+        break;
+    default:
+        break;
+    }
+    /* カメラ(接近と艦底・機関部は 0、甲板の上は -60) */
+    if (g_sec >= SEC5_BOW) {
+        if (g_scam_q < cam_to) { g_scam_q += 16; if (g_scam_q > cam_to) g_scam_q = cam_to; }
+        else if (g_scam_q > cam_to) { g_scam_q -= 16; if (g_scam_q < cam_to) g_scam_q = cam_to; }
+    }
+    if (g_sec == SEC5_WRECK || g_sec == SEC5_OUT) return;
+    if (g_sec < SEC5_APPROACH) { g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; }
+    else terrain();
+}
+
+void ovl_logic(void) { b5_update(); }
+void ovl_draw(void) { b5_draw(); }
+void ovl_vram(void) {
+    if (g_sec == SEC5_APPROACH && !flash_t) far_draw();
+    b5_vram();
+}
+
+void ovl_bands(s16 sc, u16 nx) {
+    if (g_bands_all) {
+        if (g_sec == SEC5_BOSS) { b5_gauge_bands(sc, nx); return; }
+        /* 撃沈: 上の空 / 前の半分(沈みながら左へ)/ 後ろの半分(沈みながら右へ)/ 雲海 */
+        {
+            u8 base = (u8)(g_vscroll + g_roll);
+            stage_ev_pal(0, sky0); stage_ev_scroll(0, nx);
+            stage_ev_scroll(56, (u16)(nx + wreck_x)); stage_ev_vscroll(56, (u8)(base - wreck_a));
+            stage_ev_scroll(112, (u16)(nx - wreck_x)); stage_ev_vscroll(112, (u8)(base - wreck_b));
+            stage_ev_pal(172, gap); stage_ev_scroll(172, nx); stage_ev_vscroll(172, base);
+        }
+        return;
+    }
+    if (g_sec < SEC5_SINK) return;
+    /* 空のグラデーション(色 1)と雲海。接近の間は雲の帯だけ流れる */
+    stage_ev_pal((s16)(0 - sc), sky0);
+    if (g_sec <= SEC5_APPROACH) {
+        stage_ev_pal((s16)(28 - sc), sky1); stage_ev_pal((s16)(56 - sc), sky2); stage_ev_pal((s16)(84 - sc), sky3);
+    }
+    if (g_sec == SEC5_APPROACH && flash_t >= 2 && flash_t < 8) stage_ev_pal((s16)(0 - sc), white);
+    if (g_sec == SEC5_ENGINE) stage_ev_pal((s16)(0 - sc), inside);
+    /* 天井のプレス: 24 行から下を e だけ下げて見せる(★帯の項目は行の順に出す) */
+    if (press_on) {
+        u8 base = (u8)(g_vscroll + g_roll);
+        stage_ev_vscroll((s16)(24 - sc), (u8)(base - s5_press_c));
+        stage_ev_vscroll((s16)(S5_CEIL + s5_press_c - sc), base);
+    }
+    stage_ev_pal((s16)(106 - sc), g_sec == SEC5_ENGINE ? inside : gap);   /* 艦底と雲海の間(2 帯) */
+    if (g_sec == SEC5_APPROACH) stage_ev_scroll((s16)(108 - sc), (u16)(nx + (cq >> 2)));
+    if (press_on) {                                           /* 床のプレス: 上げて見せる */
+        u8 base = (u8)(g_vscroll + g_roll);
+        stage_ev_vscroll((s16)(S5_FLOOR - s5_press_f - sc), (u8)(base + s5_press_f));
+        stage_ev_vscroll((s16)(164 - sc), base);
+    }
+}

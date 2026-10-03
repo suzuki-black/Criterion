@@ -83,10 +83,11 @@ s16 s4_ring_sx(u16 rx, u8 layer) {
     s16 d = (s16)((rx - s4_band_x(layer)) & 511u);
     return d >= 256 ? (s16)(d - 512) : d;
 }
-/* 雲の絵はリングの x とページ 3 の x(rx & 255)が 1 対 1(短冊 k = 列 k & 31、地図はくり返し) */
+/* 雲の絵はリングの x とページ 3 の x が 1 対 1: 世界の列 c の短冊は (c - g_w0) & 31、リングの x は c * 8 なので、
+   ページ 3 の x = (rx - g_w0 * 8) & 255。★g_w0 を引き忘れると、32 列の倍数でない分だけずれた絵で戻していた */
 void s4_ring_restore(u16 rx, s16 s, u16 w, u8 h) {
     while (w) {
-        u16 sx = rx & 255u, n = (u16)(256u - sx);
+        u16 sx = (u16)(rx - (g_w0 << 3)) & 255u, n = (u16)(256u - sx);
         if (n > w) n = w;
         if (n > 254) n = 254;                                 /* ring_cmd の幅は u8(偶数に丸める) */
         ring_cmd(sx, (u16)(768 + s), (s16)(rx - g_wx), (s16)(s - g_scam), (u8)n, h, 0, 0);
@@ -150,6 +151,15 @@ void ovl_update(void) {
         if (g_boss_state == BS_DONE) {
             g_boss_state = BS_NONE;
             enter(g_sec == SEC4_MID ? SEC4_RIVER : g_sec == SEC4_RIVER ? SEC4_BOSS : SEC4_OUT);
+        }
+        break;
+    case SEC4_OUT:                                            /* 雲が一斉に流れる → 世界も動かして宇宙へ上がる */
+        if (g_scroll_speed < 4 && !(sec_t & 7)) g_scroll_speed++;
+        if (sec_t > 180 && g_scam_q > S_TOP * 16) g_scam_q -= 24;
+        if (sec_t == 420) {                                   /* 5 面へ(このあと 4 面のコードは呼ばれない) */
+            stage_banner("STAGE 5 / DREADNOUGHT NORM");
+            ovl_request(OVL_S5);
+            g_sec = SEC4_OUT + 1;                              /* = 5 面の空中戦(SEC5_AIR) */
         }
         break;
     default:

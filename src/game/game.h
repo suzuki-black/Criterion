@@ -125,6 +125,7 @@ enum { WAVES_NONE, WAVES_AIR, WAVES_CITY };
 void enemy_waves(u8 set);           /* 出現の台本を区間に合わせて切り替える(時刻は 0 から) */
 extern u8 g_wave_mirror;            /* 1 = 編隊を左から出す(3 面の逆走) */
 void enemy_spawn_spirit(u16 wx, u8 roof);
+void enemy_spawn_notch(s16 x, s16 y);   /* 1 機だけ、上へ(固定小数点) */
 void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy);   /* 固定小数点 */
 void enemy_shoot(s16 x, s16 y);     /* 自機を狙う */
 
@@ -179,6 +180,9 @@ void stage_reset_ground(void);              /* 地面を捨てる(次の面の�
 extern u8 g_col_rev;                        /* 列の窓を左へずらす列数(逆走に備える。31 = 逆走、16 = 前後に揺れる。3 面) */
 extern u8 g_strip_xlat[32];                 /* 短冊の番号の置き換え(描くときに引く。3 面の高速の流線) */
 u8   stage_redraw_col(u16 wcol);            /* 世界の列 wcol を描き直す(地図を書き換えたとき。隔壁の開閉)。0 = 頼みがいっぱい */
+u8   stage_col_ready(u16 wcol);           /* 世界の列 wcol が描き終わっている(上に BG を写してよい) */
+extern u8 g_bands_all;                      /* 1 = 面の ovl_bands がラスターの帯を全部出す(空 s < 0 の帯も) */
+void stage_ev_vscroll(s16 line, u8 r23);    /* 帯の縦スクロール(R#23)。スプライトもずれるので自機の入れない帯で */
 u8   stage_busy(void);                       /* 列の流し込み・描き替えが残っている(画面の BG に上書きする前に待つ) */
 void stage_banner(const char *text);        /* 面の開始表示 */
 void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */

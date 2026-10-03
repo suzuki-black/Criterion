@@ -59,6 +59,7 @@ static u16 strip_src;
 static u16 strip_off;              /* 短冊を ROM から読んだバイト数(STRIP_LEN で終わり。0xFFFF = 読まない) */
 static u16 col_done;               /* 描いた列の窓 [col_lo, col_done)(64 列まで) */
 static u16 col_lo;
+static u16 nx_prev;                /* 前のフレームの bg の位置(g_wx を差分で進める) */
 u8  g_col_rev;
 u8  g_strip_xlat[32];
 static u16 redraw_q[8];
@@ -113,6 +114,8 @@ void stage_reset_ground(void) {
     for (b = 0; b < NBLK; b++) if (b != BLK_CONST && tag[b] >= 0 && tag[b] < 188) tag[b] = TAG_NONE;
     strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0; redraw_n = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
+    g_wx &= 511u;                                             /* 世界の位置を面ごとに戻す(リングの位置は同じ) */
+    g_bands_all = 0;
 }
 void stage_banner(const char *text) {
     u8 i;
@@ -124,21 +127,28 @@ void stage_banner(const char *text) {
 /* 1 面の空中戦から(出撃の終わりに title.c が呼ぶ)。面の中身は 1 面のオーバレイを読み込んでから */
 void stage_start(void) {
     u8 b;
-    g_wx = bg_layer_x(2);
+    g_wx = bg_layer_x(2); nx_prev = g_wx;
     g_scam_q = S_AIR * 16; g_scam = S_AIR; dir = 1;
     upper_sky = UP_AIR; g_sky_t = 0; g_sec = 0; g_maplen = 0; g_roll = 0; g_boss_state = BS_NONE; g_boss_dmg = 0; g_boss_aim = -1;
     for (b = 0; b < NBLK; b++) tag[b] = b < BLK_CONST ? (s16)(b * 8 - 188) : TAG_NONE;
     tag[BLK_CONST] = -4;
     strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; banner_t = 0;
-    g_col_rev = 0; redraw_n = 0;
+    g_col_rev = 0; redraw_n = 0; g_bands_all = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
     enemy_waves(WAVES_AIR);
     ovl_request(OVL_S1);
 }
 
+/* ★世界の位置 g_wx は bg の位置(1/4 ドットの u16 = 16384 ドットで一周)の差分で進める。そのまま使うと 5 面の途中で
+   16384 → 0 に戻り、列の計算が全部壊れた。表示(R#26/27)は 512 で回るので nx のままでよく、g_wx ≡ nx (mod 512)。
+   面ごとに stage_reset_ground で 0..511 へ戻す(u16 でも溢れない) */
 void stage_update(void) {
     s16 target = g_scam;
-    g_wx = bg_layer_x(2);
+    {
+        u16 nx = bg_layer_x(2), d = (u16)(nx - nx_prev) & 0x3FFFu;
+        if (d & 0x2000u) d |= 0xC000u;                        /* 14 ビットの符号(逆走) */
+        g_wx += d; nx_prev = nx;
+    }
     if (g_ovl_ready && g_ovl >= OVL_S1) ovl_update();
     g_scam = (s16)(g_scam_q >> 4);
     if (g_scam != target) dir = g_scam > target ? 1 : -1;
@@ -298,6 +308,12 @@ static u8 stage_work(void) {
                 pick_at != (s16)(g_scam & ~7));
 }
 u8 stage_busy(void) { return stage_work(); }
+/* 世界の列 wcol が描き終わっていて、描きかけでもない(その上に BG を写してよい) */
+u8 stage_col_ready(u16 wcol) {
+    if ((u16)(wcol - col_lo) >= (u16)(col_done - col_lo)) return 0;
+    return (u8)(col_b >= NBLK || cur_col != wcol);
+}
+u8 g_bands_all;
 
 /* メインループの途中で(待たない): 列と描き替え、GHOST の待ち行列。
    ★仕事が無ければ VDP を読まずに戻る(CE を見るだけで I/O 5 回 ≒ 0.7 ライン。1 フレームに 3 回呼ぶ) */
@@ -404,6 +420,21 @@ void stage_ev_haze(s16 line, u8 n, u8 *tbl) {
     c->line = (u8)line; c->flags = RAS_HAZE | RAS_HAZE_FINE; c->haze = tbl; c->haze_n = n;
 }
 
+/* 帯の縦スクロール(R#23)。ISR は R#23 の書き込みを覚えて以降の R#19 に足す。★スプライトもその帯では R#23 の差だけ
+   ずれて見えるので、自機の入れない帯で使う(5 面のプレス)。1 フレーム VS_MAX 個まで */
+#define VS_MAX 4
+static u8 vs_regs[2][VS_MAX][2], vs_n, vs_bi;
+void stage_ev_vscroll(s16 line, u8 r23) {
+    RasEntry *c;
+    if (vs_n >= VS_MAX || line <= 0) return;
+    if (line >= 96 && !sat_done) sat_entry();                 /* 属性表の切り替え(RAS_REGS)より先に並べない */
+    c = slot(line, RAS_REGS);                                 /* slot は RAS_REGS を持つ項目へは混ぜない(次の行へずらす) */
+    if (!c || (c->flags & RAS_HAZE)) return;                  /* HR ポーリングの項目とは表(haze)を共有できない */
+    vs_regs[vs_bi][vs_n][0] = 23; vs_regs[vs_bi][vs_n][1] = r23;
+    c->haze = vs_regs[vs_bi][vs_n]; c->haze_n = 1;
+    vs_n++;
+}
+
 void stage_ev_pal(s16 line, const u8 *rgb) {
     RasEntry *c = slot(line, RAS_PAL);
     if (c) { c->pidx = 1; c->prb = (u8)((rgb[0] << 4) | rgb[2]); c->pg = rgb[1]; }
@@ -421,13 +452,17 @@ void stage_build(void) {
     s16 sc = g_scam;
     u16 nx = bg_layer_x(2);
 
-    E = ras_back(); K = 1; sat_done = 0;
+    E = ras_back(); K = 1; sat_done = 0; vs_n = 0; vs_bi = bi;
     sat_regs = regs_b[bi];
     sat_regs[0] = 5; sat_regs[1] = spr_regs.r5b; sat_regs[2] = 11; sat_regs[3] = spr_regs.r11b;
     rt[0] = 5; rt[1] = spr_regs.r5a; rt[2] = 11; rt[3] = spr_regs.r11a;
     rt[4] = 2; rt[5] = 0x3F; rt[6] = 23; rt[7] = (u8)(g_vscroll + g_roll);
     E[0].line = 0; E[0].flags = RAS_REGS; E[0].haze = rt; E[0].haze_n = 4;
 
+    if (g_bands_all && g_ovl_ready && g_ovl >= OVL_S1) {     /* 面が帯を全部出す(空の上にも帯を置く面。5 面の GAUGE BLOCK) */
+        ovl_bands(sc, nx);
+        goto tail;
+    }
     /* s < 0 */
     if (upper_sky == UP_AIR) {
         for (i = 0; i < 7; i++) stage_ev_pal((s16)(S_AIR + sky_line[i] - sc), bg_sky(i));
@@ -454,6 +489,7 @@ void stage_build(void) {
     /* s >= 0: 地面(面のオーバレイが帯を出す) */
     stage_ev_scroll((s16)(0 - sc), nx);
     if (g_ovl_ready && g_ovl >= OVL_S1) ovl_bands(sc, nx);
+tail:
     if (!sat_done) sat_entry();
     if (banner_t >= BAN_IN && banner_t < BAN_END) {
         s16 line = (s16)(BAN_LINE + (banner_t > BAN_SUCK ? (banner_t - BAN_SUCK) >> 1 : 0));
