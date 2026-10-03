@@ -8,7 +8,7 @@ BUILD := build
 comma := ,
 INC   := -Isrc/include -Isrc/m0 -I$(BUILD)
 HDRS  := $(wildcard src/include/*.h)
-CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel $(BUILD)/raster.rel $(BUILD)/font.rel $(BUILD)/pcmb.rel $(BUILD)/input.rel $(BUILD)/spr.rel
+CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel $(BUILD)/raster.rel $(BUILD)/font.rel $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel $(BUILD)/input.rel $(BUILD)/spr.rel
 
 M0_TESTS := scroll raster probe pcm mode
 M0_ROMS  := $(M0_TESTS:%=$(BUILD)/m0_%.rom)
@@ -86,7 +86,7 @@ $(BUILD)/stage8.stamp: tools/gen_stage8.py | $(BUILD)
 	touch $@
 $(BUILD)/s8_data.h: $(BUILD)/stage8.stamp
 # 音(tools/gen_sound.py: 曲の MML と PCM の合成 → snd.bin、ROM のバンク 40 から)
-$(BUILD)/snd.stamp: tools/gen_sound.py tools/songs.py tools/snd_pcm.py | $(BUILD)
+$(BUILD)/snd.stamp: tools/gen_sound.py tools/songs.py tools/snd_pcm.py $(wildcard assets/pcm/*.wav) | $(BUILD)
 	python3 tools/gen_sound.py $(BUILD)/snd.bin $(BUILD)/snd_data.h
 	touch $@
 $(BUILD)/snd_data.h $(BUILD)/snd.bin: $(BUILD)/snd.stamp
@@ -110,7 +110,7 @@ $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 #   カートリッジの別のバンクになるため(rom.c)。リンクの先頭に並べ、リンク後に番地を検査する。
 #   音のドライバ(snd)も曲を読む間はページ 2 が曲のバンクになるので、同じくページ 1 に置く(snd.c)。
 GAME_FIRST := $(BUILD)/raster.rel $(BUILD)/rom.rel $(BUILD)/g_snd.rel
-GAME_REST  := $(filter-out $(GAME_FIRST) $(BUILD)/pcmb.rel,$(CORE))   # 方式 B(pcmb)は M0 の比較用で本体は使わない
+GAME_REST  := $(filter-out $(GAME_FIRST) $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel,$(CORE))   # pcmb(方式 B の試作)・pcmc(方式 A/C の制御)は M0 の検証用
 GAME_MID   := $(filter-out $(GAME_FIRST),$(GAME_RELS))
 # ★ページ 0 のコード(CODE0、0x0100-OVL_BASE): 共通のエンジン(ROTOR / GHOST)。起動時に ROM の bank4-5 から
 #   RAM へ複製する(main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前には呼ばないこと。

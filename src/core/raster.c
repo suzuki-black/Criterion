@@ -36,6 +36,8 @@ volatile u16 pcm_left;
 volatile u8  pcm_pend;         /* 1 = 次の VBLANK で pcm_on にする(フレームの途中から始めない) */
 const u8 *volatile pcm_next_ptr;   /* 鳴り終わったら続けて鳴らすデータ(pcm_queue)。切れ目を作らない */
 volatile u16 pcm_next_left;
+void (*volatile ras_pcm_hook)(void);   /* 0 以外: 割込みの入口と HR ポーリング帯の 1 ラインごとに呼ぶ(PCM 方式 B の送出口)。
+                                          A とフラグ以外を壊さないこと */
 volatile u8  ras_pstep = 2;     /* 刻みの幅(ライン)。2 = 7.9kHz(M0)、4 = 3.9kHz(本体。CPU の消費が半分。M7) */
 volatile u8  ras_pmask = 1;     /* ras_pstep - 1 */
 volatile u8  ras_regs_hit;      /* 刻み方式: この刻みでレジスタ列(RAS_REGS)の項目を適用した */
@@ -45,7 +47,6 @@ volatile u8 g_ras_bias = 4;    /* openMSX(FS-A1ST)で境界のずれが 0 にな
 volatile u8 g_ras_busy_border;
 
 static u8 isr_mode;
-static void ras_kick_ticks(void);
 static u8 saved_a8, saved_sub, sub_used;
 
 /* ---- 割込みハンドラ ----
@@ -110,6 +111,8 @@ void ras_isr_direct(void) __naked {
         ld   a, #0x87              ; R#7 = 0
         out  (0x99), a
     00004$:
+        call ras_hook              ; PCM 方式 B の送出口。★レジスタを書く仕事を全部終えてから(入口に置くと画面モードの
+                                   ;   切り替えが数 us 遅れ、M0-4 の分割の境界がずれた)
         pop  ix
         pop  hl
         pop  de
@@ -637,11 +640,26 @@ void ras_apply_next(void) __naked {
         out  (0x99), a
         ret
 
+        ; 送出口のフック(ras_pcm_hook)。HL を守り、A とフラグだけ壊す
+    ras_hook:
+        ld   a, (_ras_pcm_hook + 1)   ; ★空なら 3 命令で帰る(HR ポーリング帯で 1 ラインごとに呼ぶので軽く。関数の番地の
+        or   a                        ;   上位は 0 にならない)
+        ret  z
+        push hl
+        ld   hl, (_ras_pcm_hook)
+        call ras_call_hl           ; ★___sdcc_call_hl(ライブラリ)はページ 2 にあり、ROM を読む間(ページ 2 が別の
+                                   ;   バンク)の割込みで暴走した(M7)。ページ 1 の自前のものを使う
+    00090$:
+        pop  hl
+        ret
+    ras_call_hl:
+        jp   (hl)
+
         ; HR ポーリング帯の 1 ラインごとの PCM(D = 次のサンプルまでのライン数。0 = PCM なし)
     hz_pcm:
         ld   a, d
         or   a
-        ret  z
+        jp   z, ras_hook           ; 刻み方式でなければ、方式 B の送出口(1 ラインごと)
         dec  d
         ret  nz
         ld   a, (_ras_pstep)
@@ -808,63 +826,3 @@ u8 ras_set_isr(u8 mode) {
     return isr_mode;
 }
 
-/* ---- PCM(方式 A/C: 走査線割込みに相乗り) ---- */
-void pcm_play(const u8 *p, u16 n, u8 fill) {
-    g_stall_hook = ras_kick_ticks;
-    __asm di __endasm;
-    pcm_end = 0;
-    pcm_ptr = p;
-    pcm_left = n;
-    pcm_fill = fill;
-    if (!pcm_on) pcm_pend = 1;
-    __asm ei __endasm;
-}
-
-/* 刻み方式で止めた VBLANK 割込みを戻す(R#1 = RG1SAV)。 */
-static void vblank_irq_on(void) {
-    VDP_CTRL = *(volatile u8 *)0xF3E0;
-    VDP_CTRL = 0x81;
-}
-
-/* 刻みの鎖が途切れたとき(frame_sync の見張りが呼ぶ): VBLANK 割込みを戻し、次の VBLANK で張り直す。 */
-static void ras_kick_ticks(void) {
-    __asm di __endasm;
-    if (pcm_on) {
-        ras_kick = 1;
-        g_ras_rearm++;
-        vblank_irq_on();
-    }
-    __asm ei __endasm;
-}
-
-void pcm_stop(void) {
-    __asm di __endasm;
-    if (pcm_on) pcm_end = 1;       /* 刻み 212 で項目方式へ戻る(VBLANK 割込みもそこで戻す) */
-    pcm_pend = 0;
-    pcm_left = 0;
-    pcm_next_left = 0;
-    __asm ei __endasm;
-}
-
-void pcm_queue(const u8 *p, u16 n) {
-    __asm di __endasm;
-    pcm_next_ptr = p;
-    pcm_next_left = n;
-    __asm ei __endasm;
-}
-
-u8 pcm_queued(void) {
-    u8 q;
-    __asm di __endasm;
-    q = pcm_next_left != 0;
-    __asm ei __endasm;
-    return q;
-}
-
-u16 pcm_remaining(void) {
-    u16 n;
-    __asm di __endasm;
-    n = pcm_left;
-    __asm ei __endasm;
-    return n;
-}

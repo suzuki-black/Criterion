@@ -65,6 +65,7 @@ u8        ras_set_isr(u8 mode);      /* 割込みの入口を切り替える。�
    開始は次の VBLANK から(フレームの途中から割り込ませるとラスターの順番を乱すため)。
    ★刻みは表示ラインで数え、R#19 = 刻み + R#23 で仕込む(帯で R#23 が変わっても鎖が切れない。M7)。
    ★pcm_stop は割込みの刻み 212 で項目方式へ戻す(本体から VBLANK 割込みを戻すと JIFFY を 2 回数える。M7)。 */
+extern void (*volatile ras_pcm_hook)(void);   /* PCM 方式 B の送出口(割込みの入口と HR ポーリング帯で呼ぶ。0 = なし) */
 extern volatile u8 ras_pstep, ras_pmask;      /* 刻みの幅(2 = 7.9kHz、4 = 3.9kHz)と幅 - 1。PCM を鳴らす前に決める */
 void pcm_play(const u8 *p, u16 n, u8 fill);   /* 再生中に呼ぶと今のデータを差し替える */
 void pcm_stop(void);                          /* 刻み 212 で止まる(それまでは何も出さない) */

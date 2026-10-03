@@ -136,14 +136,17 @@ SONGS.append(Song('M01', 92, {
 }, user=BRASS))
 
 # ---- M02 Sortie(出撃 6 秒): 音声 → Infinitas の動機の短いファンファーレ → オケヒ 3 連 → 空中戦へ ----
+# ★切れ目なく刻み続け、最後の小節は B7(空中戦のホ短調の属和音)で D# を伸ばして、空中戦の頭の E へ半音で解決する。
+#   最初の版は「2 分音符 + 2 分休符」「全音符」で後半が止まりかけ、もたついて聞こえた(M7)
+m02 = ['Bb', 'Eb', 'Gm', 'B7']
 SONGS.append(Song('M02', 140, {
-    'FM0': '@0 v14 q2 o4a+8 o5f8 a+8 o6c8 d4. c8 | o5a+4 o6d4 f4 g4 | a+2 r2 | o6d1',
-    'FM1': '@1 v11 o4f2 g2 | f2 a+2 | f2 r2 | f1',
-    'FM2': '@1 v11 o4d2 e+2 | d2 f2 | d2 r2 | d1',
-    'FM3': '@14 v13 o2a+4 a+4 a+4 a+4 | o3d+4 d+4 f4 f4 | a+4 a+4 a+4 r4 | o2a+1',
-    'RHY': 'PV01 r4 h8 h8 sh8 h8 sh8 h8 | bh8 h8 sh8 h8 bh8 h8 s16 s16 s16 s16 | PP01 bc4 PP01 bc4 PP01 bc4 r4 | bc1',
-    'PSGA': '@2 v10 q3 o5f16 a+16 o6d16 f16 f16 a+16 o6d16 f16 o5f16 a+16 o6d16 f16 f16 a+16 o6d16 f16 | '
-            'o5a+16 o6d16 f16 a+16 a+16 o6d16 f16 a+16 o5a+16 o6d16 f16 a+16 a+16 o6d16 f16 a+16 | r1 | r1',
+    'FM0': '@0 v14 q2 o4a+8 o5f8 a+8 o6c8 d4. c8 | o5a+4 o6d4 f4 g4 | a+8 g8 f8 d8 c4 d8 f8 | d+2.& d+4',
+    'FM1': '@1 v11 o4f2 f2 | g2 g2 | g4 g4 e4 e4 | f+1',
+    'FM2': '@1 v11 o4d2 d2 | d+2 d+2 | d4 d4 c4 c4 | a1',
+    'FM3': '@14 v13 q2 ' + bass(m02, 2, (0, 0, 12, 0), 12),
+    'RHY': 'PV01 b8 h8 h8 h8 sh8 h8 bh8 h8 | bh8 h8 sh8 h8 bh8 bh8 s16 s16 s16 s16 | '
+           'PP01 bc8 h8 PP01 bc8 h8 PP01 bc8 h8 s16 s16 s8 | s16 s16 s16 s16 s16 s16 s16 s16 s16 s16 s16 s16 s16 s16 s16 s16',
+    'PSGA': '@2 v10 q3 ' + arp(m02, 65, 6, (0, 1, 2, 3)),
 }, next='M03', loop=False))
 
 # ---- M03 Intercept Vector(空中戦、全面共通。面ごとに移調) ----

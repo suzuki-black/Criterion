@@ -88,6 +88,7 @@ void opll_w(u8 reg, u8 val) __naked {
         ld   b, #52
     00002$:
         djnz 00002$
+        call _pcmx_service         ; PCM 方式 B の送出口(書き込み 1 回約 30us)
     00003$:
         pop  bc
         ret
@@ -900,6 +901,120 @@ static void psg_env(void) {
 void sfx_frame(void);
 u8 sfx_c9(void) { return (u8)((ch[9].p ? 1 : 0) | ((ch[9].flags & F_NOISE) ? 2 : 0)); }
 
+/* ---- PCM の送出(方式 B: 割込みを使わず、システムタイマの絶対時刻で出す。M7 で方式 C から移した) ----
+   ★方式 C(刻みの割込み)は 1 サンプルごとに VDP へ 3 回 I/O し、CPU の 2〜4 割を使った(鳴らすと処理落ち)。方式 B は
+     「出す番か」をタイマ(E6h、1 カウント 3.911us)で見て D/A へ書くだけなので、ほとんど CPU を使わない
+     (参考: ~/work/TurboRVoxelShooter の pcm.s)。間隔は 32 カウント = 125.1us(7.99kHz)。
+   ★次の予定は「前の予定 + 32」で進めるので、送出口に気づくのが遅れても次で詰めて取り返す(再生は伸びない)。
+     1ms 以上遅れたら予定を今に合わせ直す。
+   ★送出口(_pcmx_service を呼ぶ所): フレーム待ち・VDP 待ち(フック)、ラスター割込みの入口と HR ポーリング帯、
+     OPLL の書き込み、ROM の読み出しとスプライトの転送の区切り、敵の更新。
+   ★本体からも割込みからも呼ばれるので、割込みの許可の状態(IFF2)を保ったまま止めて排他する。A とフラグだけ壊す。 */
+u8 *px_ptr;
+u16 px_left;
+u8 *px_nptr;
+u16 px_nleft;
+u16 px_due;
+u8  px_on;
+
+void pcmx_service(void) __naked {
+    __asm
+        ld   a, (_px_on)
+        or   a
+        ret  z
+        di                         ; ★本体の入口: 割込みを止めて排他し、必ず許可して戻る(本体の送出口はどれも
+                                   ;   許可中に呼ぶ)。IFF2 を ld a,i で見る作りは、その命令の途中に割込みが入ると
+                                   ;   禁止と読み違え、許可し直さずに JIFFY が止まった(M7)
+        call pcmx_core
+        ei
+        ret
+        ; ---- 割込みからの入口(ras_pcm_hook。割込み中なので止めない) ----
+    _pcmx_isr::
+        ld   a, (_px_on)
+        or   a
+        ret  z
+    pcmx_core:
+        push hl
+        push de
+        in   a, (0xE6)             ; 今(下位から読む)
+        ld   l, a
+        in   a, (0xE7)
+        ld   h, a
+        ld   de, (_px_due)
+        or   a
+        sbc  hl, de                ; 今 - 予定
+        jp   m, 00009$             ; まだ
+        ld   a, h
+        or   a
+        jr   z, 00001$
+        add  hl, de                ; 1ms 以上遅れた: 予定を今に
+        ld   (_px_due), hl
+    00001$:
+        ld   hl, (_px_left)
+        ld   a, h
+        or   l
+        jr   nz, 00002$
+        ld   hl, (_px_nleft)       ; 今の面を出し切った: 予約の面へ
+        ld   a, h
+        or   l
+        jr   z, 00009$
+        ld   (_px_left), hl
+        ld   hl, (_px_nptr)
+        ld   (_px_ptr), hl
+        ld   hl, #0
+        ld   (_px_nleft), hl
+    00002$:
+        ld   hl, (_px_left)
+        dec  hl
+        ld   (_px_left), hl
+        ld   hl, (_px_ptr)
+        ld   a, (hl)
+        out  (0xA4), a             ; BUFF = 1: 次の 15.7kHz の刻みで D/A へ
+        inc  hl
+        ld   (_px_ptr), hl
+        ld   hl, (_px_due)
+        ld   de, #32
+        add  hl, de
+        ld   (_px_due), hl
+    00009$:
+        pop  de
+        pop  hl
+        ret
+    __endasm;
+}
+void pcmx_isr(void);
+
+void pcmx_play(u8 *p, u16 n) {
+    extern void (*volatile g_poll_hook)(void);
+    extern void (*volatile g_vdp_wait_hook)(void);
+    __asm di __endasm;
+    px_ptr = p; px_left = n; px_nleft = 0;
+    __asm
+        in   a, (0xE6)
+        ld   (_px_due), a
+        in   a, (0xE7)
+        ld   (_px_due + 1), a
+    __endasm;
+    px_on = 1;
+    g_poll_hook = pcmx_service; g_vdp_wait_hook = pcmx_service; ras_pcm_hook = pcmx_isr;
+    __asm ei __endasm;
+}
+void pcmx_queue(u8 *p, u16 n) { __asm di __endasm; px_nptr = p; px_nleft = n; __asm ei __endasm; }
+u8   pcmx_queued(void) { return px_nleft != 0; }
+u16  pcmx_left(void) { return px_left; }
+void pcmx_stop(void) {
+    extern void (*volatile g_poll_hook)(void);
+    extern void (*volatile g_vdp_wait_hook)(void);
+    __asm di __endasm;
+    px_on = 0; px_left = 0; px_nleft = 0;
+    g_poll_hook = 0; g_vdp_wait_hook = 0; ras_pcm_hook = 0;
+    __asm ei __endasm;
+    __asm
+        ld   a, #0x80
+        out  (0xA4), a             ; 無音(中心)へ
+    __endasm;
+}
+
 /* ---- PCM: 頼む側(曲を読んでいる間にも呼ばれるのでページ 1 に置く)。鳴らす側は music.c(CODE0) ---- */
 u8  pcm_q = SND_NONE;                         /* 頼まれた PCM(bit7 = 任意のもの) */
 u8  quiet;                                    /* 余裕のあるフレームが続いた数(pcm_keep) */
@@ -913,7 +1028,7 @@ void pcm_req_seq(u8 id) {
 
 /* 任意の PCM(4 小節ごとのオケヒ、爆発など): ★刻み方式は CPU を約 4 割使うので、余裕のあるフレームが 1 秒続いているときだけ */
 void pcm_req_opt(u8 id) {
-    if (quiet >= 2 && (g_pcm_cur == SND_NONE || pcm_opt)) { pcm_req(id); pcm_q |= 0x80; }   /* その瞬間に空きがあれば(遅れたら止める) */
+    if (g_pcm_cur == SND_NONE || pcm_opt) { pcm_req(id); pcm_q |= 0x80; }
 }
 
 u8  g_pcm_off;                                /* 検証用: 1 = PCM を鳴らさない(m1..m6 はエンジンの時間を見るので切る) */
@@ -996,35 +1111,11 @@ void snd_silence(void) {
 }
 
 
-/* ---- MSX-MUSIC を探す(内蔵 APRLOPLL を先に。前作 §16-37)。★BIOS の RDSLT を使う ---- */
-static u8 det_slot;
-static u16 det_addr;
-static u8 rdslt(void) __naked {
-    __asm
-        ld   a, (_det_slot)
-        ld   hl, (_det_addr)
-        call 0x000C
-        ret
-    __endasm;
-}
-
-void snd_detect(void) {
-    static const char sig[] = "APRLOPLL";
-    u8 ps, ss, k;
-    g_opll = 0;
-    for (ps = 0; ps < 4 && !g_opll; ps++) {
-        u8 ex = (u8)(*(volatile u8 *)(0xFCC1 + ps) & 0x80);
-        for (ss = 0; ss < (ex ? 4 : 1) && !g_opll; ss++) {
-            det_slot = (u8)(ex | (ss << 2) | ps);
-            for (k = 0; k < 8; k++) {
-                det_addr = (u16)(0x4018 + k);
-                if (rdslt() != (u8)sig[k]) break;
-            }
-            if (k == 8) g_opll = 1;
-        }
-    }
-    __asm ei __endasm;
-}
+/* ---- MSX-MUSIC ----
+   ★turboR は MSX-MUSIC の内蔵が規格で必須(FS-A1ST / FS-A1GT とも内蔵)なので、探さずにあるものとして書く。無い機械でも
+     ポート 0x7C/0x7D への書き込みは何も起きない。探す処理(BIOS の RDSLT で APRLOPLL を探す、約 150 バイト)は常駐の
+     空きのために外した(M7。docs/TODO.md) */
+void snd_detect(void) { g_opll = 1; }
 
 /* ★このファイルの最後。番地がページ 1(0x8000 未満)にあることを Makefile が検査する */
 void snd_end(void) { }

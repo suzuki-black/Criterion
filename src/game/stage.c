@@ -14,6 +14,7 @@
      なので、描き替えない。
    ・ラスターは s の帯の境目を「画面の行 = s - g_scam」に置く。画面より上に出た境目は 0 行の項目にまとめる。
      項目どうしは RAS_GAP 行以上あける(近い境目は 1 つの項目にまとめるか、後ろへずらす)。 */
+void pcmx_service(void);   /* snd.c: PCM 方式 B の送出口 */
 #include "game.h"
 #include "vdp.h"
 #include "raster.h"
@@ -440,6 +441,7 @@ static void banner_vram(void) {
 
 void stage_vram(void) {
     if (banner_t) banner_vram();
+    pcmx_service();
     if (ovl_step()) return;                                   /* オーバレイの読み込み(512 バイト/フレーム)。★ovl_init のフレームは
                                                                  ほかの仕事をしない(地図の読み込み + 短冊 + 面の素材で遅れた) */
     if (g_ovl_ready && g_ovl >= OVL_S1) ovl_vram();
@@ -458,6 +460,7 @@ void stage_vram(void) {
         if (upper_sky != UP_AIR && stage_work()) stage_pump(0);
         return;
     }
+    pcmx_service();
     {   /* 予算はフレームの残りから(VRAM の仕事の後はリストを組むだけ。ここで 200 ラインを超えたら出さない) */
         extern u16 g_frame_t0;
         u16 used = (u16)(sys_timer() - g_frame_t0), lim = 200u * 16u;

@@ -115,11 +115,36 @@ void vdp_hmmv(u16 dx, u16 dy, u16 nx, u16 ny, u8 byte) {
 void vdp_out_block(u8 n, const u8 *p) __naked {
     (void)n; (void)p;
     __asm
-        ld   b, a
         ex   de, hl
         ld   c, #0x98
+        ld   e, a                  ; E = 残り(0 = 256)
+    00001$:
+        ld   b, #16                ; ★16 バイトずつ(1 回約 140us)。合間に PCM の送出口(g_vdp_wait_hook)を呼ぶ(M7)
+        ld   a, e
+        or   a
+        jr   z, 00002$
+        cp   b
+        jr   nc, 00002$
+        ld   b, a
+    00002$:
+        ld   a, e
+        sub  b
+        ld   e, a
         otir
-        ret
+        ld   a, e
+        or   a
+        ret  z
+        push hl
+        push de
+        ld   hl, (_g_vdp_wait_hook)
+        ld   a, h
+        or   l
+        call nz, 00009$
+        pop  de
+        pop  hl
+        jr   00001$
+    00009$:
+        jp   (hl)
     __endasm;
 }
 

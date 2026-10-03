@@ -126,7 +126,6 @@ extern u8 psg_mix_w;
 extern u16 last_jiffy;
 void opll_w(u8 reg, u8 val);
 void snd_init(void) {
-    ras_pstep = 4; ras_pmask = 3;                 /* ★PCM は 4 ラインに 1 回(3.9kHz)。2 ラインでは CPU の約 4 割を使い、ゲーム中ほぼ鳴らせなかった */
     u8 i;
     if (g_opll) {
         for (i = 0; i < 0x39; i++) opll_w(i, 0);
@@ -140,13 +139,14 @@ void snd_init(void) {
     for (i = 8; i < 11; i++) psg_w(i, 0);
     psg_mix = 0; psg_mix_w = 0xFF;
     psg_mix_apply();
-    PCM_CTRL = (u8)((PCM_CTRL & 0x04) | 0x02);   /* D/A を使う(M0-3) */
+    PCM_CTRL = 0x03;                              /* D/A、BUFF = 1(書いた値は次の 15.7kHz の刻みで出る。方式 B の揺れをそろえる) */
     last_jiffy = *(volatile u16 *)0xFC9E;
 }
 
 /* ---- PCM を鳴らす側(ROM → RAM の 2 面 → 刻み方式)。頼む側は snd.c ---- */
 #include "rom.h"
 #include "raster.h"
+void pcmx_play(u8 *p, u16 n); void pcmx_queue(u8 *p, u16 n); u8 pcmx_queued(void); u16 pcmx_left(void); void pcmx_stop(void);
 #define PCM_BUF  ((u8 *)0x3D00)               /* ページ 0。ROTOR の作業域(..0x3C7F)の上 */
 #define PCM_HALF 384
 extern const u8 snd_pcm_bank[], snd_pcm_prio[];
@@ -158,7 +158,7 @@ static u8  pcm_last;                          /* 最後に鳴らす予約をし�
 static u16 pcm_qwait, late_seen;
 
 void pcm_halt(void) {
-    pcm_stop();
+    pcmx_stop();
     g_pcm_cur = SND_NONE;
     pcm_left_src = 0;
 }
@@ -177,43 +177,29 @@ static void pcm_begin(u8 id) {
     pcm_bank = snd_pcm_bank[id];
     pcm_off = snd_pcm_off[id];
     pcm_left_src = snd_pcm_len[id];
-    pcm_play(PCM_BUF, pcm_fill(0, 128), 1);  /* ★鳴り始めは少しだけ(場面の入りの重いフレームに重なりやすい)。2 面目は次のフレーム */
+    pcmx_play(PCM_BUF, pcm_fill(0, 128));  /* ★鳴り始めは少しだけ(場面の入りの重いフレームに重なりやすい)。2 面目は次のフレーム */
     pcm_last = 0;
     g_pcm_starts++;
 }
 
 /* 毎フレーム(snd_frame を先送りしたフレームも) */
 void pcm_keep(void) {
-    extern u16 g_frame_late;
-    extern u8 g_slow;
-    extern u8 g_ovl_ready;
-    /* ★オーバレイを読んでいる間(と ovl_init のフレーム)は重いので、PCM を始めない(試験の入りで声の間に遅れた) */
-    if (g_slow || !g_snd_room || !g_ovl_ready || g_pcm_cur != SND_NONE) quiet = 0; else if (quiet < 255) quiet++;
-    if (g_frame_late != late_seen) {              /* 遅れた: PCM はやめる(CPU を返す。声も途中で切れる) */
-        late_seen = g_frame_late;
-        if (g_pcm_cur != SND_NONE) { extern u16 g_pcm_cuts; pcm_halt(); g_pcm_cuts++; }
-        if (pcm_q & 0x80) pcm_q = SND_NONE;
-    }
-    if (pcm_q != SND_NONE) {                      /* ★鳴り始めは空き時間のあるフレームが続いてから(試験の入りや出撃は重い
-                                                     フレームが続き、声の間に遅れた)。1 秒までは 45 フレーム、その後は 15 */
-        u8 need = pcm_qwait < 60 ? 15 : 5;
-        if (quiet < need) {                       /* 4 秒そろわなければ鳴らさない(重い場面で強制すると遅れた) */
-            if (++pcm_qwait >= 240) { extern u8 g_pcm_drops; pcm_q = SND_NONE; pcm_qwait = 0; g_pcm_drops++; }
-            return;
-        }
+    /* ★方式 B(送出口でタイマを見て出す)は CPU をほとんど使わないので、頼まれたらすぐ鳴らす。
+       方式 C(刻みの割込み)の頃の「余裕のあるときだけ」「遅れたら止める」は外した(M7) */
+    if (pcm_q != SND_NONE) {
         pcm_qwait = 0;
         pcm_opt = (u8)(pcm_q >> 7);
         pcm_begin((u8)(pcm_q & 0x7F));
         pcm_q = SND_NONE;
         return;
     }
-    if (g_pcm_cur == SND_NONE || pcm_queued()) return;
+    if (g_pcm_cur == SND_NONE || pcmx_queued()) return;
     if (pcm_left_src) {
         u8 h = (u8)(pcm_last ^ 1);
-        pcm_queue(PCM_BUF + (h ? PCM_HALF : 0), pcm_fill(h, PCM_HALF));
+        pcmx_queue(PCM_BUF + (h ? PCM_HALF : 0), pcm_fill(h, PCM_HALF));
         pcm_last = h;
-    } else if (!pcm_remaining()) {
-        pcm_halt();                               /* 鳴り終わった: 刻み方式をやめる(CPU を返す) */
+    } else if (!pcmx_left()) {
+        pcm_halt();                               /* 鳴り終わった */
     }
 }
 

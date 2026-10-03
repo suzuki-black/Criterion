@@ -7,9 +7,9 @@
   サンプリング周波数は刻み方式の 2 ラインに 1 回(15734.26 / 2 Hz)、8 ビット符号なし(無音 = 128)。
   乱数は固定の種で、出力は毎回同じ。gen_sound.py から build() を呼ぶ。
 """
-import math, random
+import math, os, random, wave
 
-RATE = 15734.264 / 4                  # 出力: 4 ラインに 1 回(3.9kHz)。★2 ライン(7.9kHz)は刻み方式が CPU の約 4 割を使い、ゲーム中ほぼ鳴らせなかった(M7)
+RATE = 3579545 / 14 / 32               # 出力: システムタイマ 32 カウントごと(7.99kHz)。方式 B(snd.c の pcmx)の間隔と合わせる
 OS = 8
 RH = RATE * OS                        # 合成はこの 8 倍で行い、低域通過をかけて間引く(低い周波数で直接作ると折り返し雑音が出る)
 
@@ -208,15 +208,81 @@ def voice(phs, f0=105.0, f1=None, speed=1.0, seed=1):
     return out
 
 
+# ---- 外部の素材(assets/pcm、どれも CC0。出典は assets/pcm/LICENSE.md) ----
+ASSETS = os.path.join(os.path.dirname(__file__), '..', 'assets', 'pcm')
+
+
+def load_wav(name):
+    """WAV(16 / 24 ビット、モノラル / ステレオ)を -1..1 のモノラルで読む。(標本列, 周波数)"""
+    w = wave.open(os.path.join(ASSETS, name))
+    ch, sw, fr, n = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+    raw = w.readframes(n)
+    out = []
+    step = sw * ch
+    full = float(1 << (8 * sw - 1))
+    for i in range(0, len(raw) - step + 1, step):
+        acc = 0
+        for c in range(ch):
+            b = raw[i + c * sw:i + (c + 1) * sw]
+            v = int.from_bytes(b, 'little', signed=True)
+            acc += v
+        out.append(acc / ch / full)
+    return out, fr
+
+
+def resample(sig, src, dst, pitch=1.0):
+    """窓つき sinc の低域通過で src → dst へ(pitch > 1 で高く、< 1 で低く。長さも変わる)"""
+    ratio = src * pitch / dst                   # 出力 1 標本あたりに進む入力の標本数
+    fc = 0.45 * min(1.0, 1.0 / ratio)           # 入力の標本で正規化した遮断(出力のナイキストの 9 割)
+    half = max(8, int(4 / fc))
+    out = []
+    n = len(sig)
+    pos = 0.0
+    while pos < n:
+        c = int(pos)
+        acc = 0.0
+        for j in range(c - half, c + half + 1):
+            if 0 <= j < n:
+                x = j - pos
+                v = 2 * fc if x == 0 else math.sin(2 * math.pi * fc * x) / (math.pi * x)
+                w = 0.42 + 0.5 * math.cos(math.pi * x / (half + 1)) + 0.08 * math.cos(2 * math.pi * x / (half + 1))
+                acc += sig[j] * v * w
+        out.append(acc)
+        pos += ratio
+    return out
+
+
+def clip(sig, t0, t1, fade=0.05):
+    """t0..t1 秒(出力の周波数)を切り出し、終わり fade 秒をフェードアウト"""
+    a, b = int(t0 * RATE), int(t1 * RATE)
+    seg = sig[a:b]
+    nf = int(fade * RATE)
+    for i in range(min(nf, len(seg))):
+        seg[len(seg) - 1 - i] *= i / nf
+    return seg
+
+
+def ext(name, t0, t1, pitch=1.0, fade=0.05):
+    sig, fr = load_wav(name)
+    head = sig[:int((t1 / pitch + 0.1) * fr) + 1] if t0 == 0 else sig
+    return clip(resample(head, fr, RATE, pitch), t0, t1, fade)
+
+
+OH = '90741__bigdumbweirdo__orch-hit.wav'
+SN = '82249__kevoy__acoustic-snare.wav'
+RC = '23127__john-rayson__reverse-cymbal.wav'
+EX = '587886__samsterbirdies__explosion-large.wav'
+
+
 def build():
     """[(名前, 優先度, バイト列)]。優先度: 音声 4 > オケヒ 3 > 爆発 2 > スネア 1"""
     res = []
-    res.append(('P01', 3, to_u8(decimate(orch([73.42, 146.83, 220.0, 293.66, 369.99, 440.0, 587.33], 0.40, 0.11, 1990)), drive=3.0)))
-    res.append(('P02', 3, to_u8(decimate(orch([73.42, 146.83, 220.0, 293.66, 349.23, 440.0, 587.33], 0.40, 0.11, 1991)), drive=3.0)))
-    res.append(('P03', 3, to_u8(decimate(orch([61.74, 123.47, 174.61, 246.94, 293.66, 415.30], 0.60, 0.20, 1992)), drive=3.0)))
-    res.append(('P04', 2, to_u8(decimate(cymbal_rev(0.80)), drive=3.0)))
-    res.append(('P05', 1, to_u8(decimate(snare(0.15)), drive=3.0)))
-    res.append(('P06', 2, to_u8(decimate(explosion(0.70)), drive=3.0)))
+    res.append(('P01', 3, to_u8(ext(OH, 0, 0.6, fade=0.15))))                  # オケヒ(CC0 の素材)
+    res.append(('P02', 3, to_u8(ext(OH, 0, 0.6, pitch=0.8409, fade=0.15))))   # 短 3 度下(素材は 1 つなので音程で使い分ける)
+    res.append(('P03', 3, to_u8(ext(OH, 0, 0.8, pitch=0.5, fade=0.25))))      # 1 オクターブ下の低い一発
+    res.append(('P04', 2, to_u8(ext(RC, 0, 0.45, fade=0.1))))                  # 逆再生シンバル(0.3 秒で頂点)
+    res.append(('P05', 1, to_u8(ext(SN, 0, 0.25, fade=0.08))))                 # スネア
+    res.append(('P06', 2, to_u8(ext(EX, 0, 1.0, fade=0.3))))                  # 大爆発
     res.append(('V01', 4, to_u8(decimate(voice('IH N F IH N IH T AH S _ L AO N CH'.split(), 112, 96, 1.05, 11)), 1.0, 6)))
     res.append(('V02', 4, to_u8(decimate(voice('W AO R N IH NG'.split(), 118, 104, 1.0, 12)), 1.0, 6)))
     res.append(('V03', 4, to_u8(decimate(voice('S IH S T AH M _ AA N L AY N'.split(), 108, 100, 1.0, 13)), 1.0, 6)))

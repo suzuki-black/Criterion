@@ -8,6 +8,7 @@
    ・台本は区間ごと(g_wave_set): 空中戦は 1200 フレームで一周、都市はまばらな編隊、それ以外は出さない。 */
 #include "game.h"
 #include "snd.h"
+void pcmx_service(void);   /* snd.c: PCM 方式 B の送出口 */
 #include "spr.h"
 #include "sprite_data.h"
 
@@ -235,7 +236,7 @@ void enemy_update(void) {
     u8 i, j;
     g_frame++;
     run_script();
-    for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type) move_enemy(&g_enemy[i]);
+    for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type) { move_enemy(&g_enemy[i]); pcmx_service(); }   /* PCM の送出口(敵 1 体ごと) */
 
     for (i = 0; i < MAX_ESHOT; i++) {
         Bullet *b = &g_eshot[i];
@@ -245,6 +246,7 @@ void enemy_update(void) {
             else { b->vx += (s16)((g_gcx - PX(b->x)) >> 5); b->vy += (s16)((g_gcy - PX(b->y)) >> 5); }
         }
         b->x += b->vx; b->y += b->vy;
+        if (!(i & 3)) pcmx_service();                    /* PCM の送出口(弾 4 発ごと) */
         if (b->x < FX(-8) || b->x > FX(264) || b->y < FX(-8) || b->y > FX(PLAY_H)) { b->on = 0; continue; }
         if (g_pl.alive) {
             s16 dx = PX(b->x) - (PX(g_pl.x) + 8), dy = PX(b->y) - (PX(g_pl.y) + 8);
@@ -333,6 +335,7 @@ void enemy_draw(void) {
     for (i = 0; i < MAX_ESHOT; i++) {
         const Bullet *b = &g_eshot[i];
         if (b->on) spr_put(PX(b->x) - 8, PX(b->y) - 8, PAT_EBUL, G_EBUL, 0);
+        if (!(i & 3)) pcmx_service();
     }
     for (i = 0; i < MAX_ENEMY; i++) {
         const Enemy *e = &g_enemy[i];
@@ -343,6 +346,7 @@ void enemy_draw(void) {
         else if (e->type == E_NOTCH) pat = PAT_NOTCH;
         else pat = PAT_SPIRIT;
         spr_put(PX(e->x) - 8, PX(e->y) - 8, pat, G_ENEMY, 0);
+        pcmx_service();
     }
     for (i = 0; i < MAX_FX; i++) {
         const Fx *f = &g_fx[i];
