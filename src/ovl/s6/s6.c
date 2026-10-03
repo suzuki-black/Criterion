@@ -67,6 +67,16 @@ void ovl_init(void) {
     yjk_row = 0; yjk_x = 0; yjk_stop = 0; s6_shadow_a = s6_shadow_b = 0;
     palette();
     b6_init();
+    if (g_calib) {                                            /* 7 面の試験 06: 分割なしで指針の間へ降りて GNOMON(針 2 本) */
+        u16 c;
+        g_blk_skip = 0;
+        g_w0 = (u16)((g_wx >> 3) - (S6_COL_BOSS - 48));
+        for (c = S6_COL_BOSS - 56; c < S6_COL_BOSS; c++) g_map[c] = (u8)(23 + (c & 3));   /* 手前も床 */
+        calib_begin(6);
+        g_scroll_speed = 4;
+        enter(SEC6_DIAL);
+        return;
+    }
     enter(SEC6_AIR);
 }
 
@@ -87,6 +97,7 @@ void ovl_update(void) {
     u16 c = col_of_screen();
     sec_t++;
     if (!yjk_stop && !(sec_t & 7)) yjk_x++;
+    if (g_calib && g_sec != SEC6_OUT && g_scam_q < S6_CAM * 16) g_scam_q += 16;   /* 試験: 指針の間の高さへ */
     switch (g_sec) {
     case SEC6_AIR:                                            /* 宇宙(短冊を読む間)→ 衛星の上へ */
         if (g_scroll_speed != 4 && !(sec_t & 3)) g_scroll_speed += g_scroll_speed < 4 ? 1 : -1;
@@ -112,7 +123,19 @@ void ovl_update(void) {
         if (g_boss_state == BS_DONE) {
             g_boss_state = BS_NONE;
             if (g_sec == SEC6_MID) { g_scroll_speed = 4; enter(SEC6_DIAL); }
-            else { yjk_stop = 1; enter(SEC6_OUT); }           /* 時刻が止まる: 惑星の絵も止まる */
+            else { yjk_stop = 1; g_scroll_speed = 4; enter(SEC6_OUT); }   /* 時刻が止まる: 惑星の絵も止まる */
+        }
+        break;
+    case SEC6_OUT:                                            /* 時刻が止まる → 帯を畳み、宇宙へ上がって 7 面(母艦)へ */
+        if (g_calib) { if (calib_out(sec_t)) return; break; }
+        if (sec_t > 120 && g_split_n) g_split_n = (u8)(g_split_n > 9 ? g_split_n - 2 : 0);
+        if (sec_t > 120 && !g_split_n) { g_blk_skip = 0; if (g_scam_q > S_TOP * 16) g_scam_q -= 16; }
+        if (sec_t > 120 && !g_split_n && g_scam_q <= S_TOP * 16) {
+            g_scroll_speed = 4;
+            stage_banner("STAGE 7 / CALIBRATION HALL");
+            ovl_request(OVL_S7);
+            g_sec = SEC6_OUT + 1;                              /* = 7 面の空中戦(SEC7_AIR) */
+            return;
         }
         break;
     case SEC6_DIAL:                                           /* 指針の間: リングのページ 0 = 画面になる位置で止める(LINE の座標) */

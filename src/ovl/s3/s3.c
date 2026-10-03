@@ -42,9 +42,9 @@ static void enter(u8 sec) {
     if (sec == SEC3_REV) g_col_rev = 31;                      /* 逆走: 窓は画面の左へ */
     if (sec == SEC3_MID) { g_col_rev = 16; b3_start(B3_MET); }   /* 振り子で前後: 窓は左右に半分ずつ */
     if (sec == SEC3_TOP) {
-        g_col_rev = 0; g_scroll_speed = 32; set_streak(1);
+        g_col_rev = 0; g_scroll_speed = g_calib ? 4 : 32; set_streak(!g_calib);
         g_map[S3_COL_STOP + 2] = 17; g_map[S3_COL_STOP + 6] = 16;   /* 停止の隔壁は開いている(まだ窓の外) */
-        b3_load_dial();
+        if (!g_calib) b3_load_dial();
     }
     if (sec == SEC3_BOSS) { g_col_rev = 16; b3_start(B3_TACHO); }  /* 突進で前後するので窓は左右に */
     if (sec == SEC3_OUT) { g_col_rev = 0; set_streak(0); }
@@ -58,6 +58,13 @@ void ovl_init(void) {
     stage_load_strips(ASSET_S3_STRIPS_BANK, ASSET_S3_STRIPS_OFF);
     vdp_set_pal(6, 2, 2, 3);                                  /* 壁の影(暗い灰) */
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0;
+    if (g_calib) {                                            /* 7 面の試験 03: 白い空間から最高速の区間の終わりへ沈んで TACHOMETER */
+        g_w0 = (u16)((g_wx >> 3) - (S3_COL_ARENA - 8 - 64));
+        b3_load_dial();
+        calib_begin(3);
+        enter(SEC3_AIR);                                      /* 短い通路(短冊を読む間)→ 沈む */
+        return;
+    }
     enter(SEC3_AIR);
 }
 
@@ -101,11 +108,11 @@ void ovl_update(void) {
     sec_t++;
     switch (g_sec) {
     case SEC3_AIR:
-        if ((u16)(g_wx - sec_wx) >= AIR_LEN) enter(SEC3_SINK);
+        if ((u16)(g_wx - sec_wx) >= (g_calib ? 128u : AIR_LEN)) enter(SEC3_SINK);
         break;
     case SEC3_SINK: {
         u16 d = (u16)(g_wx - sec_wx);
-        if (d >= SINK_LEN) { g_scam_q = 0; enter(SEC3_ACCEL); }
+        if (d >= SINK_LEN) { g_scam_q = 0; enter(g_calib ? SEC3_TOP : SEC3_ACCEL); }
         else g_scam_q = (s16)(S_TOP * 16 + (s16)(d * 12u));
         break;
     }
@@ -145,6 +152,7 @@ void ovl_update(void) {
         if (col_of_screen() + 8 >= S3_COL_ARENA) { g_scroll_speed = 0; set_streak(0); enter(SEC3_BOSS); }
         break;
     case SEC3_OUT:
+        if (g_calib) { if (calib_out(sec_t)) return; break; }  /* 試験に合格 */
         if (g_scroll_speed < 32 && !(sec_t & 3)) g_scroll_speed++;
         if (g_scam_q > S_TOP * 16) g_scam_q -= 24;             /* 射出口から宇宙へ */
         if (sec_t == 240) {                                   /* 4 面へ(このあと 3 面のコードは呼ばれない) */

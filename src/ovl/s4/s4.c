@@ -59,6 +59,7 @@ static void enter(u8 sec) {
     if (sec == SEC4_OUT) v_want = v_out;
 }
 
+static void palette(void);
 void ovl_init(void) {
     u8 i;
     stage_reset_ground();
@@ -69,6 +70,13 @@ void ovl_init(void) {
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; g_col_rev = 0;
     for (i = 0; i < S4_NL; i++) { bq[i] = 0; bv[i] = 0; hold[i] = 0xFFFF; bx[i] = g_wx; }
     v_want = 0; flash_t = 0;
+    if (g_calib) {                                            /* 7 面の試験 04: 白い空間から雲海へ沈んで STRATUM(9 帯) */
+        palette();
+        b4_load_face();
+        calib_begin(4);
+        enter(SEC4_SINK);
+        return;
+    }
     enter(SEC4_AIR);
 }
 
@@ -137,7 +145,7 @@ void ovl_update(void) {
         if (d >= SINK_LEN && !stage_busy()) {                 /* リングが雲で埋まってから止める */
             g_scam_q = 0; g_scroll_speed = 0;
             for (i = 0; i < S4_NL; i++) bv[i] = 4;            /* 世界の流れ(1 ドット)を帯へ引き継ぐ */
-            enter(SEC4_UPPER);
+            enter(g_calib ? SEC4_BOSS : SEC4_UPPER);
         } else if (d < SINK_LEN) g_scam_q = (s16)(S_TOP * 16 + (s16)(d * 12u));
         break;
     }
@@ -154,6 +162,7 @@ void ovl_update(void) {
         }
         break;
     case SEC4_OUT:                                            /* 雲が一斉に流れる → 世界も動かして宇宙へ上がる */
+        if (g_calib) { if (sec_t > 60 && calib_out((u16)(sec_t - 60))) return; if (g_scroll_speed < 4 && !(sec_t & 7)) g_scroll_speed++; break; }
         if (g_scroll_speed < 4 && !(sec_t & 7)) g_scroll_speed++;
         if (sec_t > 180 && g_scam_q > S_TOP * 16) g_scam_q -= 24;
         if (sec_t == 420) {                                   /* 5 面へ(このあと 4 面のコードは呼ばれない) */

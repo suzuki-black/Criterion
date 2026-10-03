@@ -242,28 +242,35 @@ static void hg_vram(void) {        /* コマが替わったら 16 行ずつ 4 �
 #define GN_R  120
 #define GN_Y0 (SPLIT_H + 2)        /* 針を描く上下の限り(SCREEN12 の帯と床を避ける) */
 #define GN_Y1 175
-static u16 gn_a;                   /* 角度(8.8、上位 = 64 で一周) */
+static u16 gn_a[2];                /* 角度(8.8、上位 = 64 で一周)。[1] は再校正版の短針 */
 static s16 gn_spd;
 static u16 gn_turn;                /* 今の周で回った量 */
-static u8  gn_lap;
-static s8  gn_cs, gn_sn;           /* 今の向き(×127) */
-static s16 old_x[3], old_y[3], old_dx[3], old_dy[3];
+static u8  gn_lap, gn_nh;
+static s8  gn_cs[2], gn_sn[2];     /* 今の向き(×127) */
+static const u8 gn_len[2] = { GN_R, 64 };
+static s16 old_x[6], old_y[6], old_dx[6], old_dy[6];
 static u8  old_n;
-void b6_boss_start(void) { gn_a = 0x3000; gn_spd = 48; gn_turn = 0; gn_lap = 0; old_n = 0; g_boss_state = BS_ENTER; g_boss_hp = 40; b_t = 0; }
+void b6_boss_start(void) {
+    gn_a[0] = 0x3000; gn_a[1] = 0x1000; gn_spd = 48; gn_turn = 0; gn_lap = 0; old_n = 0;
+    gn_nh = g_calib ? 2 : 1;                                  /* 再校正版: 長針と短針 */
+    g_boss_state = BS_ENTER; g_boss_hp = 40; b_t = 0;
+}
 static s8 sin_i(u16 a) {           /* 64 刻みの表を線形補間 */
     u8 i = (u8)(a >> 8) & 63, f = (u8)a;
     s16 s0 = g_sin64[i], s1 = g_sin64[(i + 1) & 63];
     return (s8)(s0 + (((s1 - s0) * f) >> 8));
 }
 static void gn_update(void) {
-    s16 px, py, along, cross;
+    s16 px, py;
+    u8 h;
     if (g_boss_state == BS_ENTER) { g_boss_state = BS_FIGHT; return; }
     if (g_boss_state == BS_DYING) {
         if (!(b_t & 3)) fx_spawn(FX(GN_CX - 32 + (rnd8() & 63)), FX(GN_CY - 32 + (rnd8() & 63)));
         if (++b_t > 120 && !old_n) g_boss_state = BS_DONE;
         return;
     }
-    gn_a += (u16)gn_spd;
+    gn_a[0] += (u16)gn_spd;
+    gn_a[1] -= (u16)(gn_spd >> 1);                            /* 短針は逆へ、半分の速さ(針が交差する) */
     gn_turn += (u16)(gn_spd < 0 ? -gn_spd : gn_spd);
     if (gn_turn >= 0x4000u) {                                 /* 一周: 速く。3 周目から逆回り */
         gn_turn -= 0x4000u; gn_lap++;
@@ -271,43 +278,51 @@ static void gn_update(void) {
         if (gn_lap == 2) gn_spd = (s16)-gn_spd;
         if (gn_spd > 160) gn_spd = 160; else if (gn_spd < -160) gn_spd = -160;
     }
-    gn_cs = sin_i((u16)(gn_a + 0x1000u)); gn_sn = sin_i(gn_a);
     /* 針に触れたら被弾(軸からの向きの成分と横の距離。桁あふれしないよう座標を半分に) */
     px = (s16)((PX(g_pl.x) + 8 - GN_CX) >> 1); py = (s16)((PX(g_pl.y) + 8 - GN_CY) >> 1);
-    along = (s16)(px * gn_cs + py * gn_sn); cross = (s16)(px * gn_sn - py * gn_cs);
-    if (g_pl.alive && along > 0 && along < (GN_R / 2) * 127 && cross > -3 * 127 && cross < 3 * 127) player_hit();
+    for (h = 0; h < gn_nh; h++) {
+        s16 along, cross;
+        gn_cs[h] = sin_i((u16)(gn_a[h] + 0x1000u)); gn_sn[h] = sin_i(gn_a[h]);
+        along = (s16)(px * gn_cs[h] + py * gn_sn[h]); cross = (s16)(px * gn_sn[h] - py * gn_cs[h]);
+        if (g_pl.alive && along > 0 && along < (s16)(gn_len[h] >> 1) * 127 && cross > -3 * 127 && cross < 3 * 127) player_hit();
+    }
     /* 根元: 弱点。針の向きへ撃つ */
     g_boss_aim = GN_CY;
     if (shot_rect(GN_CX - 9, GN_CY - 9, 18, 18)) {
         if (g_boss_hp) g_boss_hp--;
         if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(6000); return; }
     }
-    if (!(t & 15)) enemy_bullet(FX(GN_CX + (gn_cs >> 3)), FX(GN_CY + (gn_sn >> 3)), (s16)(gn_cs >> 2), (s16)(gn_sn >> 2));
+    if (!(t & 15)) enemy_bullet(FX(GN_CX + (gn_cs[0] >> 3)), FX(GN_CY + (gn_sn[0] >> 3)), (s16)(gn_cs[0] >> 2), (s16)(gn_sn[0] >> 2));
 }
-static u8 gn_inside(s16 r) {
-    s16 x = (s16)(GN_CX + ((r * gn_cs) >> 7)), y = (s16)(GN_CY + ((r * gn_sn) >> 7));
+static u8 gn_inside(s16 r, s8 cs, s8 sn) {
+    s16 x = (s16)(GN_CX + ((r * cs) >> 7)), y = (s16)(GN_CY + ((r * sn) >> 7));
     return (u8)(x >= 0 && x <= 255 && y >= GN_Y0 && y <= GN_Y1);
+}
+static void gn_hand(u8 h) {        /* 針 h を 3 本の平行線で(画面の中で切る) */
+    u8 k;
+    s8 cs = gn_cs[h], sn = gn_sn[h];
+    s16 lo = 0, hi = gn_len[h], ex, ey;
+    while (hi - lo > 1) { s16 m = (s16)((lo + hi) >> 1); if (gn_inside(m, cs, sn)) lo = m; else hi = m; }
+    ex = (s16)((lo * cs) >> 7); ey = (s16)((lo * sn) >> 7);
+    for (k = 0; k < 3; k++) {
+        s8 o = (s8)(k - 1);
+        s16 x0 = GN_CX, y0 = GN_CY;
+        if ((cs < 0 ? -cs : cs) > (sn < 0 ? -sn : sn)) y0 += o; else x0 += o;
+        if (y0 + ey < GN_Y0 || y0 + ey > GN_Y1 || x0 + ex < 0 || x0 + ex > 255) continue;
+        gq_line((u16)x0, (u16)(y0 + 68), ex, ey, h ? 13 : 2);     /* リングの行 = 画面の行 + 68(ページ 0) */
+        old_x[old_n] = x0; old_y[old_n] = y0; old_dx[old_n] = ex; old_dy[old_n] = ey; old_n++;
+    }
 }
 static void gn_vram(void) {        /* 2 フレームに 1 回: 前の針を空の色で消し、今の針を描き、根元を描き直す */
     u8 k;
-    s16 lo = 0, hi = GN_R, ex, ey;
-    if ((t & 1) || gq_free() < 10) return;
+    if ((t & 1) || gq_free() < 16) return;
     for (k = 0; k < old_n; k++) gq_line((u16)old_x[k], (u16)(old_y[k] + 68), old_dx[k], old_dy[k], 1);
     old_n = 0;
     if (g_boss_state == BS_DYING || g_boss_state == BS_DONE || g_boss_state == BS_NONE) {
         if (g_boss_state == BS_DYING && b_t > 100) ring_cmd(0, 0, GN_CX - 10, GN_CY - 10, 20, 20, 1, 0x11);
         return;
     }
-    while (hi - lo > 1) { s16 m = (s16)((lo + hi) >> 1); if (gn_inside(m)) lo = m; else hi = m; }   /* 画面の中で切る */
-    ex = (s16)((lo * gn_cs) >> 7); ey = (s16)((lo * gn_sn) >> 7);
-    for (k = 0; k < 3; k++) {
-        s8 o = (s8)(k - 1);
-        s16 x0 = GN_CX, y0 = GN_CY;
-        if ((gn_cs < 0 ? -gn_cs : gn_cs) > (gn_sn < 0 ? -gn_sn : gn_sn)) y0 += o; else x0 += o;
-        if (y0 + ey < GN_Y0 || y0 + ey > GN_Y1 || x0 + ex < 0 || x0 + ex > 255) continue;
-        gq_line((u16)x0, (u16)(y0 + 68), ex, ey, 2);          /* リングの行 = 画面の行 + 68(ページ 0) */
-        old_x[old_n] = x0; old_y[old_n] = y0; old_dx[old_n] = ex; old_dy[old_n] = ey; old_n++;
-    }
+    for (k = 0; k < gn_nh; k++) gn_hand(k);
     ring_cmd(0, 0, GN_CX - 8, GN_CY - 8, 16, 16, 1, 0x55);   /* 根元 */
     ring_cmd(0, 0, GN_CX - 4, GN_CY - 4, 8, 8, 1, 0xDD);
 }

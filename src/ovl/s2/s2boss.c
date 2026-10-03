@@ -129,6 +129,7 @@ static void cw_draw(void) {
 #define NSAT    8
 static const u16 kg_step[NFR] = { 1707, 1024, 640, 427, 320, 256 };   /* 0.15 .. 1 倍 */
 static u8  gen_k, gen_ph;
+static u16 cal_t;                  /* 再校正版の重力の替わり目 */
 static u16 src_off;
 static u8  fr, fr_drawn;
 static u8  sat_hp[NSAT], sat_t[NSAT];
@@ -190,8 +191,13 @@ static void kg_update(void) {
     if (++open_t >= 360) open_t = 0;
     if (open_t == 240) { kg_crack(1); g_grav = GRAV_CENTER; g_gcx = KG_X; g_gcy = KG_Y; }
     if (open_t == 0) { kg_crack(0); g_grav = GRAV_NONE; }
+    if (g_calib && open_t < 240 && ++cal_t >= 300) {          /* 再校正版: 重力の向きが 5 秒ごとにでたらめに替わる */
+        u8 r = (u8)(rnd8() & 3);
+        cal_t = 0; g_grav = GRAV_DIR;
+        g_gx = r == 0 ? 1 : r == 1 ? -1 : 0; g_gy = r == 2 ? 1 : r == 3 ? -1 : 0;
+    }
     /* 赤道の亀裂(開いている間だけ傷が入る)。球の他の所に当たった弾は吸い込まれる */
-    if (open_t >= 240) { u8 n = shot_hit(KG_X, KG_Y, 26, 4); while (n--) hurt(1); }
+    if (open_t >= 240) { u8 n = shot_hit(KG_X, KG_Y, 26, 4); g_boss_aim = KG_Y; while (n--) hurt(1); }
     shot_hit(KG_X, KG_Y, 28, 28);
     touch(KG_X, KG_Y, 26);
     /* 小衛星 */
@@ -222,7 +228,7 @@ void b2_start(u8 k) {
     kind = k; t = 0; g_boss_state = BS_ENTER; g_boss_dmg = 0;
     if (k == B2_CW) { hp_l = hp_r = 30; g_boss_hp = 60; cw_y = -60; ang = 0; fire_t = 0; }
     else {
-        g_boss_hp = 60; fr = 0; fr_drawn = 0xFF; open_t = 0; lens_nx = 0xFFFF;
+        g_boss_hp = 60; fr = 0; fr_drawn = 0xFF; open_t = 0; lens_nx = 0xFFFF; cal_t = 0;
         for (i = 0; i < NSAT; i++) { sat_hp[i] = 2; sat_t[i] = 0; }
         vdp_set_pal(2, 0, 0, 0); vdp_set_pal(3, 1, 1, 1); vdp_set_pal(4, 3, 3, 4); vdp_set_pal(5, 6, 6, 7);
         kg_crack(0);
@@ -230,6 +236,7 @@ void b2_start(u8 k) {
 }
 
 void b2_update(void) {
+    g_boss_aim = -1;
     if (g_boss_dmg) { u8 d = g_boss_dmg; g_boss_dmg = 0; hurt(d); }
     if (g_boss_state == BS_NONE || g_boss_state == BS_DONE) return;
     t++;

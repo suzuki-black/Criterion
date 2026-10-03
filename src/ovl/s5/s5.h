@@ -22,6 +22,8 @@ void b5_draw(void);
 void b5_vram(void);
 void b5_hangar_start(void);
 void b5_gauge_start(void);
+void b5_gauge_load(void);
+void b5_skip_sheets(void);         /* 主砲塔と遠くの戦艦の絵を読まない(7 面の試験) */          /* GAUGE BLOCK のブロックをページ 2 へ読み始める */
 u8   b5_gauge_bands(s16 sc, u16 nx);   /* GAUGE BLOCK の帯(出したら 1) */
 
 #endif /* S5_H */

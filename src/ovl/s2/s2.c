@@ -28,7 +28,7 @@ static void enter(u8 sec) {
     }
     if (sec == SEC2_DOWN) { g_grav = GRAV_DIR; g_gx = 0; g_gy = 1; }
     if (sec == SEC2_MID) { g_grav = GRAV_NONE; b2_start(B2_CW); }
-    if (sec == SEC2_CENTER) { g_grav = GRAV_CENTER; g_gcx = 128; g_gcy = 94; b2_prepare(); }
+    if (sec == SEC2_CENTER) { g_grav = GRAV_CENTER; g_gcx = 128; g_gcy = 94; if (!g_calib) b2_prepare(); }
     if (sec == SEC2_BOSS) { g_grav = GRAV_NONE; b2_start(B2_KG); }
     if (sec == SEC2_OUT) {
         u8 i;
@@ -44,6 +44,13 @@ void ovl_init(void) {
     g_maplen = S2_COLS;
     stage_load_strips(ASSET_S2_STRIPS_BANK, ASSET_S2_STRIPS_OFF);
     g_boss_state = BS_NONE;
+    if (g_calib) {                                            /* 7 面の試験 02: 白い空間から中心の区間の終わりへ沈んで KILOGRAM */
+        g_w0 = (u16)((g_wx >> 3) - (S2_COL_ARENA2 - 8 - 48));
+        b2_prepare();
+        calib_begin(2);
+        enter(SEC2_SINK);
+        return;
+    }
     enter(SEC2_AIR);
 }
 
@@ -76,7 +83,7 @@ void ovl_update(void) {
         break;
     case SEC2_SINK: {
         u16 d = (u16)(g_wx - sec_wx);
-        if (d >= SINK_LEN) { g_scam_q = 0; enter(SEC2_DOWN); }
+        if (d >= SINK_LEN) { g_scam_q = 0; enter(g_calib ? SEC2_CENTER : SEC2_DOWN); }
         else {
             g_scam_q = (s16)(S_TOP * 16 + (s16)(d * 12u));    /* 192 行 / 256 ドット(× 16) */
             if (d > 128) { g_grav = GRAV_DIR; g_gx = 0; g_gy = 1; }   /* 沈む途中から重力 */
@@ -107,6 +114,7 @@ void ovl_update(void) {
         if (col_of_screen() + 8 >= S2_COL_ARENA2) enter(SEC2_BOSS);
         break;
     case SEC2_OUT:
+        if (g_calib) { if (calib_out(sec_t)) return; break; }  /* 試験に合格 */
         if (sec_t == 60) { u8 i; for (i = 0; i < MAX_ESHOT; i++) g_eshot[i].on = 0; }
         if (g_scam_q > S_TOP * 16) g_scam_q -= 24;           /* 星空へ上がる */
         else if (sec_t > 120 && g_scroll_speed < 8 && !(sec_t & 15)) g_scroll_speed++;   /* 月の光の線へ加速 */
@@ -131,7 +139,7 @@ void ovl_vram(void) { b2_vram(); }
 void ovl_bands(s16 sc, u16 nx) {
     s16 lt, lb;
     (void)nx;
-    stage_ev_pal((s16)(0 - sc), space);
+    if (!g_calib) stage_ev_pal((s16)(0 - sc), space);         /* 試験では測定空間の白のまま */
     if (b2_lens(&lt, &lb)) {
         stage_ev_haze(lt, 24, b2_lens_tbl_up);
         stage_ev_haze(lb, 24, b2_lens_tbl_dn);

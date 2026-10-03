@@ -65,6 +65,17 @@ void ovl_init(void) {
     side = 0; far_k = 0; far_drawn = 0xFF; flash_t = 0; far_t = 0; press_on = 0; cq = 0; vortex = 0;
     s5_press_c = s5_press_f = 0; cam_to = S_TOP * 16;
     b5_init();
+    if (g_calib) {                                            /* 7 面の試験 05: 白い空間から艦橋の甲板へ降りて GAUGE BLOCK */
+        u16 c;
+        g_w0 = (u16)((g_wx >> 3) - (S5_COL_BOSS - 64));
+        for (c = S5_COL_BOSS - 56; c < S5_COL_BOSS; c++) g_map[c] = 11;   /* 手前は平らな甲板にする */
+        palette();
+        b5_skip_sheets();
+        calib_begin(5);
+        g_scroll_speed = 4; cam_to = S_TOP * 16;              /* 短冊を読み終えるまで白い空間で待つ */
+        enter(SEC5_BOW);
+        return;
+    }
     enter(SEC5_AIR);
 }
 
@@ -135,6 +146,11 @@ void ovl_update(void) {
         }
         break;
     case SEC5_BOW:
+        if (g_calib) {
+            if (sec_t == 120) { cam_to = S_DECKVIEW * 16; b5_gauge_load(); }   /* 短冊が揃ってから降りる */
+            if (col_of_screen() + 8 >= S5_COL_BOSS + 8) { g_scroll_speed = 0; enter(SEC5_BOSS); }
+            break;
+        }
         if (g_scroll_speed > 4 && !(sec_t & 7)) g_scroll_speed--;
         if (col_of_screen() + 16 >= S5_COL_DECK) enter(SEC5_DECK);
         break;
@@ -166,7 +182,10 @@ void ovl_update(void) {
         break;
     case SEC5_BOSS:
         if (sec_t == 5400) g_boss_state = BS_DONE;
-        if (g_boss_state == BS_DONE) { g_boss_state = BS_NONE; wreck_a = wreck_b = 0; wreck_x = 0; enter(SEC5_WRECK); }
+        if (g_boss_state == BS_DONE) {
+            g_boss_state = BS_NONE; wreck_a = wreck_b = 0; wreck_x = 0;
+            if (g_calib) { g_bands_all = 0; g_scroll_speed = 4; enter(SEC5_OUT); } else enter(SEC5_WRECK);
+        }
         break;
     case SEC5_WRECK:                                          /* 撃沈: 2 秒爆発 → 前後の帯が離れながら沈む */
         if (sec_t < 120) {
@@ -190,6 +209,7 @@ void ovl_update(void) {
         g_pl_ymin = 0; g_pl_ymax = 30;                        /* 自機は空へ(沈む帯ではスプライトがずれる) */
         break;
     case SEC5_OUT:                                            /* 宇宙へ上がる(沈んだ帯のまま) */
+        if (g_calib) { cam_to = S_TOP * 16; if (calib_out(sec_t)) return; break; }
         cam_to = S_TOP * 16;
         if (sec_t == 240) {
             palette();

@@ -73,7 +73,8 @@ static s16 js;
 static s16 pick_at;                /* 前に描き替えを探して何も無かったときの g_scam(8 行単位) */
 static u8  hs_t;                   /* hs_cur を求めたときの sky_t */
 static u8  banner_t;               /* 面の開始表示の進み(0 = なし) */
-static char banner_text[32];       /* ★写しを持つ(呼ぶのは古いオーバレイで、その文字列は次のオーバレイの読み込みで消える) */
+static char banner_text[32];
+static u8 banner_fg = 15;          /* 文字の色(7 面の判定文は赤く崩れていく) */       /* ★写しを持つ(呼ぶのは古いオーバレイで、その文字列は次のオーバレイの読み込みで消える) */
 
 /* 画面の矩形 → 表示リング(ページ 0|1)。リングの 512 幅と 256 行の継ぎ目で分ける。
    fill = 0 なら (sx, sy) から HMMM、それ以外は byte で HMMV */
@@ -117,8 +118,42 @@ void stage_reset_ground(void) {
     g_wx &= 511u;                                             /* 世界の位置を面ごとに戻す(リングの位置は同じ) */
     g_bands_all = 0; g_blk_skip = 0;
 }
+/* ---- 7 面の試験(過去の面のオーバレイを g_calib で再校正版として読み直す) ---- */
+u8 g_calib, g_loop;
+void calib_begin(u8 k) {
+    char s[27];
+    static const char head[] = "TEST 0  SUBJECT: INFINITAS";
+    u8 i;
+    for (i = 0; i < sizeof head; i++) s[i] = head[i];
+    s[6] = (char)('0' + k);
+    stage_banner(s);
+    g_hall = 1;
+}
+/* 判定文は試験が進むほど赤く崩れる(文字を少しずつ壊す) */
+u8 calib_out(u16 t) {
+    if (t == 1) {
+        char s[25];
+        static const char res[] = "RESULT: OUT OF TOLERANCE";
+        u8 i, k = g_calib;
+        for (i = 0; i < sizeof res; i++) s[i] = res[i];
+        for (i = 0; i < k * 2 && i < 12; i++) s[8 + ((i * 7) & 15)] = (char)('A' + ((i * 5 + k) % 26));
+        stage_banner_c(s, k <= 2 ? 15 : k <= 4 ? 12 : 13);
+        enemy_waves(WAVES_NONE);
+        g_scroll_speed = 4;                                   /* ボスで止めた世界を流す(次の試験は流れで降りる) */
+    }
+    if (g_scam_q > -192 * 16) g_scam_q -= 24;                 /* 白い空間へ上がる */
+    if (t == 300) {
+        u8 k = ++g_calib;
+        ovl_request(k <= 6 ? (u8)(OVL_S1 + k - 1) : OVL_S7);
+        return 1;
+    }
+    return 0;
+}
+
+void stage_banner_c(const char *text, u8 fg) { stage_banner(text); banner_fg = fg; }
 void stage_banner(const char *text) {
     u8 i;
+    banner_fg = 15;
     for (i = 0; i < sizeof banner_text - 1 && text[i]; i++) banner_text[i] = text[i];
     banner_text[i] = 0;
     banner_t = 1;
@@ -246,6 +281,25 @@ static void star(u8 row) {
     VDP_DAT = v;
 }
 
+/* 7 面の測定空間(g_hall): 星の代わりに方眼。縦の線は 32 ドットおきの点(4 行おき)、横の線は s が 32 の倍数の行。
+   ★点 1 つにアドレスの設定が要る(I/O 5 回)。8 行とも打つと 1 ブロック 5ms かかり、上がる間ずっと遅れた */
+u8 g_hall;
+static void hall_block(u8 row, s16 s0) {
+    u8 r;
+    for (r = 0; r < 8; r++) {
+        u8 y = (u8)(row + r);
+        if (((s0 + r) & 31) == 0) { vdp_hmmv(0, y, 256, 1, 0xEE); vdp_hmmv(0, (u16)(256u + y), 256, 1, 0xEE); vdp_cmd_wait(); }
+        else if (!((s0 + r) & 3)) {
+            u8 k;
+            for (k = 0; k < 16; k++) {                        /* x = 32k(0..511) */
+                u16 a = (u16)y * 128u + ((k & 7) << 4);
+                vdp_write_addr17(0, (u16)((k & 8) ? (a | 0x8000u) : a));
+                VDP_DAT = 0xE1;                               /* 左の 1 点が色 14 */
+            }
+        }
+    }
+}
+
 /* 欲しい s: lo から 256 行の窓の中で、ブロック b(リングの 8b..8b+7 行)に入る s */
 static s16 want_of(u8 b, s16 lo) { return (s16)(lo + (u8)((u8)(b * 8 + 68) - (u8)lo)); }
 static s16 tag_of(s16 w) { return w < 0 ? (s16)(w + TAG_SKY) : w; }
@@ -295,7 +349,10 @@ void stage_pump(u16 budget) {
         if (c_star) {
             u8 i;
             vdp_cmd_wait();                                   /* 塗り終わってから */
-            for (i = 0; i < c_star; i++) { star((u8)((jb0 + i) * 8)); star((u8)((jb0 + i) * 8)); star((u8)((jb0 + i) * 8)); }
+            for (i = 0; i < c_star; i++) {
+                if (g_hall) hall_block((u8)((jb0 + i) * 8), (s16)(js + i * 8));
+                else { star((u8)((jb0 + i) * 8)); star((u8)((jb0 + i) * 8)); star((u8)((jb0 + i) * 8)); }
+            }
         } else if (c_hmmv) vdp_hmmv(c_dx, c_dy, c_nx, c_ny, 0x11);
         else vdp_hmmm(c_sx, c_sy, c_dx, c_dy, c_nx, c_ny);
         if ((u16)(sys_timer() - t0) > PUMP_BUDGET) return;
@@ -348,8 +405,8 @@ static void banner_vram(void) {
     else if (banner_t >= 3 && banner_t < BAN_IN) {           /* 文字は 1 フレームに 2 行ずつ(一度に書くと 120 ライン。2 面の入りで遅れた) */
         u8 r = (u8)((banner_t - 3) << 1);
         vdp_cmd_wait();
-        font_text_row(2, 40, (u8)(BAN_ROW + 4), 15, 1, banner_text, r);
-        font_text_row(2, 40, (u8)(BAN_ROW + 4), 15, 1, banner_text, (u8)(r + 1));
+        font_text_row(2, 40, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, r);
+        font_text_row(2, 40, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, (u8)(r + 1));
         ban_x = 256;
     } else if (banner_t == BAN_END) {
         vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x00);       /* 起動ロゴの黒い区間へ戻す */
@@ -483,12 +540,13 @@ void stage_build(void) {
         stage_ev_scroll((s16)(-64 - sc), bg_layer_x(1));
         stage_ev_scroll((s16)(-38 - sc), nx);
     } else {
-        if (hs_t != g_sky_t) {
+        if (hs_t != (u8)(g_sky_t | (g_hall << 7))) {
             u8 j;
-            hs_t = g_sky_t;
+            hs_t = (u8)(g_sky_t | (g_hall << 7));
             for (i = 0; i < 8; i++)
                 for (j = 0; j < 3; j++)
-                    hs_cur[i][j] = (u8)((hs_indigo[i][j] * (16u - g_sky_t) + hs_black[i][j] * g_sky_t + 8u) >> 4);
+                    hs_cur[i][j] = g_hall ? (u8)(5 + (i >> 2) + (j == 2)) :   /* 測定空間: 白(下ほど明るい) */
+                                   (u8)((hs_indigo[i][j] * (16u - g_sky_t) + hs_black[i][j] * g_sky_t + 8u) >> 4);
         }
         for (i = 0; i < 8; i++) {
             s16 l = (s16)(S_AIR2 + i * 24 - sc);

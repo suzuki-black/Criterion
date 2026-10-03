@@ -75,6 +75,24 @@ static u8  gen_k, gen_ph;          /* 絵を作る進み(gen_k == NFRAME で終�
 /* 表示リングに描いてある枠(画面の座標、切り詰めた後)。w = 0 で無し */
 static s16 dr_x, dr_y;
 static u8  dr_w, dr_h;
+static s16 pivot;                  /* 吊り元の x(普段は 128) */
+static u8  ph;                     /* 振れの位相 */
+/* 7 面の再校正版: 下げ振りが 2 個(吊り元を左右に分け、逆の位相で振って鎖を交差させる)。同じ変数を入れ替えて
+   2 個ぶん動かす(体力は共有) */
+typedef struct { s16 bx, by, fx, fy, fvx, fvy, dr_x, dr_y, pivot; s8 swing; u8 broken, cur_fr, dr_w, dr_h, ph; } Plumb;
+static Plumb pl[2];
+static u8 npl, cur_pl;
+static void pl_save(u8 i) {
+    Plumb *p = &pl[i];
+    p->bx = bx; p->by = by; p->fx = fx; p->fy = fy; p->fvx = fvx; p->fvy = fvy; p->dr_x = dr_x; p->dr_y = dr_y;
+    p->pivot = pivot; p->swing = swing; p->broken = broken; p->cur_fr = cur_fr; p->dr_w = dr_w; p->dr_h = dr_h; p->ph = ph;
+}
+static void pl_load(u8 i) {
+    const Plumb *p = &pl[i];
+    bx = p->bx; by = p->by; fx = p->fx; fy = p->fy; fvx = p->fvx; fvy = p->fvy; dr_x = p->dr_x; dr_y = p->dr_y;
+    pivot = p->pivot; swing = p->swing; broken = p->broken; cur_fr = p->cur_fr; dr_w = p->dr_w; dr_h = p->dr_h; ph = p->ph;
+    cur_pl = i;
+}
 /* 場面の始め(game_start): 何も作っていない状態へ */
 void boss_reset(void) {
     g_boss_state = BS_NONE; kind = 0xFF; gen_k = NFRAME; dr_w = 0; broken = 0;
@@ -90,7 +108,13 @@ void boss_start(u8 k) {
         for (i = 0; i < 5; i++) sway[i] = 0;
     } else {
         g_boss_hp = PLUMB_HP; bx = 128; anchor_y = -110; broken = 0; aim_t = 0; spin = 0; dr_w = 0;
-        cur_fr = FR_UP; swing = 0;
+        cur_fr = FR_UP; swing = 0; pivot = 128; ph = 0; npl = 1; cur_pl = 0;
+        if (g_calib) {                                        /* 再校正版: 2 個 */
+            npl = 2;
+            pivot = 100; ph = 0; pl_save(0);
+            pivot = 156; ph = 32; pl_save(1);
+            pl_load(0);
+        }
         while (gen_k < NFRAME) boss_vram_gen();               /* 間に合っていなければここで作り切る */
     }
 }
@@ -303,9 +327,9 @@ u8 boss_bands(s16 *line, s8 *off) {
 
 static void plumb_pos(void) {
     s16 sx, cx;
-    swing = (s8)(g_sin64[(u8)(t >> 1) & 63] >> 4);           /* 振れ角 ±7(64 で一周)≒ ±40 度 */
+    swing = (s8)(g_sin64[(u8)((t >> 1) + ph) & 63] >> 4);    /* 振れ角 ±7(64 で一周)≒ ±40 度 */
     sx = g_sin64[(u8)swing & 63]; cx = g_sin64[(u8)(swing + 16) & 63];
-    bx = (s16)(128 + ((sx * CHAIN_L) >> 7));
+    bx = (s16)(pivot + ((sx * CHAIN_L) >> 7));
     by = (s16)(anchor_y + ((cx * CHAIN_L) >> 7));
     cur_fr = (u8)(FR_UP - ((swing + (swing < 0 ? -1 : 1)) >> 1));   /* 右へ振れたら吊り輪は左上(角度は逆) */
     if (cur_fr > 6) cur_fr = swing > 0 ? 0 : 6;
@@ -320,8 +344,8 @@ static s16 ring_y(void) {
 
 static void plumb_update(void) {
     if (g_boss_state == BS_ENTER) {
-        anchor_y += 2;
-        if (anchor_y >= -8) { anchor_y = -8; g_boss_state = BS_FIGHT; }
+        if (cur_pl == 0) anchor_y += 2;                      /* 2 個のときも吊り元は 1 つの高さ */
+        if (anchor_y >= -8) { anchor_y = -8; if (cur_pl == npl - 1) g_boss_state = BS_FIGHT; }
         plumb_pos();
         return;
     }
@@ -334,7 +358,7 @@ static void plumb_update(void) {
         plumb_pos();
         if (g_boss_hp <= PLUMB_HALF) {                        /* 鎖が切れる: 跳ね回る */
             broken = 1; fx = FX(bx); fy = FX(by); fvx = bx < 128 ? 24 : -24; fvy = 0;
-            fx_spawn(FX(128), FX(anchor_y + 40));
+            fx_spawn(FX(pivot), FX(anchor_y + 40));
         }
         if (++aim_t >= 45) { aim_t = 0; enemy_shoot(FX(bx), FX(by + 20)); }
         if ((t & 127) == 64) {                                /* 測定ビーム: 先端から下へ */
@@ -437,9 +461,12 @@ void boss_vram(void) {
     /* ★1 回の描き替えは最大 20 コマンド(写し 4 + 消し 4 方向 × リングの継ぎ目)。入りきらないときは見送る
        (途中まで積むと、消し残しや描き残しが出る) */
     if (gq_free() >= 20) {
+        u8 i = npl > 1 ? (u8)(t & 1) : 0;                     /* 2 個のときは 1 フレームおきに交互 */
+        if (npl > 1) pl_load(i);
         if (g_boss_state == BS_DONE || g_boss_state == BS_NONE) {
             if (dr_w) plumb_blit(0);                          /* 最後に消す */
-        } else if (!(t & 1)) plumb_blit(1);                   /* 30Hz */
+        } else if (npl > 1 || !(t & 1)) plumb_blit(1);        /* 30Hz */
+        if (npl > 1) pl_save(i);
     }
     gq_pump(0);                                               /* 待たない(メインループの数か所でも出す) */
 }
@@ -449,20 +476,25 @@ void boss_update(void) {
     if (g_boss_state == BS_NONE || g_boss_state == BS_DONE) return;
     t++;
     shots_prepare();
-    if (kind == BOSS_LEGION) legion_update(); else plumb_update();
+    if (kind == BOSS_LEGION) legion_update();
+    else if (npl == 1) plumb_update();
+    else { u8 i; for (i = 0; i < npl; i++) { pl_load(i); plumb_update(); pl_save(i); } }
 }
 
 void boss_draw(void) {
-    u8 i;
+    u8 i, k;
     if (g_boss_state == BS_NONE || g_boss_state == BS_DONE) return;
     if (kind == BOSS_LEGION) {
         if (g_boss_state == BS_FIGHT) spr_put((s16)(gx0 + 24 + sway[2]) - 8, LG_Y + 34 - 8, PAT_LEGION_CORE, G_ENEMY, 0);
         return;
     }
+    for (k = 0; k < npl; k++) {
+    if (npl > 1) pl_load(k);
     if (!broken && g_boss_state != BS_DYING) {               /* 吊り元から吊り輪まで 13 等分(1/13 ≒ 20/256) */
         s16 rx = ring_x(), ry = ring_y();
-        s16 stx = (s16)((rx - 128) * 20), sty = (s16)((ry - anchor_y) * 20), ax = stx, ay = sty;
+        s16 stx = (s16)((rx - pivot) * 20), sty = (s16)((ry - anchor_y) * 20), ax = stx, ay = sty;
         for (i = 0; i < CHAIN_N; i++, ax += stx, ay += sty)
-            spr_put((s16)(128 + (ax >> 8)) - 8, (s16)(anchor_y + (ay >> 8)) - 8, PAT_CHAIN, G_ENEMY, 0);
+            spr_put((s16)(pivot + (ax >> 8)) - 8, (s16)(anchor_y + (ay >> 8)) - 8, PAT_CHAIN, G_ENEMY, 0);
+    }
     }
 }

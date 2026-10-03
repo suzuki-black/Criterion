@@ -116,7 +116,7 @@ OVL_DBEG := 0xD200
 OVL_DEND := 0xD800
 OVL_TITLE_EXPORTS := title_load title_start title_update title_draw title_vram title_build
 OVL_STAGE_EXPORTS := ovl_init ovl_update ovl_logic ovl_draw ovl_vram ovl_bands
-OVLS := title s1 s2 s3 s4 s5 s6
+OVLS := title s1 s2 s3 s4 s5 s6 s7
 OVL_title_RELS := $(patsubst src/ovl/title/%.c,$(BUILD)/ov_title_%.rel,$(wildcard src/ovl/title/*.c))
 OVL_s1_RELS    := $(patsubst src/ovl/s1/%.c,$(BUILD)/ov_s1_%.rel,$(wildcard src/ovl/s1/*.c))
 OVL_s2_RELS    := $(patsubst src/ovl/s2/%.c,$(BUILD)/ov_s2_%.rel,$(wildcard src/ovl/s2/*.c))
@@ -130,6 +130,8 @@ OVL_s5_RELS    := $(patsubst src/ovl/s5/%.c,$(BUILD)/ov_s5_%.rel,$(wildcard src/
 OVL_s5_HDR     := stage
 OVL_s6_RELS    := $(patsubst src/ovl/s6/%.c,$(BUILD)/ov_s6_%.rel,$(wildcard src/ovl/s6/*.c))
 OVL_s6_HDR     := stage
+OVL_s7_RELS    := $(patsubst src/ovl/s7/%.c,$(BUILD)/ov_s7_%.rel,$(wildcard src/ovl/s7/*.c))
+OVL_s7_HDR     := stage
 OVL_s1_HDR     := stage
 OVL_BINS := $(OVLS:%=$(BUILD)/ovl_%.bin)
 
@@ -151,6 +153,9 @@ $(BUILD)/ov_s5_%.rel: src/ovl/s5/%.c src/ovl/s5/s5.h $(HDRS) src/game/game.h $(G
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ov_s6_%.rel: src/ovl/s6/%.c src/ovl/s6/s6.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+
+$(BUILD)/ov_s7_%.rel: src/ovl/s7/%.c src/ovl/s7/s7.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ovlhdr_title.s: tools/gen_ovl.py Makefile | $(BUILD)
@@ -191,7 +196,7 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(
 
 GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(OVL_BINS) tools/rompack.mjs
 	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin \
-	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin
+	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

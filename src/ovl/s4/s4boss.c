@@ -264,7 +264,8 @@ static void ruler_draw(void) {
 #define FY     22                  /* 顔の上端の行(s)。帯は 24 行ずつ 6 本 */
 #define F_W    128
 #define F_H    144
-#define NREEL  6
+#define NREEL  9                   /* 帯の数の最大(普段は 6 本 × 24 行、再校正版は 9 本 × 16 行) */
+static u8 nreel, slice;
 static u16 f_rx;                   /* 顔の左端のリングの x */
 static s16 reel[NREEL];            /* 帯ごとのずれ(ドット。0 = 揃う) */
 static s16 reel_to[NREEL];
@@ -280,6 +281,7 @@ void b4_load_face(void) { f_load = 1; f_off = 0; }
 static void stratum_start(void) {
     u8 i;
     f_rx = (u16)((s4_band_x(5) + 320) & 0x1FE);               /* 顔は見えないところに描いて、リールで寄せる */
+    nreel = g_calib ? 9 : 6; slice = g_calib ? 16 : 24;
     for (i = 0; i < NREEL; i++) { reel[i] = (s16)(256 + i * 40); reel_to[i] = 0; }
     f_cmd = 0; st_phase = 0; st_t = 0; core_hits = 0;
     f_top = s4_band_x(0); f_bot = s4_band_x(11);
@@ -288,7 +290,7 @@ static void stratum_start(void) {
 
 static void reels_move(u8 fast) {
     u8 i;
-    for (i = 0; i < NREEL; i++) {
+    for (i = 0; i < nreel; i++) {
         s16 d = (s16)(reel_to[i] - reel[i]);
         s16 step = (s16)(fast ? (d >> 3) : (d >> 4));
         if (step == 0 && d) step = d > 0 ? 1 : -1;
@@ -299,7 +301,7 @@ static void reels_move(u8 fast) {
 
 static u8 reels_still(void) {
     u8 i;
-    for (i = 0; i < NREEL; i++) if (reel[i] != reel_to[i]) return 0;
+    for (i = 0; i < nreel; i++) if (reel[i] != reel_to[i]) return 0;
     return 1;
 }
 
@@ -329,14 +331,14 @@ static void stratum_update(void) {
         }
         if (st_t >= 240) {                                    /* ずれる: どれか 1 本に核 */
             st_phase = 1; st_t = 0;
-            core_band = (u8)(((u16)rnd8() * NREEL) >> 8); core_hits = 0;
+            core_band = (u8)(((u16)rnd8() * nreel) >> 8); core_hits = 0;
             for (i = 0; i < NREEL; i++) {
                 s16 d = (s16)(40 + (rnd8() & 63));
                 reel_to[i] = (rnd8() & 1) ? d : (s16)-d;
             }
         }
     } else {                                                  /* ずれている: 核だけ撃てる */
-        s16 cx = (s16)(64 - reel[core_band] + 64), cy = (s16)(FY + core_band * 24 + 12 - g_scam);
+        s16 cx = (s16)(64 - reel[core_band] + 64), cy = (s16)(FY + core_band * slice + (slice >> 1) - g_scam);
         reels_move(0);
         if (reels_still()) g_boss_aim = cy;
         if (reels_still() && shot_hit(cx, cy, 11)) {
@@ -354,7 +356,7 @@ static void stratum_update(void) {
 
 static void stratum_draw(void) {
     if (g_boss_state == BS_FIGHT && st_phase == 1 && reels_still())
-        spr_put((s16)(64 - reel[core_band] + 64 - 8), (s16)(FY + core_band * 24 + 4 - g_scam), PAT_CORE, G_ENEMY, 0);
+        spr_put((s16)(64 - reel[core_band] + 64 - 8), (s16)(FY + core_band * slice + (slice >> 1) - 8 - g_scam), PAT_CORE, G_ENEMY, 0);
 }
 
 /* ---- 入口 ---- */
@@ -422,8 +424,8 @@ u8 b4_bands(s16 sc) {
     if (kind != B4_STRATUM || g_boss_state == BS_NONE || g_boss_state == BS_DONE) return 0;
     stage_ev_pal((s16)(0 - sc), sky_top);
     stage_ev_scroll((s16)(0 - sc), f_top);
-    for (i = 0; i < NREEL; i++) {
-        s16 l = (s16)(FY + i * 24 - sc);
+    for (i = 0; i < nreel; i++) {
+        s16 l = (s16)(FY + i * slice - sc);
         if (i == 0) stage_ev_pal(l, sky_face);
         stage_ev_scroll(l, (u16)(f_rx - 64 + reel[i]));
     }

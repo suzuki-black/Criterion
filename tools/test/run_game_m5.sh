@@ -35,7 +35,18 @@ proc check {name cond detail} {
 proc key {row bit dur} { keymatrixdown \$row \$bit; after time \$dur [list keymatrixup \$row \$bit] }
 set ::seq {}; set ::last -1; set ::blank 0; set ::stall 0; set ::fr_prev 0; set ::late_prev 0; set ::late_at {}
 foreach s {11 13 20 22 29 31 38 41 48 50} { set ::minhp(\$s) 255 }
-set ::press 0; set ::g7 0; set ::mark 0
+set ::press 0; set ::g7 0; set ::mark 0; set ::yjk_bad -1
+# YJK の絵の照合(GNOMON の間に一度。6 面を出るとリングの 0..47 行は空に描き戻される)
+proc yjk_check {} {
+  set bad 0
+  foreach {pg fn} {0 yjk_even.bin 1 yjk_odd.bin} {
+    set h [open "build/\$fn" rb]; set ref [read \$h]; close \$h
+    binary scan [debug read_block VRAM [expr {\$pg * 0x10000}] 6144] cu* got
+    binary scan \$ref cu* want2
+    foreach a \$got b \$want2 { if {\$a != \$b} { incr bad } }
+  }
+  set ::yjk_bad \$bad
+}
 # 表(ISR が読んでいる方)の項目: 行 1..187 の横スクロールの数、HR ポーリングの有無、(行, x) の組
 proc raslist {} {
   set p [rd16 $RFRONT]; set n [rd $RN]; set ns 0; set hz 0; set xs {}
@@ -71,6 +82,7 @@ proc watch {} {
       binary scan [debug read_block memory $SPD 1] c sp
       if {\$sp > \$::spmax(\$s)} { set ::spmax(\$s) \$sp }; if {\$sp < \$::spmin(\$s)} { set ::spmin(\$s) \$sp }
     }
+    if {\$s == 50 && \$::yjk_bad < 0} { yjk_check }
     if {\$s == 40 || \$s >= 46} {
       set ::press_now 0
       raslist
@@ -97,19 +109,13 @@ proc finish {} {
   set late [rd16 [expr {$ST+4}]]
   set i [lsearch \$::seq 7]
   set want {}; for {set k 7} {\$k <= 51} {incr k} { lappend want \$k }
-  check sections [expr {\$i >= 0 && [lrange \$::seq \$i end] eq \$want}] "順=\$::seq"
+  check sections [expr {\$i >= 0 && [lrange \$::seq \$i [expr {\$i + 44}]] eq \$want}] "順=\$::seq"
   foreach {s name} {38 hangar_deck 41 gauge_block 48 hourglass 50 gnomon} {
     check \$name [expr {\$::minhp(\$s) == 0}] "最小の体力=\$::minhp(\$s)"
   }
   check press [expr {\$::press}] "機関部のプレス(R#23 の項目 4 つ)"
   check split [expr {\$::g7 && \$::mark}] "244 行で SCREEN12=\$::g7 48 行の境界=\$::mark"
-  set bad 0
-  foreach {pg fn} {0 yjk_even.bin 1 yjk_odd.bin} {
-    set h [open "build/\$fn" rb]; set ref [read \$h]; close \$h
-    binary scan [debug read_block VRAM [expr {\$pg * 0x10000}] 6144] cu* got
-    binary scan \$ref cu* want2
-    foreach a \$got b \$want2 { if {\$a != \$b} { incr bad } }
-  }
+  set bad \$::yjk_bad
   check yjk [expr {\$bad == 0}] "YJK の絵と違うバイト=\$bad / 12288"
   check no_blackout [expr {\$::blank == 0 && \$::stall == 0}] "表示が切れた回数=\$::blank 止まった回数=\$::stall"
   check no_late [expr {\$late == 0}] "遅れたフレーム=\$late \$::late_at"

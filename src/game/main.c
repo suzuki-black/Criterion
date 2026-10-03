@@ -69,7 +69,7 @@ void game_start(void) {
     g_gauge.cursor = N_INF; g_gauge.armed = 0; g_gauge.anim = 0; g_gauge.flash = 0;
     gauge_lose();
     g_vscroll = 0;
-    g_boss_state = BS_NONE; g_boss_dmg = 0;
+    g_boss_state = BS_NONE; g_boss_dmg = 0; g_calib = 0; g_hall = 0;
     infx_reset();
     state = ST_PLAY;
 }

@@ -257,20 +257,20 @@ static void gauge_update(void) {
                     if (!g_boss_hp) { g_boss_state = BS_DYING; boss_t = 0; score_add(5000); return; }
                 }
             } else shot_rect((s16)(G_AX - (L >> 1)), y, L, 14);
-            if (((g_t + k * 13) & 63) == 0) enemy_shoot(FX(G_AX - (L >> 1)), FX(y + 7));
+            if (((g_t + k * 13) & (g_calib ? 31 : 63)) == 0) enemy_shoot(FX(G_AX - (L >> 1)), FX(y + 7));
         }
-        if (g_t >= 150) {                                     /* 入れ替える 2 段を選んで、右へすべらせる */
+        if (g_t >= (g_calib ? 70 : 150)) {                                     /* 入れ替える 2 段を選んで、右へすべらせる */
             g_a = (u8)(((u16)rnd8() * 6) >> 8); g_b = (u8)(((u16)rnd8() * 5) >> 8);
             if (g_b >= g_a) g_b++;
             g_ph = 1; g_t = 0;
         }
     } else if (g_ph == 1) {
-        g_off[g_a] += 6; g_off[g_b] += 6;
+        g_off[g_a] += g_calib ? 12 : 6; g_off[g_b] += g_calib ? 12 : 6;   /* 再校正版: 入れ替えが速い */
         if (g_off[g_a] >= 144) { k = g_order[g_a]; g_order[g_a] = g_order[g_b]; g_order[g_b] = k; g_redraw = 2; g_ph = 2; }
     } else if (g_ph == 2) {                                   /* 見えない間に描き替える(b5_vram)→ 戻す */
         if (!g_redraw && gq_free() == GQ_N) g_ph = 3;
     } else {
-        g_off[g_a] -= 6; g_off[g_b] -= 6;
+        g_off[g_a] -= g_calib ? 12 : 6; g_off[g_b] -= g_calib ? 12 : 6;
         if (g_off[g_a] <= 0) { g_off[g_a] = g_off[g_b] = 0; g_ph = 0; g_t = 0; }
     }
 }
@@ -294,6 +294,8 @@ u8 b5_gauge_bands(s16 sc, u16 nx) {
 }
 
 /* ======== 入口 ======== */
+void b5_gauge_load(void) { gauge_ld = 0; }
+void b5_skip_sheets(void) { sheet_row = 128; }
 void b5_init(void) {
     u8 i;
     t = 0; spr_loaded = 0; sheet_row = 0; gauge_ld = 0xFF;
@@ -314,7 +316,7 @@ void b5_update(void) {
     if (g_sec == SEC5_UNDER || g_sec == SEC5_HANGAR) hang_update();
     if (g_sec == SEC5_HANGAR && g_boss_state != BS_NONE && g_boss_state != BS_DONE) hangar_update();
     if (g_sec == SEC5_BOSS && g_boss_state != BS_NONE && g_boss_state != BS_DONE) gauge_update();
-    if (g_sec == SEC5_ENGINE && gauge_ld == 0xFF) gauge_ld = 0;   /* GAUGE BLOCK のブロックをページ 2 へ読み始める */
+    if (g_sec == SEC5_ENGINE && gauge_ld == 0xFF) b5_gauge_load();
 }
 
 void b5_draw(void) {

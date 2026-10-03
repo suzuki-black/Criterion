@@ -19,7 +19,7 @@
 #define OVL_DATA   0xD200              /* 〜0xD7FF(本体の変数は 0xD200 まで。Makefile が検査) */
 #define OVL_BANK0  104                 /* 104..121: タイトル + 8 面(Makefile の --asset と合わせる) */
 
-enum { OVL_NONE, OVL_TITLE, OVL_S1, OVL_S2, OVL_S3, OVL_S4, OVL_S5, OVL_S6 };
+enum { OVL_NONE, OVL_TITLE, OVL_S1, OVL_S2, OVL_S3, OVL_S4, OVL_S5, OVL_S6, OVL_S7, OVL_S8 };
 
 extern u8 g_ovl;                       /* 読み込まれているオーバレイ */
 extern u8 g_ovl_ready;                 /* 1 = 読み終わって呼んでよい */

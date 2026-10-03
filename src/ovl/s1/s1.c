@@ -38,6 +38,19 @@ static void enter(u8 sec) {
 }
 
 void ovl_init(void) {
+    if (g_calib) {                                            /* 7 面の試験 01: 白い空間から都市の広場へ降りて PLUMB(2 個) */
+        stage_reset_ground();
+        g_w0 = (u16)((g_wx >> 3) - (CITY_COL_ARENA2 - 8 - 80));   /* 通路 16 列 + 降下 32 列 + 都市 32 列で広場 */
+        rom_to_ram(ASSET_CITY_MAP_BANK, ASSET_CITY_MAP_OFF, g_map, CITY_COLS);
+        g_maplen = CITY_COLS;
+        stage_load_strips(ASSET_CITY_STRIPS_BANK, ASSET_CITY_STRIPS_OFF);
+        stage_set_upper(UP_SKY);
+        pawn_reset(); boss_reset();                           /* Pawn の絵は読まない(試験には出ない) */
+        turret_i = CITY_NTURRET;                              /* 屋上の砲台は出さない */
+        calib_begin(1);
+        enter(SEC_AIR1);                                      /* 短い通路(短冊を読む間)→ 降下 → 都市後半(絵を作る) */
+        return;
+    }
     g_w0 = (u16)((g_wx + AIR1_LEN) >> 3);
     rom_to_ram(ASSET_CITY_MAP_BANK, ASSET_CITY_MAP_OFF, g_map, CITY_COLS);
     g_maplen = CITY_COLS;
@@ -53,11 +66,11 @@ void ovl_update(void) {
     sec_t++;
     switch (g_sec) {
     case SEC_AIR1:
-        if ((u16)(g_wx - sec_wx) >= AIR1_LEN) enter(SEC_DESCENT);
+        if ((u16)(g_wx - sec_wx) >= (g_calib ? 128u : AIR1_LEN)) enter(SEC_DESCENT);
         break;
     case SEC_DESCENT: {
         u16 d = (u16)(g_wx - sec_wx);
-        if (d >= DESC_LEN) { g_scam_q = 0; enter(SEC_CITY1); }
+        if (d >= DESC_LEN) { g_scam_q = 0; enter(g_calib ? SEC_CITY2 : SEC_CITY1); }
         else g_scam_q = (s16)(S_AIR * 16 + (s16)((d * 47u) >> 2));   /* 188 行 / 256 ドット = 47/64(× 16) */
         break;
     }
@@ -78,6 +91,7 @@ void ovl_update(void) {
         if (col_of_screen() + 8 >= CITY_COL_ARENA2) enter(SEC_BOSS);
         break;
     case SEC_ASCENT:
+        if (g_calib) { if (calib_out(sec_t)) return; break; }  /* 試験に合格: 判定文 → 次の試験へ */
         g_scam_q -= 24;                                       /* 1.5 行/フレーム */
         if (g_sky_t < 16 && !(sec_t & 7)) g_sky_t++;
         if (g_scam_q <= S_AIR2 * 16) { g_scam_q = S_AIR2 * 16; enter(SEC_AIR2); }
@@ -87,7 +101,7 @@ void ovl_update(void) {
     }
 
     /* 街路の Pawn(都市の前半・後半で出す。広場ではもう出さないが、いるものは歩き続ける) */
-    if (g_sec >= SEC_CITY1 && g_sec <= SEC_BOSS && !g_slow)
+    if (g_sec >= SEC_CITY1 && g_sec <= SEC_BOSS && !g_slow && !g_calib)
         pawn_update((u8)((g_sec == SEC_CITY1 || g_sec == SEC_CITY2) && g_scam == 0));
 
     /* 屋上の砲台: 列が画面の右端に来たら置く */
