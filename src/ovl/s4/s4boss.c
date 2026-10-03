@@ -281,7 +281,7 @@ void b4_load_face(void) { f_load = 1; f_off = 0; }
 static void stratum_start(void) {
     u8 i;
     f_rx = (u16)((s4_band_x(5) + 320) & 0x1FE);               /* 顔は見えないところに描いて、リールで寄せる */
-    nreel = g_calib ? 9 : 6; slice = g_calib ? 16 : 24;
+    nreel = RECAL ? 9 : 6; slice = RECAL ? 16 : 24;
     for (i = 0; i < NREEL; i++) { reel[i] = (s16)(256 + i * 40); reel_to[i] = 0; }
     f_cmd = 0; st_phase = 0; st_t = 0; core_hits = 0;
     f_top = s4_band_x(0); f_bot = s4_band_x(11);

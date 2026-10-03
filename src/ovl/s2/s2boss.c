@@ -191,7 +191,7 @@ static void kg_update(void) {
     if (++open_t >= 360) open_t = 0;
     if (open_t == 240) { kg_crack(1); g_grav = GRAV_CENTER; g_gcx = KG_X; g_gcy = KG_Y; }
     if (open_t == 0) { kg_crack(0); g_grav = GRAV_NONE; }
-    if (g_calib && open_t < 240 && ++cal_t >= 300) {          /* 再校正版: 重力の向きが 5 秒ごとにでたらめに替わる */
+    if (RECAL && open_t < 240 && ++cal_t >= 300) {          /* 再校正版: 重力の向きが 5 秒ごとにでたらめに替わる */
         u8 r = (u8)(rnd8() & 3);
         cal_t = 0; g_grav = GRAV_DIR;
         g_gx = r == 0 ? 1 : r == 1 ? -1 : 0; g_gy = r == 2 ? 1 : r == 3 ? -1 : 0;

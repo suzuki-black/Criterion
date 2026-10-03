@@ -17,15 +17,15 @@
 #define OVL_END    0x3800
 #define OVL_SIZE   (OVL_END - OVL_BASE)
 #define OVL_DATA   0xD200              /* 〜0xD7FF(本体の変数は 0xD200 まで。Makefile が検査) */
-#define OVL_BANK0  104                 /* 104..121: タイトル + 8 面(Makefile の --asset と合わせる) */
+#define OVL_BANK0  104                 /* 104..125: タイトル + 8 面 + 8 面の後半 + 終幕(Makefile の --asset と合わせる) */
 
-enum { OVL_NONE, OVL_TITLE, OVL_S1, OVL_S2, OVL_S3, OVL_S4, OVL_S5, OVL_S6, OVL_S7, OVL_S8 };
+enum { OVL_NONE, OVL_TITLE, OVL_S1, OVL_S2, OVL_S3, OVL_S4, OVL_S5, OVL_S6, OVL_S7, OVL_S8, OVL_S8B, OVL_ENDING };
 
 extern u8 g_ovl;                       /* 読み込まれているオーバレイ */
 extern u8 g_ovl_ready;                 /* 1 = 読み終わって呼んでよい */
 void ovl_load_sync(u8 id);             /* すぐに全部読む(表示を止めているとき) */
 void ovl_request(u8 id);               /* 少しずつ読む(ovl_step を毎フレーム。読み終えたら面のものは ovl_init) */
-void ovl_step(void);
+u8   ovl_step(void);                  /* 1 = このフレームで ovl_init を呼んだ(そのフレームはほかの VRAM の仕事をしない) */
 
 /* 面のオーバレイの入口(JP 表の順) */
 void ovl_init(void);                   /* 読み終えたとき */

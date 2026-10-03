@@ -16,7 +16,7 @@ M0_COMMON := $(BUILD)/m0_world.rel   # M0 の検証 ROM が共有する世界(sr
 
 GAME_SRCS := $(wildcard src/game/*.c)
 GAME_RELS := $(GAME_SRCS:src/game/%.c=$(BUILD)/g_%.rel)
-GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h $(BUILD)/s2_data.h $(BUILD)/s3_data.h $(BUILD)/s4_data.h $(BUILD)/s5_data.h $(BUILD)/s6_data.h
+GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h $(BUILD)/s2_data.h $(BUILD)/s3_data.h $(BUILD)/s4_data.h $(BUILD)/s5_data.h $(BUILD)/s6_data.h $(BUILD)/s8_data.h
 
 .PHONY: all m0 clean
 .SECONDARY:
@@ -81,7 +81,11 @@ $(BUILD)/stage6.stamp: tools/gen_stage6.py | $(BUILD)
 	python3 tools/gen_stage6.py $(BUILD) $(BUILD)/s6_data.h
 	touch $@
 $(BUILD)/s6_data.h: $(BUILD)/stage6.stamp
-$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp $(BUILD)/stage4.stamp $(BUILD)/stage5.stamp $(BUILD)/stage6.stamp
+$(BUILD)/stage8.stamp: tools/gen_stage8.py | $(BUILD)
+	python3 tools/gen_stage8.py $(BUILD) $(BUILD)/s8_data.h
+	touch $@
+$(BUILD)/s8_data.h: $(BUILD)/stage8.stamp
+$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp $(BUILD)/stage4.stamp $(BUILD)/stage5.stamp $(BUILD)/stage6.stamp $(BUILD)/stage8.stamp
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
 	    TDF=$(BUILD)/tdf.bin CITY_STRIPS=$(BUILD)/city_strips.bin CITY_MAP=$(BUILD)/city_map.bin \
@@ -91,7 +95,8 @@ $(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.s
 	    S5_STRIPS=$(BUILD)/s5_strips.bin S5_MAP=$(BUILD)/s5_map.bin TURRET=$(BUILD)/turret.bin FAR=$(BUILD)/far.bin \
 	    S5_SPR=$(BUILD)/s5_spr.bin GAUGE=$(BUILD)/gauge.bin \
 	    S6_STRIPS=$(BUILD)/s6_strips.bin S6_MAP=$(BUILD)/s6_map.bin YJK_EVEN=$(BUILD)/yjk_even.bin YJK_ODD=$(BUILD)/yjk_odd.bin \
-	    GEAR=$(BUILD)/gear.bin HOURGLASS=$(BUILD)/hourglass.bin S6_SPR=$(BUILD)/s6_spr.bin
+	    GEAR=$(BUILD)/gear.bin HOURGLASS=$(BUILD)/hourglass.bin S6_SPR=$(BUILD)/s6_spr.bin \
+	    S8_STRIPS=$(BUILD)/s8_strips.bin S8_MAP=$(BUILD)/s8_map.bin TBAR=$(BUILD)/tbar.bin BELL_O=$(BUILD)/bell_o.bin BELL_I=$(BUILD)/bell_i.bin
 	touch $@
 $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 
@@ -116,7 +121,7 @@ OVL_DBEG := 0xD200
 OVL_DEND := 0xD800
 OVL_TITLE_EXPORTS := title_load title_start title_update title_draw title_vram title_build
 OVL_STAGE_EXPORTS := ovl_init ovl_update ovl_logic ovl_draw ovl_vram ovl_bands
-OVLS := title s1 s2 s3 s4 s5 s6 s7
+OVLS := title s1 s2 s3 s4 s5 s6 s7 s8 s8b ed
 OVL_title_RELS := $(patsubst src/ovl/title/%.c,$(BUILD)/ov_title_%.rel,$(wildcard src/ovl/title/*.c))
 OVL_s1_RELS    := $(patsubst src/ovl/s1/%.c,$(BUILD)/ov_s1_%.rel,$(wildcard src/ovl/s1/*.c))
 OVL_s2_RELS    := $(patsubst src/ovl/s2/%.c,$(BUILD)/ov_s2_%.rel,$(wildcard src/ovl/s2/*.c))
@@ -132,6 +137,12 @@ OVL_s6_RELS    := $(patsubst src/ovl/s6/%.c,$(BUILD)/ov_s6_%.rel,$(wildcard src/
 OVL_s6_HDR     := stage
 OVL_s7_RELS    := $(patsubst src/ovl/s7/%.c,$(BUILD)/ov_s7_%.rel,$(wildcard src/ovl/s7/*.c))
 OVL_s7_HDR     := stage
+OVL_s8_RELS    := $(patsubst src/ovl/s8/%.c,$(BUILD)/ov_s8_%.rel,$(wildcard src/ovl/s8/*.c))
+OVL_s8_HDR     := stage
+OVL_s8b_RELS   := $(patsubst src/ovl/s8b/%.c,$(BUILD)/ov_s8b_%.rel,$(wildcard src/ovl/s8b/*.c))
+OVL_s8b_HDR    := stage
+OVL_ed_RELS    := $(patsubst src/ovl/ed/%.c,$(BUILD)/ov_ed_%.rel,$(wildcard src/ovl/ed/*.c))
+OVL_ed_HDR     := stage
 OVL_s1_HDR     := stage
 OVL_BINS := $(OVLS:%=$(BUILD)/ovl_%.bin)
 
@@ -156,6 +167,15 @@ $(BUILD)/ov_s6_%.rel: src/ovl/s6/%.c src/ovl/s6/s6.h $(HDRS) src/game/game.h $(G
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ov_s7_%.rel: src/ovl/s7/%.c src/ovl/s7/s7.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+
+$(BUILD)/ov_s8_%.rel: src/ovl/s8/%.c src/ovl/s8/s8.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+
+$(BUILD)/ov_s8b_%.rel: src/ovl/s8b/%.c src/ovl/s8/s8.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+
+$(BUILD)/ov_ed_%.rel: src/ovl/ed/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ovlhdr_title.s: tools/gen_ovl.py Makefile | $(BUILD)
@@ -196,7 +216,7 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(
 
 GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(OVL_BINS) tools/rompack.mjs
 	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin \
-	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin
+	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

@@ -153,11 +153,11 @@ static void tacho_update(void) {
            たびに後ろへずれて盤が右へ流れ、右端の目盛りが画面から出た。窓から外れた盤の列は地図で描き直される */
         s16 d = (s16)(g_wx - (u16)(dial_wx - DIAL_SX - 64));
         s8 want = 0;
-        if (rush_t < 20) want = g_calib ? -32 : 32;           /* 再校正版: 逆へ(下がってから迫る) */
+        if (rush_t < 20) want = RECAL ? -32 : 32;           /* 再校正版: 逆へ(下がってから迫る) */
         else {
             s16 v = -g_scroll_speed;                          /* 戻る速さ(1/4 ドット) */
             if (v < 0) v = 0;
-            if (g_calib) {                                    /* 逆: 元の位置より後ろなら前へ */
+            if (RECAL) {                                    /* 逆: 元の位置より後ろなら前へ */
                 s16 u = g_scroll_speed > 0 ? g_scroll_speed : 0;
                 if (-d > (s16)(((u * u) >> 5) + (u >> 3) + 1)) want = 32;
                 else if (!g_scroll_speed && d < 0) want = 4;

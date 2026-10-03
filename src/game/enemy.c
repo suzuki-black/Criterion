@@ -160,6 +160,7 @@ void enemy_spawn_notch(s16 x, s16 y) {
 /* 敵弾を 1 発(位置と速さは固定小数点)。空きが無ければ撃たない */
 void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy) {
     u8 i;
+    if (g_loop) { vx += vx >> 2; vy += vy >> 2; }            /* 2 周目: 弾が 1.25 倍速い */
     for (i = 0; i < MAX_ESHOT; i++) {
         Bullet *b = &g_eshot[i];
         if (b->on) continue;
@@ -202,7 +203,7 @@ static void move_enemy(Enemy *e) {
     if (e->type == E_SPIRIT) {                       /* 世界に張り付く: 画面の位置はスクロールから求める */
         e->x = FX((s16)((u16)e->y0 - g_wx));
         e->y = FX((s16)e->phase - g_scam - 6);
-        if (e->x < FX(232) && e->x > FX(24) && !(e->t & 63)) enemy_fire(e);
+        if (e->x < FX(232) && e->x > FX(24) && !(e->t & (g_loop ? 31 : 63))) enemy_fire(e);   /* 2 周目は倍 */
         if (e->x < FX(-16) || e->y > FX(PLAY_H + 16)) kill_enemy(e, 0);
         return;
     }
@@ -222,7 +223,7 @@ static void move_enemy(Enemy *e) {
             u16 px = (u16)(e->turned == 2 ? 256 - PX(e->x) : PX(e->x));   /* 左から来る編隊は左右を返す */
             e->y = e->y0 + (((s16)g_sin64[(u8)((u8)(((px + 32) * 85u) >> 8) + e->phase) & 63] * 5) >> 1);
         }
-        if (e->x < FX(240) && e->x > FX(72) && (rnd8() < 2)) enemy_fire(e);
+        if (e->x < FX(240) && e->x > FX(72) && (rnd8() < (u8)(g_loop ? 4 : 2))) enemy_fire(e);
     }
     if (e->x < FX(-16) && e->turned != 2) kill_enemy(e, 0);
     else if (e->x > FX(280) || e->y < FX(-80) || e->y > FX(PLAY_H + 80)) kill_enemy(e, 0);

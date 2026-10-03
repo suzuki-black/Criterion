@@ -182,15 +182,17 @@ extern u8 g_strip_xlat[32];                 /* 短冊の番号の置き換え(�
 u8   stage_redraw_col(u16 wcol);            /* 世界の列 wcol を描き直す(地図を書き換えたとき。隔壁の開閉)。0 = 頼みがいっぱい */
 u8   stage_col_ready(u16 wcol);           /* 世界の列 wcol が描き終わっている(上に BG を写してよい) */
 extern u8 g_bands_all;
-extern u8 g_blk_skip;                       /* リングのブロック 0..n-1 を面が使う(列・描き替えで描かない) */
+extern u8 g_blk_skip, g_blk_base;           /* リングのブロック base..base+skip-1 を面が使う(列・描き替えで描かない) */
 RasEntry *stage_ev_raw(u8 line, u8 flags);  /* 並びを調べずに項目を足す(g_bands_all の面で、0 行の項目の後に 244 行など) */                      /* 1 = 面の ovl_bands がラスターの帯を全部出す(空 s < 0 の帯も) */
 void stage_ev_vscroll(s16 line, u8 r23);    /* 帯の縦スクロール(R#23)。スプライトもずれるので自機の入れない帯で */
 u8   stage_busy(void);                       /* 列の流し込み・描き替えが残っている(画面の BG に上書きする前に待つ) */
 void stage_banner(const char *text);        /* 面の開始表示 */
 void stage_banner_c(const char *text, u8 fg);   /* 文字の色つき */
-extern u8 g_hall;                           /* 1 = 高い空を 7 面の測定空間(白い方眼)にする */
+extern u8 g_hall;                           /* 1 = 高い空を 7 面の測定空間(白い方眼)、2 = 8 面の縦穴(左右の壁)にする */
+void stage_sky_redraw(void);                /* 高い空のブロックを全部描き直させる */
 extern u8 g_calib;                          /* 7 面の試験(0 = 普通の面、1..6 = 過去の面のボスの再校正版、7 = LIBRA) */
 extern u8 g_loop;                           /* 周回(0 = 1 周目) */
+#define RECAL (g_calib || g_loop)           /* ボスの再校正版の動き(7 面の試験と、2 周目以降の 1〜6 面) */
 void calib_begin(u8 k);                     /* 試験 k の始まり(各面の ovl_init から): 開始表示 */
 u8   calib_out(u16 t);                      /* 試験に合格したあと(各面から毎フレーム): 判定文 → 上がって次の試験へ。1 = 頼んだ */
 void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */

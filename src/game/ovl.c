@@ -18,14 +18,14 @@ void ovl_request(u8 id) { g_ovl_ready = 0; g_ovl = OVL_NONE; load_id = id; load_
 
 /* 1 フレームに 512 バイト(ROM から RAM へ)。読み終えた次のフレームで面の ovl_init。
    ★1KB ずつ読んで同じフレームで ovl_init まで済ませると、空中戦の入りのフレームが遅れた */
-void ovl_step(void) {
+u8 ovl_step(void) {
     u16 n;
     if (init_pending) {
         init_pending = 0; g_ovl_ready = 1;
         ovl_init();
-        return;
+        return 1;
     }
-    if (!load_id) return;
+    if (!load_id) return 0;
     n = (u16)(OVL_SIZE - load_off) < 512u ? (u16)(OVL_SIZE - load_off) : 512u;
     rom_to_ram(BANK_OF(load_id), load_off, (u8 *)(OVL_BASE + load_off), n);
     load_off += n;
@@ -33,4 +33,5 @@ void ovl_step(void) {
         g_ovl = load_id; load_id = 0;
         if (g_ovl >= OVL_S1) init_pending = 1; else g_ovl_ready = 1;
     }
+    return 0;
 }

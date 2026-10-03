@@ -42,7 +42,11 @@ void ovl_update(void) {
     case SEC7_OUT:                                            /* 白い空間が黒く反転し、縦穴が開く → 8 面 */
         b7_invert(sec_t);
         if (sec_t == 180) {
-            g_calib = 0;                                      /* ★8 面へのつなぎは 8 面を作るときに */
+            g_calib = 0;
+            stage_banner("STAGE 8 / THE PROTOTYPE");
+            ovl_request(OVL_S8);
+            g_sec = SEC7_OUT + 1;                              /* = 8 面の空中戦(SEC8_AIR) */
+            return;
         }
         break;
     default:

@@ -116,7 +116,7 @@ void stage_reset_ground(void) {
     strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0; redraw_n = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
     g_wx &= 511u;                                             /* 世界の位置を面ごとに戻す(リングの位置は同じ) */
-    g_bands_all = 0; g_blk_skip = 0;
+    g_bands_all = 0; g_blk_skip = 0; g_blk_base = 0;
 }
 /* ---- 7 面の試験(過去の面のオーバレイを g_calib で再校正版として読み直す) ---- */
 u8 g_calib, g_loop;
@@ -241,7 +241,7 @@ static u8 next_col_cmd(void) {
         while (col_b < NBLK) {
             s16 t0 = tag[col_b];
             u8 n = 1;
-            if (col_b == BLK_CONST || t0 < 0 || t0 >= 188 || col_b < g_blk_skip) { col_b++; continue; }
+            if (col_b == BLK_CONST || t0 < 0 || t0 >= 188 || (u8)(col_b - g_blk_base) < g_blk_skip) { col_b++; continue; }
             while (n < run_max && col_b + n < NBLK && col_b + n != BLK_CONST && tag[col_b + n] == t0 + n * 8) n++;
             cmd_ring((u8)(cur_col & 63), col_b, cur_col, t0, n);
             col_b += n;
@@ -258,7 +258,10 @@ static u8 next_job_cmd(void) {
         if (jstep < 2) {
             c_dx = 0; c_dy = (u16)(jstep ? 256u + row : row); c_nx = 256; c_ny = (u16)jn * 8u;
             c_hmmv = 1; c_star = 0;
-        } else { c_star = jn; c_hmmv = 0; jn = 0; }
+        } else {
+            if (vdp_cmd_busy()) return 0;                     /* ★塗り終わりを待たない(次の呼び出しで打つ。待つと 1 回 10ms 止まった) */
+            c_star = jn; c_hmmv = 0; jn = 0;
+        }
         jstep++;
         return 1;
     }
@@ -300,6 +303,20 @@ static void hall_block(u8 row, s16 s0) {
     }
 }
 
+/* 8 面の縦穴(g_hall == 2): 高い空のブロックに左右の壁(画面がリングのページ 0 にそろっている前提)。32 行ごとに継ぎ目 */
+static void shaft_block(u8 row, s16 s0) {
+    vdp_hmmv(0, row, 32, 8, 0xEE); vdp_hmmv(28, row, 4, 8, 0x99);
+    vdp_hmmv(224, row, 32, 8, 0xEE); vdp_hmmv(224, row, 4, 8, 0x99);
+    if (!(s0 & 31)) { vdp_hmmv(0, row, 32, 1, 0x22); vdp_hmmv(224, row, 32, 1, 0x22); }
+    vdp_cmd_wait();
+}
+/* 高い空のブロックを全部描き直させる(縦穴に入ったとき: 壁のある絵に) */
+void stage_sky_redraw(void) {
+    u8 b;
+    for (b = 0; b < NBLK; b++) if (b != BLK_CONST && tag[b] >= 188 && tag[b] != TAG_NONE) tag[b] = TAG_NONE;
+    pick_at = 0x7FFF;
+}
+
 /* 欲しい s: lo から 256 行の窓の中で、ブロック b(リングの 8b..8b+7 行)に入る s */
 static s16 want_of(u8 b, s16 lo) { return (s16)(lo + (u8)((u8)(b * 8 + 68) - (u8)lo)); }
 static s16 tag_of(s16 w) { return w < 0 ? (s16)(w + TAG_SKY) : w; }
@@ -314,7 +331,8 @@ static void job_pick(void) {
         if (b == BLK_CONST) continue;
         w = want_of(b, lo);
         if (w >= 188) continue;                               /* 都市の下(この面では見えない) */
-        if (b < g_blk_skip) continue;                         /* 面が使う行(6 面の YJK の帯) */
+        if ((u8)(b - g_blk_base) < g_blk_skip) { tag[b] = TAG_NONE; continue; }   /* 面が使う行(6 面と終幕の YJK の帯)。★外したら描き直させる
+                                                                 (印が古いままだと、7 面の空に YJK のバイトが残った) */
         if (w < 0 ? !upper_sky : !ready) continue;
         if (tag[b] == tag_of(w)) continue;
         if (bb < 0 || (dir >= 0 ? w < best : w > best)) { bb = (s8)b; best = w; }
@@ -345,12 +363,13 @@ void stage_pump(u16 budget) {
             continue;
         }
         if (!jn && pick_at != (s16)(g_scam & ~7)) job_pick();
-        if (!next_job_cmd() && !next_col_cmd()) return;
+        if (!next_job_cmd() && (strip_off != STRIP_LEN || !next_col_cmd())) return;   /* 列は短冊が揃ってから */
         if (c_star) {
             u8 i;
             vdp_cmd_wait();                                   /* 塗り終わってから */
             for (i = 0; i < c_star; i++) {
-                if (g_hall) hall_block((u8)((jb0 + i) * 8), (s16)(js + i * 8));
+                if (g_hall == 2) shaft_block((u8)((jb0 + i) * 8), (s16)(js + i * 8));
+                else if (g_hall) hall_block((u8)((jb0 + i) * 8), (s16)(js + i * 8));
                 else { star((u8)((jb0 + i) * 8)); star((u8)((jb0 + i) * 8)); star((u8)((jb0 + i) * 8)); }
             }
         } else if (c_hmmv) vdp_hmmv(c_dx, c_dy, c_nx, c_ny, 0x11);
@@ -360,10 +379,12 @@ void stage_pump(u16 budget) {
 }
 
 /* 列と描き替えの仕事が残っているか(VDP の状態を読む前に C だけで調べる) */
+/* ★短冊が無い・読んでいる間も、高い空のブロックの描き替え(job)は回す(7 面・終幕で空が描き替わらなかった) */
 static u8 stage_work(void) {
     u16 lo = win_lo();
-    return (u8)(jn || col_b < NBLK || redraw_n || (s16)(col_done - (u16)(lo + 64)) < 0 || (s16)(col_lo - lo) > 0 ||
-                pick_at != (s16)(g_scam & ~7));
+    if (jn || pick_at != (s16)(g_scam & ~7)) return 1;
+    if (strip_off != STRIP_LEN) return 0;
+    return (u8)(col_b < NBLK || redraw_n || (s16)(col_done - (u16)(lo + 64)) < 0 || (s16)(col_lo - lo) > 0);
 }
 u8 stage_busy(void) { return stage_work(); }
 /* 世界の列 wcol が描き終わっていて、描きかけでもない(その上に BG を写してよい) */
@@ -372,14 +393,14 @@ u8 stage_col_ready(u16 wcol) {
     return (u8)(col_b >= NBLK || cur_col != wcol);
 }
 u8 g_bands_all;
-u8 g_blk_skip;                     /* ブロック 0..g_blk_skip-1(リングの 0..8n-1 行)を描かない */
+u8 g_blk_skip, g_blk_base;         /* ブロック g_blk_base から g_blk_skip 個(リングの 8 行ずつ)を描かない */
 
 
 /* メインループの途中で(待たない): 列と描き替え、GHOST の待ち行列。
    ★仕事が無ければ VDP を読まずに戻る(CE を見るだけで I/O 5 回 ≒ 0.7 ライン。1 フレームに 3 回呼ぶ) */
 void stage_pump_nb(void) {
     if (g_split_shown) return;                                /* ★上の帯が SCREEN12 の間は VRAM に触らない(窓は RAS_MARK の後) */
-    if (strip_off == STRIP_LEN && stage_work()) stage_pump(0);
+    if ((strip_off == STRIP_LEN || (strip_off == 0xFFFF && upper_sky != UP_AIR)) && stage_work()) stage_pump(0);   /* 短冊を読む間は VRAM の窓の 1 回だけ */
     if (gq_free() < GQ_N) gq_pump(0);
 }
 
@@ -395,7 +416,7 @@ void stage_pump_nb(void) {
 #define BAN_IN    7                /* ここから見せる(3..6 は文字を書く) */
 #define BAN_SUCK  96               /* ここから吸い込む */
 #define BAN_END   (BAN_SUCK + 22)       /* 吸い込み: 帯の上端を 2 フレームに 1 行下げる(HUD の手前 6 行まで) */
-static u8 ban_regs[2];
+static u8 ban_regs[4];
 static u16 ban_x;
 
 static void banner_vram(void) {
@@ -419,17 +440,23 @@ static void banner_vram(void) {
 
 void stage_vram(void) {
     if (banner_t) banner_vram();
-    ovl_step();                                               /* オーバレイの読み込み(512 バイト/フレーム) */
+    if (ovl_step()) return;                                   /* オーバレイの読み込み(512 バイト/フレーム)。★ovl_init のフレームは
+                                                                 ほかの仕事をしない(地図の読み込み + 短冊 + 面の素材で遅れた) */
     if (g_ovl_ready && g_ovl >= OVL_S1) ovl_vram();
     if (strip_off != STRIP_LEN) {                             /* 地面がまだ無い(0xFFFF)か、短冊を読んでいる */
-        if (strip_off < STRIP_LEN) {                          /* 空中戦の間に短冊をページ 3 へ(256 バイト/フレーム) */
+        extern u16 g_frame_t0;
+        if (strip_off < STRIP_LEN && (u16)(sys_timer() - g_frame_t0) < 160u * 16u) {   /* 空中戦の間に短冊をページ 3 へ(256 バイト/フレーム。重いフレームは次へ) */
             rom_to_vram(strip_bank, (u16)(strip_src + strip_off), 1, (u16)(0x8000u + strip_off), 256);
             strip_off += 256;
             if (strip_off >= STRIP_LEN) {                     /* 以降の列は流しながら */
                 strip_off = STRIP_LEN; col_lo = win_lo(); col_done = (u16)(col_lo + 64); pick_at = 0x7FFF;
             }
         }
-        return;                                               /* ★流す列の仕事は短冊が揃ってから(col_done = 0 から何百列も空回りした) */
+        /* ★流す列の仕事は短冊が揃ってから(col_done = 0 から何百列も空回りした)。高い空の描き替えだけは回す
+           (7 面・終幕は短冊を読まない。1 面の空中戦(UP_AIR)は空を描き替えないので呼ばない: 呼ぶだけで
+           フレームの余りが減り、処理落ちのフレームが替わった) */
+        if (upper_sky != UP_AIR && stage_work()) stage_pump(0);
+        return;
     }
     {   /* 予算はフレームの残りから(VRAM の仕事の後はリストを組むだけ。ここで 200 ラインを超えたら出さない) */
         extern u16 g_frame_t0;
@@ -491,7 +518,7 @@ void stage_ev_haze(s16 line, u8 n, u8 *tbl) {
 
 /* 帯の縦スクロール(R#23)。ISR は R#23 の書き込みを覚えて以降の R#19 に足す。★スプライトもその帯では R#23 の差だけ
    ずれて見えるので、自機の入れない帯で使う(5 面のプレス)。1 フレーム VS_MAX 個まで */
-#define VS_MAX 4
+#define VS_MAX 16                  /* 8 面の歪曲回廊は帯ごとに R#23 を替える */
 static u8 vs_regs[2][VS_MAX][2], vs_n, vs_bi;
 void stage_ev_vscroll(s16 line, u8 r23) {
     RasEntry *c;
@@ -545,7 +572,7 @@ void stage_build(void) {
             hs_t = (u8)(g_sky_t | (g_hall << 7));
             for (i = 0; i < 8; i++)
                 for (j = 0; j < 3; j++)
-                    hs_cur[i][j] = g_hall ? (u8)(5 + (i >> 2) + (j == 2)) :   /* 測定空間: 白(下ほど明るい) */
+                    hs_cur[i][j] = g_hall == 1 ? (u8)(5 + (i >> 2) + (j == 2)) :   /* 測定空間: 白(下ほど明るい) */
                                    (u8)((hs_indigo[i][j] * (16u - g_sky_t) + hs_black[i][j] * g_sky_t + 8u) >> 4);
         }
         for (i = 0; i < 8; i++) {
@@ -568,9 +595,11 @@ tail:
         if (line < (s16)c->line + RAS_GAP) line = (s16)(c->line + RAS_GAP);
         if (line <= PLAY_H - RAS_GAP && K < RAS_MAX - 1) {
             c = &E[K++];
-            ban_regs[0] = 2; ban_regs[1] = 0x7F;                  /* ページ 2|3 */
+            /* ページ 2|3。★R#23 も 252(s = -192 のときの値)にする: プレイエリアの R#23 のままだと、カメラが宇宙の
+               高さにいない面の途中(7 面の判定文など)で帯がページ 2 の別の行(ボスの絵)を見せた */
+            ban_regs[0] = 2; ban_regs[1] = 0x7F; ban_regs[2] = 23; ban_regs[3] = (u8)(BAN_ROW - BAN_LINE);
             c->line = (u8)line; c->flags = RAS_REGS | RAS_SCROLL | RAS_PAL;
-            c->haze = ban_regs; c->haze_n = 1;
+            c->haze = ban_regs; c->haze_n = 2;
             c->r26 = VDP_R26(ban_x); c->r27 = VDP_R27(ban_x);
             c->pidx = 1; c->prb = (u8)((hs_cur[7][0] << 4) | hs_cur[7][2]); c->pg = hs_cur[7][1];
         }

@@ -60,7 +60,8 @@ void gq_line(u16 x, u16 y, s16 dx, s16 dy, u8 col) {
 /* ★前のコマンドの終わりを待つのも予算のうち(vdp_cmd_issue に任せると、2KB の HMMM の残りを丸ごと待った) */
 void gq_pump(u16 budget) {
     u16 t0 = sys_timer();
-    while (count) {
+    u8 n = 0;
+    while (count && n++ < 4) {                                /* ★1 回に 4 本まで(短い LINE はすぐ終わり、行列を全部出すと 1 本 0.3ms × 数十本になった) */
         if (vdp_cmd_busy()) {
             if ((u16)(sys_timer() - t0) >= budget) return;
             continue;

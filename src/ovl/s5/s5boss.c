@@ -257,20 +257,20 @@ static void gauge_update(void) {
                     if (!g_boss_hp) { g_boss_state = BS_DYING; boss_t = 0; score_add(5000); return; }
                 }
             } else shot_rect((s16)(G_AX - (L >> 1)), y, L, 14);
-            if (((g_t + k * 13) & (g_calib ? 31 : 63)) == 0) enemy_shoot(FX(G_AX - (L >> 1)), FX(y + 7));
+            if (((g_t + k * 13) & (RECAL ? 31 : 63)) == 0) enemy_shoot(FX(G_AX - (L >> 1)), FX(y + 7));
         }
-        if (g_t >= (g_calib ? 70 : 150)) {                                     /* 入れ替える 2 段を選んで、右へすべらせる */
+        if (g_t >= (RECAL ? 70 : 150)) {                                     /* 入れ替える 2 段を選んで、右へすべらせる */
             g_a = (u8)(((u16)rnd8() * 6) >> 8); g_b = (u8)(((u16)rnd8() * 5) >> 8);
             if (g_b >= g_a) g_b++;
             g_ph = 1; g_t = 0;
         }
     } else if (g_ph == 1) {
-        g_off[g_a] += g_calib ? 12 : 6; g_off[g_b] += g_calib ? 12 : 6;   /* 再校正版: 入れ替えが速い */
+        g_off[g_a] += RECAL ? 12 : 6; g_off[g_b] += RECAL ? 12 : 6;   /* 再校正版: 入れ替えが速い */
         if (g_off[g_a] >= 144) { k = g_order[g_a]; g_order[g_a] = g_order[g_b]; g_order[g_b] = k; g_redraw = 2; g_ph = 2; }
     } else if (g_ph == 2) {                                   /* 見えない間に描き替える(b5_vram)→ 戻す */
         if (!g_redraw && gq_free() == GQ_N) g_ph = 3;
     } else {
-        g_off[g_a] -= g_calib ? 12 : 6; g_off[g_b] -= g_calib ? 12 : 6;
+        g_off[g_a] -= RECAL ? 12 : 6; g_off[g_b] -= RECAL ? 12 : 6;
         if (g_off[g_a] <= 0) { g_off[g_a] = g_off[g_b] = 0; g_ph = 0; g_t = 0; }
     }
 }
@@ -326,14 +326,14 @@ void b5_draw(void) {
 
 void b5_vram(void) {
     u8 n;
-    if (!spr_loaded) {                                        /* この面のスプライト(機銃 8 + 吊り砲台 3) */
+    if (!spr_loaded && (u16)(sys_timer() - g_frame_t0) < 100u * 16u) {   /* この面のスプライト(機銃 8 + 吊り砲台 3) */
         rom_to_vram(ASSET_S5_SPR_BANK, ASSET_S5_SPR_OFF, 1, (u16)(0xF800u + PAT_AA * 32u), 256);
         rom_to_vram(ASSET_S5_SPR_BANK, (u16)(ASSET_S5_SPR_OFF + 256u), 1, (u16)(0xF800u + PAT_HANG * 32u), 96);
         spr_loaded = 1;
     }
     /* ページ 2 へ: 主砲塔 16 向き(0..63 行)と遠くの戦艦(64..127 行)。1 フレーム 4 行、重いフレームは次へ */
     if (sheet_row < 128 && (u16)(sys_timer() - g_frame_t0) < 150u * 16u)
-        for (n = 0; n < 4; n++, sheet_row++) {
+        for (n = 0; n < 2; n++, sheet_row++) {
             if (sheet_row < 64) rom_to_vram(ASSET_TURRET_BANK, (u16)(ASSET_TURRET_OFF + sheet_row * 128u), 1, (u16)(sheet_row * 128u), 128);
             else rom_to_vram(ASSET_FAR_BANK, (u16)(ASSET_FAR_OFF + (sheet_row - 64) * 128u), 1, (u16)(sheet_row * 128u), 128);
         }

@@ -2,6 +2,7 @@
 # M1 の総合検証(GAME.ROM): 1 面の空中戦が 60Hz で遊べるか。
 #   0. 起動ロゴとタイトルを経て SPACE で出撃(M2)
 #   1. 無敵・連射・上下移動で約 18 秒: 遅れたフレーム 0、得点が入る、Quanta でゲージが進む
+#      (撃ち落とした敵の Quanta を拾えるかは時間割しだいなので、最後に 1 個を自機の位置へ置いて拾わせる)
 #   2. ゲージ: SPLIT を確定 → split=1 / RAY を確定 → ray=1 かつ split=0(排他)/ ∞ で LIMIT BREAK →
 #      敵が消え、ray が 1 段下がる
 #   3. 被弾: 残機 1 で敵弾を自機に当てる → 残機 0 → GAME OVER → A で起動ロゴから(残機 3・得点 0)。
@@ -15,7 +16,7 @@ NOI=build/game.noi
 MACHINE=${MACHINE:-My_FS-A1ST_512K}
 mkdir -p "$OUT"
 sym() { awk -v s="$1" '$2==s{print $3}' "$NOI"; }
-ST=$(sym _g_stat); GA=$(sym _g_gauge); PL=$(sym _g_pl); EN=$(sym _g_enemy); ES=$(sym _g_eshot); INV=$(sym _g_dbg_invul)
+ST=$(sym _g_stat); GA=$(sym _g_gauge); PL=$(sym _g_pl); EN=$(sym _g_enemy); ES=$(sym _g_eshot); INV=$(sym _g_dbg_invul); IT=$(sym _g_item)
 T="$OUT/game_m1.tcl"
 cat > "$T" <<TCL
 set throttle on
@@ -40,13 +41,18 @@ after time 17.9 { wr $INV 1; keymatrixdown 8 0x01 }
 foreach t {19 21 23 25 27 29 31 33 35} { after time \$t [list key 8 0x20 0.6]; after time [expr {\$t+1}] [list key 8 0x40 0.6] }
 after time 17.95 { check sortie_to_air [expr {[rd [expr {$ST+14}]] == 3 && [rd16 [expr {$ST+4}]] == 0}] "phase=[rd [expr {$ST+14}]] late=[rd16 [expr {$ST+4}]]" }
 after time 18 { set ::fr0 [rd16 [expr {$ST+6}]]; set ::lt0 [rd16 [expr {$ST+4}]] }
+after time 35.5 {
+  # Quanta(Item: x y vx vy on kind t)を 1 個、自機の中央へ
+  set x [rd16 $PL]; set y [rd16 [expr {$PL+2}]]
+  debug write_block memory $IT [binary format susususucucucu [expr {(\$x + 128) & 0xFFFF}] [expr {(\$y + 128) & 0xFFFF}] 0 0 1 0 0]
+}
 after time 36 {
   set fr [expr {[rd16 [expr {$ST+6}]] - \$::fr0}]; set lt [expr {[rd16 [expr {$ST+4}]] - \$::lt0}]
   check 60fps [expr {\$lt == 0 && \$fr > 1000}] "frames=\$fr late=\$lt"
   set sc [rd16 [expr {$PL+9}]]
   check score [expr {\$sc > 0}] "score=\${sc}0"
   set g [gauge]
-  check quanta [expr {[lindex \$g 0] != 0 || [lindex \$g 3] > 0}] "cursor=[lindex \$g 0] thrust=[lindex \$g 3]"
+  check quanta [expr {[lindex \$g 1] == 1}] "armed=[lindex \$g 1] cursor=[lindex \$g 0]"   ;# カーソルは 8 で一周するので armed を見る
   screenshot -raw "$OUT/game_play.png"
 }
 # ---- 2. ゲージの確定 ----

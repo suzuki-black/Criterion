@@ -109,7 +109,7 @@ void boss_start(u8 k) {
     } else {
         g_boss_hp = PLUMB_HP; bx = 128; anchor_y = -110; broken = 0; aim_t = 0; spin = 0; dr_w = 0;
         cur_fr = FR_UP; swing = 0; pivot = 128; ph = 0; npl = 1; cur_pl = 0;
-        if (g_calib) {                                        /* 再校正版: 2 個 */
+        if (RECAL) {                                        /* 再校正版: 2 個 */
             npl = 2;
             pivot = 100; ph = 0; pl_save(0);
             pivot = 156; ph = 32; pl_save(1);
@@ -493,7 +493,8 @@ void boss_draw(void) {
     if (!broken && g_boss_state != BS_DYING) {               /* 吊り元から吊り輪まで 13 等分(1/13 ≒ 20/256) */
         s16 rx = ring_x(), ry = ring_y();
         s16 stx = (s16)((rx - pivot) * 20), sty = (s16)((ry - anchor_y) * 20), ax = stx, ay = sty;
-        for (i = 0; i < CHAIN_N; i++, ax += stx, ay += sty)
+        if (npl > 1) { stx <<= 1; sty <<= 1; ax = stx; ay = sty; }   /* 2 個のときは 1 つおきの節(スプライトの段が遅れた) */
+        for (i = 0; i < (npl > 1 ? CHAIN_N / 2 : CHAIN_N); i++, ax += stx, ay += sty)
             spr_put((s16)(pivot + (ax >> 8)) - 8, (s16)(anchor_y + (ay >> 8)) - 8, PAT_CHAIN, G_ENEMY, 0);
     }
     }

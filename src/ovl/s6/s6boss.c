@@ -252,7 +252,7 @@ static s16 old_x[6], old_y[6], old_dx[6], old_dy[6];
 static u8  old_n;
 void b6_boss_start(void) {
     gn_a[0] = 0x3000; gn_a[1] = 0x1000; gn_spd = 48; gn_turn = 0; gn_lap = 0; old_n = 0;
-    gn_nh = g_calib ? 2 : 1;                                  /* 再校正版: 長針と短針 */
+    gn_nh = RECAL ? 2 : 1;                                  /* 再校正版: 長針と短針 */
     g_boss_state = BS_ENTER; g_boss_hp = 40; b_t = 0;
 }
 static s8 sin_i(u16 a) {           /* 64 刻みの表を線形補間 */
