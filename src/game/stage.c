@@ -242,6 +242,7 @@ static u8 next_col_cmd(void) {
         while (col_b < NBLK) {
             s16 t0 = tag[col_b];
             u8 n = 1;
+            pcmx_service();                                   /* ★ブロックごとに PCM の送出口(M7) */
             if (col_b == BLK_CONST || t0 < 0 || t0 >= 188 || (u8)(col_b - g_blk_base) < g_blk_skip) { col_b++; continue; }
             while (n < run_max && col_b + n < NBLK && col_b + n != BLK_CONST && tag[col_b + n] == t0 + n * 8) n++;
             cmd_ring((u8)(cur_col & 63), col_b, cur_col, t0, n);
@@ -375,6 +376,7 @@ void stage_pump(u16 budget) {
             }
         } else if (c_hmmv) vdp_hmmv(c_dx, c_dy, c_nx, c_ny, 0x11);
         else vdp_hmmm(c_sx, c_sy, c_dx, c_dy, c_nx, c_ny);
+        pcmx_service();                                       /* ★コマンドごとに PCM の送出口(M7) */
         if ((u16)(sys_timer() - t0) > PUMP_BUDGET) return;
     }
 }

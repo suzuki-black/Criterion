@@ -919,86 +919,146 @@ u8  px_on;
 
 void pcmx_service(void) __naked {
     __asm
-        ld   a, (_px_on)
+        ld   a, (_px_on)           ; 鳴っていなければすぐ帰る(送出口を多く置くため)
         or   a
         ret  z
+        push hl
+        push de
+        call px_now                ; HL = 今 - 予定、DE = 予定
+        jp   m, 00013$             ; まだ: 割込みも止めずに帰る
         di                         ; ★本体の入口: 割込みを止めて排他し、必ず許可して戻る(本体の送出口はどれも
                                    ;   許可中に呼ぶ)。IFF2 を ld a,i で見る作りは、その命令の途中に割込みが入ると
                                    ;   禁止と読み違え、許可し直さずに JIFFY が止まった(M7)
-        call pcmx_core
+        call px_out
         ei
+    00013$:
+        pop  de
+        pop  hl
         ret
         ; ---- 割込みからの入口(ras_pcm_hook。割込み中なので止めない) ----
     _pcmx_isr::
         ld   a, (_px_on)
         or   a
         ret  z
-    pcmx_core:
         push hl
         push de
-        in   a, (0xE6)             ; 今(下位から読む)
-        ld   l, a
+        call px_now
+        call p, px_out
+        pop  de
+        pop  hl
+        ret
+        ; ---- HL = 今 - 予定(フラグはその符号)、DE = 予定 ----
+        ;   ★R800 の S1990 への I/O は遅い(1 回数 us)。ここは割込みの HR ポーリング帯からも 1 ラインごとに
+        ;   呼ばれるので、IN は 2 回だけにする。上位を先に読む: 間で下位が桁上がりすると 256 カウント前に見え、
+        ;   次の送出口で出すだけで害はない(下位を先に読むと 1ms 先に見え、先へ飛ばした後 1ms 何も出さなかった。M7)
+    px_now:
         in   a, (0xE7)
         ld   h, a
+        in   a, (0xE6)
+        ld   l, a
         ld   de, (_px_due)
         or   a
-        sbc  hl, de                ; 今 - 予定
-        jp   m, 00009$             ; まだ
+        sbc  hl, de
+        ret
+        ; ---- 出す(HL = 遅れ >= 0、DE = 予定)。★遅れた分の標本は飛ばし、今の時刻の標本を出す(1 回に 1 つずつ
+        ;   出すと、送出口がまばらな場面で再生が呼ばれる速さまで遅くなり、0.6 秒の音が 2 秒に伸びて、どの PCM も
+        ;   同じ濁った音になった。M7) ----
+    px_out:
+        push bc
+        ld   bc, #0                ; BC = 飛ばす数
         ld   a, h
         or   a
-        jr   z, 00001$
-        add  hl, de                ; 1ms 以上遅れた: 予定を今に
+        jr   nz, 00001$
+        ld   a, l
+        cp   #32
+        jr   nc, 00001$
+        ld   hl, #32               ; 遅れが 1 標本未満(ほとんどこれ): 予定 += 32
+        add  hl, de
         ld   (_px_due), hl
+        jr   00003$
     00001$:
+        ld   a, h
+        cp   #0x08
+        jr   c, 00002$
+        add  hl, de                ; 8ms 以上遅れた: 予定を今に(飛ばさない)
+        ld   (_px_due), hl
+        jr   00003$
+    00002$:
+        ld   a, l
+        and  #0xE0
+        ld   l, a                  ; 遅れ(32 の倍数に切り捨て)
+        push hl
+        add  hl, de
+        ld   de, #32
+        add  hl, de
+        ld   (_px_due), hl         ; 予定 += 遅れ + 32
+        pop  hl
+        ld   b, #5
+    00012$:
+        srl  h
+        rr   l
+        djnz 00012$
+        ld   b, h
+        ld   c, l
+    00003$:
         ld   hl, (_px_left)
         ld   a, h
         or   l
-        jr   nz, 00002$
-        ld   hl, (_px_nleft)       ; 今の面を出し切った: 予約の面へ
+        jr   z, 00005$             ; 今の面を出し切った
+        or   a
+        sbc  hl, bc
+        jr   z, 00004$             ; ちょうど出し切る: 次の面へ
+        jr   nc, 00006$            ; HL = 残り - 飛ばす数(> 0)
+    00004$:
+        ld   hl, (_px_left)        ; 今の面を越える: 残りを飛ばして次の面へ
+        ld   d, b
+        ld   e, c
+        ex   de, hl
+        or   a
+        sbc  hl, de
+        ld   b, h
+        ld   c, l                  ; BC = 次の面で飛ばす数
+    00005$:
+        ld   hl, (_px_nleft)
         ld   a, h
         or   l
-        jr   z, 00009$
+        jr   z, 00008$             ; 予約が無い: 終わり
         ld   (_px_left), hl
         ld   hl, (_px_nptr)
         ld   (_px_ptr), hl
         ld   hl, #0
         ld   (_px_nleft), hl
-    00002$:
         ld   hl, (_px_left)
+        or   a
+        sbc  hl, bc
+        jr   z, 00007$
+        jr   nc, 00006$
+    00007$:
+        ld   hl, (_px_left)        ; 次の面も越える: 最後の標本にする
+        dec  hl
+        ld   b, h
+        ld   c, l
+        ld   hl, #1
+    00006$:
         dec  hl
         ld   (_px_left), hl
         ld   hl, (_px_ptr)
+        add  hl, bc
         ld   a, (hl)
         out  (0xA4), a             ; BUFF = 1: 次の 15.7kHz の刻みで D/A へ
         inc  hl
         ld   (_px_ptr), hl
-        ld   hl, (_px_due)
-        ld   de, #32
-        add  hl, de
-        ld   (_px_due), hl
-    00009$:
-        pop  de
-        pop  hl
+        pop  bc
+        ret
+    00008$:
+        ld   (_px_left), hl        ; HL = 0
+        pop  bc
         ret
     __endasm;
 }
 void pcmx_isr(void);
 
-void pcmx_play(u8 *p, u16 n) {
-    extern void (*volatile g_poll_hook)(void);
-    extern void (*volatile g_vdp_wait_hook)(void);
-    __asm di __endasm;
-    px_ptr = p; px_left = n; px_nleft = 0;
-    __asm
-        in   a, (0xE6)
-        ld   (_px_due), a
-        in   a, (0xE7)
-        ld   (_px_due + 1), a
-    __endasm;
-    px_on = 1;
-    g_poll_hook = pcmx_service; g_vdp_wait_hook = pcmx_service; ras_pcm_hook = pcmx_isr;
-    __asm ei __endasm;
-}
+/* pcmx_play は music.c(CODE0。常駐の空きのため) */
 void pcmx_queue(u8 *p, u16 n) { __asm di __endasm; px_nptr = p; px_nleft = n; __asm ei __endasm; }
 u8   pcmx_queued(void) { return px_nleft != 0; }
 u16  pcmx_left(void) { return px_left; }
@@ -1058,6 +1118,7 @@ void snd_frame(void) {
         if (n) {
             seq_n = n;
             seq_run();                            /* 待ちを減らす(曲のバンクは要らない) */
+            pcmx_service();
             if (seq_need) {                       /* ★バンクの出し入れは 1 回約 50us。命令を読むフレームだけ */
                 opll_budget = 24;
                 map_bank = song_bank;
@@ -1115,7 +1176,6 @@ void snd_silence(void) {
    ★turboR は MSX-MUSIC の内蔵が規格で必須(FS-A1ST / FS-A1GT とも内蔵)なので、探さずにあるものとして書く。無い機械でも
      ポート 0x7C/0x7D への書き込みは何も起きない。探す処理(BIOS の RDSLT で APRLOPLL を探す、約 150 バイト)は常駐の
      空きのために外した(M7。docs/TODO.md) */
-void snd_detect(void) { g_opll = 1; }
 
 /* ★このファイルの最後。番地がページ 1(0x8000 未満)にあることを Makefile が検査する */
 void snd_end(void) { }

@@ -21,7 +21,8 @@
 enum { SFX_SHOT = 1, SFX_HIT, SFX_KILL, SFX_BOOM, SFX_ITEM, SFX_SHARD, SFX_CONFIRM, SFX_LIMIT, SFX_DIE,
        SFX_TICK, SFX_DENY, SFX_COUNT };
 
-extern u8  g_opll;            /* 1 = MSX-MUSIC がある(snd_detect) */
+void pcmx_service(void);      /* PCM 方式 B の送出口(鳴っていなければすぐ帰る。重いループに置く) */
+extern u8  g_opll;            /* 1 = MSX-MUSIC がある(turboR は内蔵) */
 extern u8  g_bgm;             /* 今の曲(SND_NONE = 無し) */
 extern s8  g_snd_trans;       /* 全体の移調(半音。新しい音から) */
 extern s8  g_snd_bend;        /* ピッチベンド一括(半音。鳴っている音もすぐ変わる) */
@@ -34,7 +35,6 @@ extern u16 g_snd_keyons;      /* 発音の累計(検証用) */
 extern u16 g_pcm_starts;      /* PCM を鳴らし始めた回数(検証用) */
 extern u8  g_pcm_cur;         /* 鳴っている PCM(SND_NONE = 無し) */
 
-void snd_detect(void);        /* MSX-MUSIC を探す。★BIOS を使うので直接割込み方式にする前に 1 回 */
 void snd_init(void);          /* 音源の初期化(消音) */
 void bgm_play(u8 id);         /* すぐ切り替える(SND_NONE = 止める) */
 void bgm_next(u8 id);         /* 次の小節の頭で切り替える */

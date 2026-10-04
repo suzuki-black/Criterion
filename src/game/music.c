@@ -67,7 +67,8 @@ static void on_sec(u8 sec) {
     if (sec == 52) v04 = 0;
     if ((sec == 54 || sec == 56 || sec == 59 || sec == 62) && !v04) pcm_req(PCM_V04);   /* 8 面: UNMEASURABLE。幕開け(STAGE 8 の表示の間)に。
                                                                      8 面は重く、落ち着かずに捨てたら縦穴・中枢・第 3 形態で頼み直す */
-    else if (sec == 10 || sec == 19) pcm_req_opt(PCM_P04);           /* 重力反転 / 逆走: 逆再生シンバル */
+    /* ★重力反転 / 逆走の逆再生シンバル(P04)はやめた: 8kHz では中身(6kHz より上)が出せず、曲の演出(ピッチベンド、
+       下降進行)と役割が重なる。曲そのものの逆再生に替える予定(docs/TODO.md) */
     else if (sec == 18) pcm_req_opt(PCM_P03);                        /* 急停止: オケヒ 1 発 */
 }
 
@@ -146,7 +147,27 @@ void snd_init(void) {
 /* ---- PCM を鳴らす側(ROM → RAM の 2 面 → 刻み方式)。頼む側は snd.c ---- */
 #include "rom.h"
 #include "raster.h"
-void pcmx_play(u8 *p, u16 n); void pcmx_queue(u8 *p, u16 n); u8 pcmx_queued(void); u16 pcmx_left(void); void pcmx_stop(void);
+/* PCM 方式 B の制御(割込みと送出口の側は snd.c の pcmx)。★常駐の空きのため CODE0 に置く */
+extern u8 *px_ptr, *px_nptr, px_on;
+extern u16 px_left, px_nleft, px_due;
+void pcmx_isr(void);
+static void pcmx_play(u8 *p, u16 n) {
+    extern void (*volatile g_poll_hook)(void);
+    extern void (*volatile g_vdp_wait_hook)(void);
+    __asm di __endasm;
+    px_ptr = p; px_left = n; px_nleft = 0;
+    __asm
+        in   a, (0xE6)             ; 予定 = 今(下位から読む。桁上がりをまたぐと 1ms 先になり、鳴り始めが 1ms 遅れるだけ)
+        ld   (_px_due), a
+        in   a, (0xE7)
+        ld   (_px_due + 1), a
+    __endasm;
+    px_on = 1;
+    g_poll_hook = pcmx_service; g_vdp_wait_hook = pcmx_service; ras_pcm_hook = pcmx_isr;
+    __asm ei __endasm;
+}
+void pcmx_queue(u8 *p, u16 n); u8 pcmx_queued(void); u16 pcmx_left(void); void pcmx_stop(void);   /* snd.c */
+
 #define PCM_BUF  ((u8 *)0x3D00)               /* ページ 0。ROTOR の作業域(..0x3C7F)の上 */
 #define PCM_HALF 384
 extern const u8 snd_pcm_bank[], snd_pcm_prio[];
@@ -163,10 +184,15 @@ void pcm_halt(void) {
     pcm_left_src = 0;
 }
 
-static u16 pcm_fill(u8 half, u16 max) {
-    u16 n = pcm_left_src > max ? max : pcm_left_src;
-    rom_to_ram(pcm_bank, pcm_off, PCM_BUF + (half ? PCM_HALF : 0), n);
-    pcm_off += n;
+static u16 pcm_load(u8 half, u16 max) {
+    u16 n = pcm_left_src > max ? max : pcm_left_src, i;
+    u8 *d = PCM_BUF + (half ? PCM_HALF : 0);
+    for (i = 0; i < n; i += 64) {                 /* ★64 バイトずつ写して間に PCM を出す(384 バイトを一度に写すと 2ms 途切れた。M7) */
+        u16 c = n - i > 64 ? 64 : n - i;
+        rom_to_ram(pcm_bank, pcm_off, d + i, c);
+        pcm_off += c;
+        pcmx_service();
+    }
     pcm_left_src -= n;
     return n;
 }
@@ -177,8 +203,11 @@ static void pcm_begin(u8 id) {
     pcm_bank = snd_pcm_bank[id];
     pcm_off = snd_pcm_off[id];
     pcm_left_src = snd_pcm_len[id];
-    pcmx_play(PCM_BUF, pcm_fill(0, 128));  /* ★鳴り始めは少しだけ(場面の入りの重いフレームに重なりやすい)。2 面目は次のフレーム */
+    /* ★両方の面を詰めてから始める(初めを 128 バイトにしていたら 1 フレームで使い切り、次の面が来るまで止まって
+       遅れが残った。写す間も 64 バイトごとに PCM を出す。M7) */
+    pcmx_play(PCM_BUF, pcm_load(0, PCM_HALF));
     pcm_last = 0;
+    if (pcm_left_src) { pcmx_queue(PCM_BUF + PCM_HALF, pcm_load(1, PCM_HALF)); pcm_last = 1; }
     g_pcm_starts++;
 }
 
@@ -196,7 +225,7 @@ void pcm_keep(void) {
     if (g_pcm_cur == SND_NONE || pcmx_queued()) return;
     if (pcm_left_src) {
         u8 h = (u8)(pcm_last ^ 1);
-        pcmx_queue(PCM_BUF + (h ? PCM_HALF : 0), pcm_fill(h, PCM_HALF));
+        pcmx_queue(PCM_BUF + (h ? PCM_HALF : 0), pcm_load(h, PCM_HALF));
         pcm_last = h;
     } else if (!pcmx_left()) {
         pcm_halt();                               /* 鳴り終わった */

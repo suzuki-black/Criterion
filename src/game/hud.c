@@ -86,7 +86,7 @@ static void jobs_run(u8 rows) {
     u8 j;
     for (j = 0; j < NJOB && rows; j++) {
         TextJob *t = &job[j];
-        while (t->row < 8 && rows) { font_text_row(HUD_PAGE, t->x, t->y, t->fg, 0, t->text, t->row); t->row++; rows--; }
+        while (t->row < 8 && rows) { font_text_row(HUD_PAGE, t->x, t->y, t->fg, 0, t->text, t->row); t->row++; rows--; pcmx_service(); }   /* ★1 行ごとに PCM の送出口(M7) */
     }
 }
 

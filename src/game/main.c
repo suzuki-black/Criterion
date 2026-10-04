@@ -101,7 +101,7 @@ static void wait_vram_window(void) {
     m0 = g_ras_mark;
     for (i = 0; i < 200 && g_ras_mark == m0; i++) {
         u16 t0 = sys_timer();
-        while (g_ras_mark == m0 && (u16)(sys_timer() - t0) < 30) { }
+        while (g_ras_mark == m0 && (u16)(sys_timer() - t0) < 30) { if (g_poll_hook) g_poll_hook(); }   /* ★待つ間も PCM を出す(M7) */
     }
     frame_begin();
 }
@@ -129,7 +129,7 @@ void main(void) {
     bg_init();
     spr_init(spr_pat, PAT_COUNT);
     sys_ram_exec();
-    snd_detect();                    /* ★BIOS(RDSLT)を使うので直接割込み方式の前に */
+    g_opll = 1;                      /* MSX-MUSIC は turboR に内蔵 */
     ras_init();
     ras_set_isr(RAS_ISR_DIRECT);
     code0_load();                    /* ここから先でページ 0 のコード(ROTOR / GHOST / 選曲と効果音)を呼べる */
@@ -160,7 +160,7 @@ void main(void) {
         prof_t = sys_timer();
         /* 音: 選曲と演出 → ドライバ。★毎フレーム必ず回す(先送りすると音が固まって出て、リズムがもたついた。M7 の測定で
            16 分音符の半分が 1 フレームより大きくずれた) */
-        music_frame(state == ST_OVER); snd_frame();
+        music_frame(state == ST_OVER); pcmx_service(); snd_frame(); pcmx_service();   /* ★間にも PCM の送出口(合わせて約 0.7ms。M7) */
         pcm_keep();
         if (g_phase >= PH_AIR) stage_pump_nb();   /* 列の描き込みと GHOST: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
         input_read();
