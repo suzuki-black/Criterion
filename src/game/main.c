@@ -12,11 +12,12 @@
 #include "font.h"
 #include "game.h"
 #include "rom.h"
+#include "assets.h"
 #include "ghost.h"
 #include "ovl.h"
 #include "snd.h"
 #include "snd_data.h"
-#define SPRITE_PATTERNS                 /* 絵の表はここだけに置く(sprite_data.h) */
+#define SPRITE_SCHEMES
 #include "sprite_data.h"
 
 enum { ST_PLAY, ST_OVER };
@@ -50,6 +51,7 @@ u8 g_slow;
 static u8 slow_next;
 u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
 #define HUD_DEADLINE (170u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
+#define COL_DEADLINE (150u * 16u)  /* これを過ぎていたらスプライトの色表の書き込みを次のフレームへ */
 #define SPR_DEADLINE (100u * 16u)  /* スプライトの段に入る時点でこれを過ぎていたら、そのフレームは描き直さない
                                       (スプライト・属性表・VRAM の仕事で残り 140 ライン前後かかる) */      /* 1 = 被弾しない(自動テスト用) */
 /* 段ごとの所要時間(S1990 タイマのカウント。1 ライン ≒ 16.27): 入力・自機・敵・スプライト・ラスター・HUD */
@@ -127,12 +129,14 @@ void main(void) {
     vdp_hmmv(0, 0, 256, 1024, 0x00);
     vdp_cmd_wait();
     bg_init();
-    spr_init(spr_pat, PAT_COUNT);
+    spr_init();
     sys_ram_exec();
     g_opll = 1;                      /* MSX-MUSIC は turboR に内蔵 */
     ras_init();
     ras_set_isr(RAS_ISR_DIRECT);
     code0_load();                    /* ここから先でページ 0 のコード(ROTOR / GHOST / 選曲と効果音)を呼べる */
+    rom_to_vram(ASSET_SPR_PAT_BANK, ASSET_SPR_PAT_OFF, 1, 0xF800, ASSET_SPR_PAT_LEN);   /* スプライトの絵(64 パターン。63 番 = 空白)。
+                                                                         ★ROM に置く(常駐に置くと 1.3KB。M7 の後) */
     snd_init();
     ovl_load_sync(OVL_TITLE);        /* タイトルのオーバレイ */
     title_load();                    /* ROM の素材(ページ 1-2 を一時的にカートリッジへ戻して読む) */
@@ -144,6 +148,7 @@ void main(void) {
     g_stat.idle_min = 0xFFFF;
 
     for (;;) {
+        static u8 col_now, col_done;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
         u16 late0 = g_frame_late, idle;
         u8 ph;
         idle = frame_sync(1);
@@ -178,7 +183,7 @@ void main(void) {
             prof(2);
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
                 state = ST_OVER;
-                font_text(HUD_PAGE, 136, HUD_ROW1, 8, 0, "GAME OVER");
+                font_text(HUD_PAGE, 136, HUD_ROW1, 13, 0, "GAME OVER");
             }
         } else if (state == ST_OVER && (g_in_edge & IN_A)) {
             /* ★ネームエントリーと巻き戻しは M8。今はタイトルの素材を読み直して起動ロゴから(読む間は表示を止める) */
@@ -210,6 +215,19 @@ void main(void) {
            90 ライン延びた)。コマンドはフレームの頭とここで出し、次のフレームの論理の間に VDP が進める */
         if (!g_slow) spr_end();
         infx_vram();
+        /* スプライトの色の組: オーバレイ(面)が替わったら、帯の色表 4 つ(各 448 バイト。G_MISC の 4 枠は使うときに書くので
+           写さない)を 112 バイトずつ 16 フレームで写す(1 回 ≒ 1ms)。★1 つを 1 フレームで写すと(4ms)、7 面の試験で
+           オーバレイを読み直すたびに遅れた。面ごとに体の色を背景と反対の色相にする(M7 の後) */
+        {   /* ★7 面の試験(過去の面のオーバレイを読み直す)の間は 7 面の色の組のまま(試験ごとに写すと PCM と重なって遅れた) */
+            u8 want = spr_scheme[g_calib ? OVL_S7 : g_ovl];
+            if (g_ovl_ready && want != col_now) { col_now = want; col_done = 0; }
+        }
+        if (col_done < 16 && (u16)(sys_timer() - g_frame_t0) < COL_DEADLINE) {
+            u16 o = (u16)(col_done & 3) * 112u;
+            rom_to_vram(ASSET_SPR_COL_BANK, (u16)(ASSET_SPR_COL_OFF + ((u16)col_now << 9) + o), 1,
+                        (u16)(((const u16 *)sat_addr)[col_done >> 2] - 0x200u + o), 112);
+            col_done++;
+        }
         /* HUD の文字は次のフレームへ回してよい: フレームの残りが少なければ書かない(VDP のコマンドと重なると
            2 行の書き込みが 50 ライン近くかかることがある) */
         if (g_hud_on && (g_phase < PH_AIR || (u16)(sys_timer() - g_frame_t0) < HUD_DEADLINE)) hud_update();

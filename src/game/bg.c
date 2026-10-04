@@ -71,7 +71,7 @@ static void palette(void) {
     vdp_set_pal(0, 0, 0, 0);
     vdp_set_pal(1, 1, 0, 3);
     bg_mix(16);
-    vdp_set_pal(8, 7, 3, 1);   vdp_set_pal(9, 2, 3, 5);
+    vdp_set_pal(8, 1, 1, 2);   vdp_set_pal(9, 2, 3, 5);   /* ★8 = スプライトの縁取り(暗い。2 枚重ねの下の層。M7 の後) */
     vdp_set_pal(10, 2, 6, 7);  vdp_set_pal(11, 6, 7, 7);
     vdp_set_pal(12, 6, 5, 2);  vdp_set_pal(13, 6, 3, 2);
     vdp_set_pal(14, 4, 4, 5);  vdp_set_pal(15, 7, 7, 7);

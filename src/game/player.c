@@ -96,8 +96,10 @@ void player_update(void) {
         } else gvx = gvy = 0;
         if (g_pl.x < FX(8))  { g_pl.x = FX(8); gvx = 0; }
         if (g_pl.x > FX(232)) { g_pl.x = FX(232); gvx = 0; }
-        if (g_pl.y < FX(g_pl_ymin)) { g_pl.y = FX(g_pl_ymin); gvy = 0; }   /* 地形(天井)に当たって止まる */
-        if (g_pl.y > FX(g_pl_ymax)) { g_pl.y = FX(g_pl_ymax); gvy = 0; }   /* 地形(床) */
+        /* 地形(天井・床)に当たって止まる。★はみ出しが 4 ドットを超える = 限りの側が動いた(区間の節目で通り道が狭まった)
+           ときは、1 フレームに 1 ドットずつ押す(一度に押し戻すと、自機が勝手に跳んだように見えた。M7 の後) */
+        if (g_pl.y < FX(g_pl_ymin)) { g_pl.y = (s16)(FX(g_pl_ymin) - g_pl.y > FX(4) ? g_pl.y + FX(1) : FX(g_pl_ymin)); gvy = 0; }
+        if (g_pl.y > FX(g_pl_ymax)) { g_pl.y = (s16)(g_pl.y - FX(g_pl_ymax) > FX(4) ? g_pl.y - FX(1) : FX(g_pl_ymax)); gvy = 0; }
     }
     if (!g_slow) {
         if (g_pl.fire_cd) g_pl.fire_cd--;

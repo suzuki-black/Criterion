@@ -19,23 +19,17 @@
 #define BLANK_PAT (63 * 4)          /* 空白のパターン(使わない枠を隠す) */
 #define HUD_VOFF  24                /* HUD 帯の R#23(ページ 2 の 212 行を画面の 188 行に出す) */
 
-/* グループの色(1 行ずつ。bit6 = CC: 1 つ前の枠と OR 合成) */
-static const u8 g_col[G_COUNT - 1][16] = {
-    /* SHIP_A */ { 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9 },
-    /* SHIP_B */ { 0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A,0x4A },
-    /* SHOT   */ { 15,11,15,11,15,11,15,11,15,11,15,11,15,11,15,11 },
-    /* ENEMY  */ { 12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12 },
-    /* EBUL   */ { 8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8 },
-};
+/* ★グループの色表は tools/gen_sprites.py が作って ROM に置き(spr_col.bin)、spr_colors で写す(常駐の空きのため。
+   単色のグループは作らない。M7 の後)。ここには G_MISC の組(フレームごとに枠の色を替える)だけを持つ */
 static const u8 misc_col[CS_COUNT][16] = {
     /* CS_QUANTA */ { 10,10,11,11,10,10,11,11,10,10,11,11,10,10,11,11 },
-    /* CS_EXPL   */ { 15,15,11,11,9,9,8,8,8,8,9,9,11,11,15,15 },
-    /* CS_CURSOR */ { 15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15 },
+    /* CS_EXPL   */ { 15,15,11,11,13,13,12,12,12,12,13,13,11,11,15,15 },
+    /* CS_CURSOR */ { 15,15,11,11,15,15,11,11,15,15,11,11,15,15,11,11 },
     /* CS_SHARD  */ { 12,15,12,15,12,15,12,15,12,15,12,15,12,15,12,15 },
-    /* CS_DIM    */ { 14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14 },
+    /* CS_DIM    */ { 14,14,9,9,14,14,9,9,14,14,9,9,14,14,9,9 },
 };
 
-static const u16 sat_addr[2][2] = { { 0xEA00, 0xEE00 }, { 0xF200, 0xF600 } };   /* 0x1xxxx の下 16 ビット */
+const u16 sat_addr[2][2] = { { 0xEA00, 0xEE00 }, { 0xF200, 0xF600 } };   /* 0x1xxxx の下 16 ビット */
 
 /* ---- 帯の写し(asm から使うので非 static。添字の [帯 * 8 + グループ] は 8 で揃える) ---- */
 u8 spr_shadow[2 * SLOTS * 4];        /* 帯ごとの属性表の写し(帯 b は b * 128 から) */
@@ -43,9 +37,12 @@ u8 spr_cnt[16];                      /* 帯ごと・グループごとの使用�
 u8 spr_pos[16];                      /* 次に置く枠(グループの範囲で回る) */
 u8 spr_last[2];                      /* 使っている枠の最大 + 1 */
 u8 spr_misc_cs[8];                   /* 帯ごとの G_MISC 4 枠の色の組(0xFF = 空き) */
-const u8 spr_gfirst[8] = { 0, 1, 2, 10, 22, 28, 0, 0 };
-const u8 spr_gend[8]   = { 1, 2, 10, 22, 28, 32, 0, 0 };
-const u8 spr_gcount[8] = { 1, 1, 8, 12, 6, 4, 0, 0 };
+/* 枠: 自機 2、自機弾 6、2 枚重ねの敵 8(4 体)、1 枚の敵 6、敵弾 6、その他 4。★G_PAIR は偶数個・偶数から
+   (下の層が偶数の枠、上の層がその次。CC は番号が 1 つ前の CC = 0 の枠と重なる) */
+const u8 spr_gfirst[8] = { 0, 1, 2, 8, 16, 22, 28, 0 };
+const u8 spr_gend[8]   = { 1, 2, 8, 16, 22, 28, 32, 0 };
+const u8 spr_gcount[8] = { 1, 1, 6, 8, 6, 6, 4, 0 };
+static u8 spr_step;                  /* spr_add: 1 回に使う枠の数(G_PAIR は 2) */
 u8 spr_bx, spr_bp, spr_bg, spr_bcs, spr_bmask;   /* spr_add への受け渡し */
 u8 spr_voff;                         /* プレイエリアの縦スクロール(R#23)。Y に足す */
 
@@ -67,21 +64,13 @@ static u8 hide_y(void) {
     return y == 216 ? 217 : y;
 }
 
-void spr_init(const u8 (*pat)[32], u8 npat) {
-    u8 i, j, b, g;
-    static const u8 zero[32] = { 0 };
-    vdp_write_addr17(1, 0xF800);
-    for (i = 0; i < npat; i++) vdp_out_block(32, pat[i]);
-    vdp_write_addr17(1, (u16)(0xF800u + 63u * 32u));
-    vdp_out_block(32, zero);                                /* 63 番 = 空白 */
+void spr_init(void) {
+    u8 i, j, b;
     for (b = 0; b < 2; b++)
         for (j = 0; j < 2; j++) {
             u16 sa = sat_addr[b][j];
             vdp_write_addr17(1, sa);
             VDP_DAT = 216;                                  /* 空の表 */
-            vdp_write_addr17(1, (u16)(sa - 0x200u));        /* 色表: グループの色を固定で書く */
-            for (g = 0; g < G_MISC; g++)
-                for (i = 0; i < spr_gcount[g]; i++) vdp_out_block(16, g_col[g]);
             for (i = 0; i < 4; i++) misc_cache[b][j][i] = 0xFF;
         }
     for (i = 0; i < 2 * SLOTS; i++) { spr_shadow[i * 4] = hide_y(); spr_shadow[i * 4 + 2] = BLANK_PAT; }
@@ -108,7 +97,7 @@ void spr_begin(void) {
     }
     for (g = 0; g < G_COUNT; g++) {
         u8 c = spr_gcount[g];
-        if (c > 1 && ++rot_g[g] >= c) rot_g[g] = 0;            /* ちらつきの分散: グループの中で回す */
+        if (c > 1 && (rot_g[g] += (g == G_PAIR ? 2 : 1)) >= c) rot_g[g] = 0;   /* ちらつきの分散: グループの中で回す(組は 2 つずつ) */
         st = (u8)(spr_gfirst[g] + rot_g[g]);
         spr_pos[g] = st; spr_pos[8 + g] = st;
         spr_cnt[g] = 0; spr_cnt[8 + g] = 0;
@@ -135,6 +124,13 @@ void spr_add(u8 yy) __naked {
         ld   b, #1                 ; 下の帯(そのまま下へ)
     00010$:                        ; B = 帯、C = Y
         ld   a, (_spr_bg)
+        cp   #3                    ; G_PAIR: 2 枠
+        ld   a, #1
+        jr   nz, 00019$
+        inc  a
+    00019$:
+        ld   (_spr_step), a
+        ld   a, (_spr_bg)
         ld   e, a
         ld   d, #0                 ; DE = グループ
         ld   a, b
@@ -151,16 +147,18 @@ void spr_add(u8 yy) __naked {
         add  hl, de
         ld   a, 0 (iy)             ; 枠の数
         cp   (hl)
-        jr   z, 00090$             ; 満杯
-        jr   c, 00090$
-        inc  (hl)
+        jp   z, 00090$             ; 満杯
+        jp   c, 00090$
+        ld   a, (_spr_step)
+        add  a, (hl)
+        ld   (hl), a               ; 使用数 += 枠の数
         pop  hl
         ld   de, #_spr_pos
         add  hl, de
         ld   e, (hl)               ; E = 枠
-        ld   a, e
-        inc  a
-        ld   d, a
+        ld   a, (_spr_step)
+        add  a, e
+        ld   d, a                  ; D = 次の枠
         ld   a, (_spr_bg)
         push hl
         ld   hl, #_spr_gend
@@ -190,14 +188,13 @@ void spr_add(u8 yy) __naked {
         jr   nc, 00014$
         inc  h
     00014$:
-        ld   a, e
-        inc  a
+        ld   a, d
         cp   (hl)
         jr   c, 00015$
         ld   (hl), a               ; 使っている枠の最大 + 1
     00015$:
         ld   a, (_spr_bg)
-        cp   #5                    ; G_MISC
+        cp   #6                    ; G_MISC
         jr   nz, 00016$
         ld   a, b
         add  a, a
@@ -232,6 +229,19 @@ void spr_add(u8 yy) __naked {
         inc  hl
         ld   a, (_spr_bp)
         ld   (hl), a               ; パターン
+        ld   a, (_spr_step)
+        dec  a
+        ret  z
+        inc  hl                    ; G_PAIR: 次の枠に上の層(パターン + 1)
+        inc  hl
+        ld   (hl), c
+        inc  hl
+        ld   a, (_spr_bx)
+        ld   (hl), a
+        inc  hl
+        ld   a, (_spr_bp)
+        add  a, #4
+        ld   (hl), a
         ret
     00090$:
         pop  hl

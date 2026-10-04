@@ -19,7 +19,7 @@
 import os, random, sys
 
 W, H = 256, 188
-SKY, BODY, RIM, ORANGE, BLUEGRAY, YELLOW, RED, GRAY = 1, 6, 7, 8, 9, 12, 13, 14
+SKY, BODY, RIM, ORANGE, BLUEGRAY, YELLOW, RED, GRAY = 1, 6, 7, 13, 9, 12, 13, 14   # ★8 はスプライトの縁取り(暗い)に使うので、橙の窓は 13
 WALK, STREET0 = 158, 159
 CLOUD_SOLID, CLOUD_END = 8, 14
 

@@ -172,14 +172,16 @@ void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy) {
     }
 }
 
-/* (x, y)(固定小数点)から自機を狙って 2 ドット/フレーム */
+/* (x, y)(固定小数点)から自機を狙って 2 ドット/フレーム。★長さは max + min × 3/8 で近似する(縦横の大きい方で
+   割ると、斜めの弾が 1.4 倍速くなり、砲台の弾の速さがばらついて見えた。M7 の後) */
 void enemy_shoot(s16 x, s16 y) {
-    s16 dx, dy, m;
+    s16 dx, dy, ax, ay, m;
     if (!g_pl.alive) return;
     dx = PX(g_pl.x) + 8 - PX(x);
     dy = PX(g_pl.y) + 8 - PX(y);
-    m = dx < 0 ? -dx : dx;
-    if ((dy < 0 ? -dy : dy) > m) m = dy < 0 ? -dy : dy;
+    ax = dx < 0 ? -dx : dx;
+    ay = dy < 0 ? -dy : dy;
+    m = ax > ay ? (s16)(ax + ((ay * 3) >> 3)) : (s16)(ay + ((ax * 3) >> 3));
     if (m < 8) return;
     enemy_bullet(x, y, (s16)(dx * 32 / m), (s16)(dy * 32 / m));   /* 固定小数点 32 = 2 ドット */
 }
@@ -345,7 +347,7 @@ void enemy_draw(void) {
         else if (e->type == E_TOCK) pat = (e->t & 16) ? PAT_TOCK2 : PAT_TOCK1;
         else if (e->type == E_NOTCH) pat = PAT_NOTCH;
         else pat = PAT_SPIRIT;
-        spr_put(PX(e->x) - 8, PX(e->y) - 8, pat, G_ENEMY, 0);
+        spr_put(PX(e->x) - 8, PX(e->y) - 8, pat, pat == PAT_SPIRIT ? G_ENEMY : G_PAIR, 0);   /* ★編隊の敵は 2 枚重ね(3 色) */
         pcmx_service();
     }
     for (i = 0; i < MAX_FX; i++) {

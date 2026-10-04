@@ -45,6 +45,7 @@ $(BUILD)/m0_pcm.rel $(BUILD)/m0_mode.rel: $(BUILD)/pcm_data.h
 
 $(BUILD)/sprite_data.h: tools/gen_sprites.py | $(BUILD)
 	python3 tools/gen_sprites.py $@
+$(BUILD)/spr_col.bin $(BUILD)/spr_pat.bin: $(BUILD)/sprite_data.h
 $(BUILD)/hud_data.h: tools/gen_hud.py | $(BUILD)
 	python3 tools/gen_hud.py $@
 
@@ -90,7 +91,7 @@ $(BUILD)/snd.stamp: tools/gen_sound.py tools/songs.py tools/snd_pcm.py $(wildcar
 	python3 tools/gen_sound.py $(BUILD)/snd.bin $(BUILD)/snd_data.h
 	touch $@
 $(BUILD)/snd_data.h $(BUILD)/snd.bin: $(BUILD)/snd.stamp
-$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp $(BUILD)/stage4.stamp $(BUILD)/stage5.stamp $(BUILD)/stage6.stamp $(BUILD)/stage8.stamp
+$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/spr_col.bin $(BUILD)/spr_pat.bin $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp $(BUILD)/stage4.stamp $(BUILD)/stage5.stamp $(BUILD)/stage6.stamp $(BUILD)/stage8.stamp
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
 	    TDF=$(BUILD)/tdf.bin CITY_STRIPS=$(BUILD)/city_strips.bin CITY_MAP=$(BUILD)/city_map.bin \
@@ -101,7 +102,8 @@ $(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/title.stamp $(BUILD)/city.s
 	    S5_SPR=$(BUILD)/s5_spr.bin GAUGE=$(BUILD)/gauge.bin \
 	    S6_STRIPS=$(BUILD)/s6_strips.bin S6_MAP=$(BUILD)/s6_map.bin YJK_EVEN=$(BUILD)/yjk_even.bin YJK_ODD=$(BUILD)/yjk_odd.bin \
 	    GEAR=$(BUILD)/gear.bin HOURGLASS=$(BUILD)/hourglass.bin S6_SPR=$(BUILD)/s6_spr.bin \
-	    S8_STRIPS=$(BUILD)/s8_strips.bin S8_MAP=$(BUILD)/s8_map.bin TBAR=$(BUILD)/tbar.bin BELL_O=$(BUILD)/bell_o.bin BELL_I=$(BUILD)/bell_i.bin
+	    S8_STRIPS=$(BUILD)/s8_strips.bin S8_MAP=$(BUILD)/s8_map.bin TBAR=$(BUILD)/tbar.bin BELL_O=$(BUILD)/bell_o.bin BELL_I=$(BUILD)/bell_i.bin \
+	    SPR_COL=$(BUILD)/spr_col.bin SPR_PAT=$(BUILD)/spr_pat.bin
 	touch $@
 $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 

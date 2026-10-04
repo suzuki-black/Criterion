@@ -18,6 +18,17 @@ def pat(name, art):
     assert len(rows) == 16, name
     PATS[name] = rows
 
+def pair(name, a, b):
+    """G_PAIR の 2 枚(name = 下の層、name_B = 上の層。パターン番号が続く)。a, b は 16 行の '#' / '.'"""
+    PATS[name] = a
+    PATS[name + '_B'] = b
+
+def grid(rows):
+    return [[c in '#X' for c in r] for r in rows]
+
+def rows_of(g):
+    return [''.join('#' if v else '.' for v in r) for r in g]
+
 # ---- 自機 Infinitas(2 枚を OR 合成: SHIP_A = 機体, SHIP_B = 発光部。重なりは 3 色目)----
 pat('SHIP_A', '''
 ................
@@ -172,6 +183,46 @@ pat('NOTCH', '''
 .........#......
 ................
 ''')
+# ---- 2 枚重ね(G_PAIR、M7 の後。★単色のキャラを出さない・背景に溶かさない): 下の層 = 体を 1 ドット太らせた影
+#      (色 8 = 暗い縁)、上の層 = 体(行ごとの色)。8 | 体の色 = 体の色なので、縁だけが暗く出る。体に開けた穴
+#      (針・刻み)も暗い線になる。縁の分、体は 14x14 に収める ----
+def outlined(name, body, holes=()):
+    """body: 体の点の集合 {(y, x)}、holes: 体の中で暗くする点。下の層 = 体 + 縁(8 近傍)、上の層 = 体 - 穴"""
+    a = [[False] * 16 for _ in range(16)]
+    for y, x in body:
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if 0 <= y + dy < 16 and 0 <= x + dx < 16:
+                    a[y + dy][x + dx] = True
+    b = [[(y, x) in body and (y, x) not in holes for x in range(16)] for y in range(16)]
+    pair(name, rows_of(a), rows_of(b))
+
+def _line(y0, x0, y1, x1):
+    n = max(abs(y1 - y0), abs(x1 - x0))
+    return {(round(y0 + (y1 - y0) * i / n), round(x0 + (x1 - x0) * i / n)) for i in range(n + 1)}
+
+def _pairs():
+    for n in ('TICK1', 'TICK2', 'TOCK1', 'TOCK2', 'NOTCH'):
+        PATS.pop(n)
+    c = 7.5
+    ring = {(y, x) for y in range(16) for x in range(16) if 4.6 ** 2 <= (y - c) ** 2 + (x - c) ** 2 <= 6.2 ** 2}
+    disk = {(y, x) for y in range(16) for x in range(16) if (y - c) ** 2 + (x - c) ** 2 <= 6.2 ** 2}
+    marks = {(2, 7), (2, 8), (13, 7), (13, 8), (7, 2), (8, 2), (7, 13), (8, 13)}      # 12・6・9・3 時の刻み
+    hub = {(7, 7), (7, 8), (8, 7), (8, 8)}
+    # Tick: 輪と針(体)。中は透ける。針は 12 時 → 3 時の 2 コマ
+    outlined('TICK1', ring | hub | _line(7, 7, 3, 7) | _line(7, 8, 3, 8))
+    outlined('TICK2', ring | hub | _line(7, 8, 7, 12) | _line(8, 8, 8, 12))
+    # Tock: 塗った盤。針と刻みを穴(暗い線)に
+    outlined('TOCK1', disk, marks | _line(7, 7, 3, 7) | _line(8, 8, 10, 10))
+    outlined('TOCK2', disk, marks | _line(7, 8, 7, 12) | _line(8, 7, 11, 5))
+    # Notch: 左向きのくさび(先端の軸つき)と後ろの刻み
+    wedge = {(y, x) for y in range(2, 15) for x in range(1, 12) if x >= 11 - (7 - abs(y - 8)) * 1.4 and abs(y - 8) <= 6}
+    shaft = {(8, x) for x in range(1, 6)} | {(7, x) for x in range(2, 5)}
+    dots = {(y, 13) for y in (4, 6, 10, 12)} | {(8, 14)}
+    outlined('NOTCH', wedge | shaft | dots, {(y, 10) for y in range(5, 12)})
+
+_pairs()
+
 pat('EBUL', '''
 ................
 ................
@@ -350,97 +401,7 @@ pat('LEGION_CORE', '''
 .....######.....
 ''')
 # Pawn(4x4 ドットの機械兵を 2 倍にした 8x8。人型の部品になる)
-pat('PAWN', '''
-................
-................
-................
-................
-....########....
-....#.####.#....
-....########....
-....########....
-.....######.....
-....##.##.##....
-....#..##..#....
-...##..##..##...
-................
-................
-................
-................
-''')
 # PLUMB の下げ振り(32x32 を 4 枚に分ける)。上に吊り輪(弱点)、下へ尖る真鍮の錘
-pat('BOB_TL', '''
-...............#
-..............##
-.............#..
-.............#..
-..............##
-...............#
-...........#####
-.........#######
-.......#########
-......##########
-.....###########
-....############
-....##.#########
-...###.#########
-...##..#########
-...##..#########
-''')
-pat('BOB_TR', '''
-#...............
-##..............
-..#.............
-..#.............
-##..............
-#...............
-#####...........
-#######.........
-#########.......
-##########......
-###########.....
-############....
-############....
-#############...
-#############...
-#############...
-''')
-pat('BOB_BL', '''
-...##..#########
-...###.#########
-....##.#########
-....############
-.....###########
-......##########
-.......#########
-........########
-.........#######
-..........######
-...........#####
-............####
-.............###
-..............##
-...............#
-...............#
-''')
-pat('BOB_BR', '''
-#############...
-#############...
-############....
-############....
-###########.....
-##########......
-#########.......
-########........
-#######.........
-######..........
-#####...........
-####............
-###.............
-##..............
-#...............
-#...............
-''')
 pat('CHAIN', '''
 ................
 ................
@@ -625,21 +586,58 @@ def inf32():
         out += row.to_bytes(4, 'big')
     return bytes(out)
 
+# ---- 色表(spr.c の枠の割り当てと同じ順。32 枠 × 16 行。bit6 = CC: 番号が 1 つ前の CC = 0 の枠と OR 合成) ----
+# ★単色のグループは作らない・背景に溶かさない(コナミの MSX2 の作法。M7 の後)。パレット(bg.c): 8 縁取り(暗い)
+#   9 青 10 水 11 淡水 12 黄土 13 赤橙 14 灰 15 白。G_PAIR は下の層 = 縁取り(8)、上の層 = 体(8 | 体 = 体)。
+#   面ごとに体の色の組を替える(背景と反対の色相。SCHEME_OF_OVL)
+SCHEMES = {
+    # 名前: (2 枚重ねの体, 1 枚の敵, 敵弾)
+    'COOL':  ([15, 15, 11, 11, 11, 10, 10, 10, 10, 10, 9, 9, 9, 10, 11, 15],      # 暖色の背景(夕焼け)の上
+              [15, 11, 11, 10, 10, 10, 9, 9, 9, 9, 10, 10, 11, 11, 15, 15],
+              [10, 10, 10, 10, 10, 11, 15, 15, 15, 11, 10, 10, 10, 10, 10, 10]),
+    'WARM':  ([15, 15, 12, 12, 12, 12, 13, 13, 13, 13, 13, 12, 12, 12, 15, 15],   # 寒色の背景の上
+              [15, 12, 12, 12, 13, 13, 13, 13, 12, 12, 12, 13, 13, 15, 15, 15],
+              [13, 13, 13, 13, 13, 12, 15, 15, 15, 12, 13, 13, 13, 13, 13, 13]),
+    'METAL': ([15, 15, 14, 14, 14, 14, 11, 14, 14, 14, 14, 9, 9, 14, 15, 15],      # 色の多い背景の上
+              [15, 11, 11, 14, 14, 14, 12, 12, 12, 12, 13, 13, 9, 9, 13, 13],
+              [13, 13, 13, 13, 13, 12, 15, 15, 15, 12, 13, 13, 13, 13, 13, 13]),
+}
+SCHEME_NAMES = list(SCHEMES)
+# オーバレイ(ovl.h の順: NONE, TITLE, S1..S8, S8B, ENDING) → 色の組
+#   1 面 夕焼け → 寒色、2・3 面 紺と青 → 暖色、4 面 茶と橙の地層 → 寒色、5 面 紫と灰 → 暖色、6 面 黄土と紺 → 寒色、
+#   7・8 面 色が多い → 金属
+SCHEME_OF_OVL = ['COOL', 'COOL', 'COOL', 'WARM', 'WARM', 'COOL', 'WARM', 'COOL', 'METAL', 'METAL', 'METAL', 'COOL']
+
+def colors():
+    out = bytearray()
+    for sname in SCHEME_NAMES:
+        body, single, ebul = SCHEMES[sname]
+        groups = [(1, [9] * 16), (1, [0x4A] * 16), (6, [15, 11] * 8), (8, None), (6, single), (6, ebul), (4, [15] * 16)]
+        for n, rows in groups:
+            for i in range(n):
+                out += bytes(rows if rows else ([0x40 | c for c in body] if i & 1 else [8] * 16))
+    assert len(out) == 512 * len(SCHEMES)
+    return bytes(out)
+
 def main(path):
     names = list(PATS)
+    import os
+    open(os.path.join(os.path.dirname(path), 'spr_col.bin'), 'wb').write(colors())
+    # 絵の表(64 パターン × 32 バイト。PAT_COUNT から先は 0 = 面ごとの絵の置き場と 63 番の空白)。ROM に置き、起動時に写す
+    pats = bytearray()
+    for n in names:
+        pats += bytes(to_bytes(PATS[n]))
+    assert len(names) <= 44, '共通の絵は 0..43(44.. は面ごと)'
+    pats += bytes(2048 - len(pats))
+    open(os.path.join(os.path.dirname(path), 'spr_pat.bin'), 'wb').write(pats)
     with open(path, 'w') as f:
         f.write('/* sprite_data.h — tools/gen_sprites.py が生成(手で編集しない)。16x16 スプライトの絵。 */\n')
         f.write('#ifndef SPRITE_DATA_H\n#define SPRITE_DATA_H\n\n')
         for i, n in enumerate(names):
             f.write(f'#define PAT_{n} {i}\n')
         f.write(f'#define PAT_COUNT {len(names)}\n\n')
-        # ★絵の表は SPRITE_PATTERNS を定義した 1 つのファイル(main.c)だけに置く。static const を全員に置くと
-        #   取り込んだファイルの数だけ複製され(6 個 = 4.8KB)、常駐コードが 32KB を超えた
-        f.write('#ifdef SPRITE_PATTERNS\n')
-        f.write('static const u8 spr_pat[PAT_COUNT][32] = {\n')
-        for n in names:
-            f.write('    { ' + ', '.join(f'0x{b:02X}' for b in to_bytes(PATS[n])) + ' },  /* ' + n + ' */\n')
-        f.write('};\n#endif\n\n')
+        # 面ごとの色の組(spr_col.bin の 512 バイト単位の番号)。main.c だけが取り込む
+        f.write('#ifdef SPRITE_SCHEMES\nstatic const u8 spr_scheme[12] = { ' + ', '.join(str(SCHEME_NAMES.index(n)) for n in SCHEME_OF_OVL) + ' };\n#endif\n\n')
         # ROTOR の元(32x32 の 1bpp)。infx.c だけが取り込む
         f.write('#ifdef SPRITE_INF32\nstatic const u8 spr_inf32[128] = {\n')
         b = inf32()

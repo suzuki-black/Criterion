@@ -16,8 +16,9 @@
 #define SPR_LIMIT_Y 188       /* これより下(HUD 帯)には出さない。HUD 用は spr_put_hud */
 #define HUD_SCREEN_Y 188      /* HUD 帯の画面の行(HUD 帯は属性表が別) */
 
-/* グループ(枠の範囲は spr.c) */
-enum { G_SHIP_A, G_SHIP_B, G_SHOT, G_ENEMY, G_EBUL, G_MISC, G_COUNT };
+/* グループ(枠の範囲は spr.c)。★単色のものは置かない(コナミの MSX2 の作法。M7 の後): どのグループも行ごとに色を変え、
+   G_PAIR は 2 枚の OR 合成(CC)で 3 色にする */
+enum { G_SHIP_A, G_SHIP_B, G_SHOT, G_PAIR, G_ENEMY, G_EBUL, G_MISC, G_COUNT };
 
 /* G_MISC の色の組 */
 enum { CS_QUANTA, CS_EXPL, CS_CURSOR, CS_SHARD, CS_DIM, CS_COUNT };
@@ -27,9 +28,12 @@ extern SprRegs spr_regs;      /* spr_end() が書いた表の R#5/R#11(上の帯
 extern u8 g_spr_dropped;      /* グループの枠に入りきらなかった枚数(計測用) */
 extern u8 spr_voff;           /* プレイエリアの縦スクロール(R#23)。spr_put の Y に足す */
 
-void spr_init(const u8 (*pat)[32], u8 npat);   /* パターン表・色表の初期化、R#1/R#5/R#6/R#11 */
+void spr_init(void);                           /* 属性表の初期化、R#1/R#5/R#6/R#11。★パターン表(0x1F800、63 番 = 空白)と
+                                                  色表は呼ぶ側が ROM から写す(常駐の空きのため。main.c) */
+extern const u16 sat_addr[2][2];               /* 帯ごと・二重化した属性表の番地(0x1xxxx の下 16 ビット)。色表はその 0x200 前 */
 void spr_begin(void);
-void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs);       /* 左上(ドット)。cs は G_MISC のときだけ使う */
+void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs);       /* 左上(ドット)。cs は G_MISC のときだけ使う。
+                                                              G_PAIR は pat(下の層)と pat + 1(上の層、CC)を隣の枠に置く */
 void spr_put_hud(s16 x, s16 y, u8 pat, u8 cs);             /* HUD 帯(1 枚、色は G_MISC の組) */
 void spr_end(void);
 
