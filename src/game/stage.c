@@ -172,7 +172,7 @@ void stage_start(void) {
     g_col_rev = 0; redraw_n = 0; g_bands_all = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
     enemy_waves(WAVES_AIR);
-    ovl_request(OVL_S1);
+    ovl_request((u8)(g_start_stage > 1 ? OVL_S1 + g_start_stage - 1 : OVL_S1));   /* 隠しコンフィグの面セレクト */
 }
 
 /* ★世界の位置 g_wx は bg の位置(1/4 ドットの u16 = 16384 ドットで一周)の差分で進める。そのまま使うと 5 面の途中で
@@ -394,7 +394,8 @@ u8 stage_col_ready(u16 wcol) {
     return (u8)(col_b >= NBLK || cur_col != wcol);
 }
 u8 g_bands_all;
-u8 g_blk_skip, g_blk_base;         /* ブロック g_blk_base から g_blk_skip 個(リングの 8 行ずつ)を描かない */
+u8 g_blk_skip, g_blk_base;
+u8 g_start_stage;         /* ブロック g_blk_base から g_blk_skip 個(リングの 8 行ずつ)を描かない */
 
 
 /* メインループの途中で(待たない): 列と描き替え、GHOST の待ち行列。

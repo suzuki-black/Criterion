@@ -29,6 +29,7 @@
 - PCM の刻み 244 では、ラスター項目の適用を先、穴埋めを最後にした。
 
 ### Added
+- タイトルの隠しの設定（↑↑↓↓←→←→ B A）: 無敵、BGM を聴く、始める面を選ぶ。
 - **M7: サウンド**。MSX-MUSIC 6 声 + リズム + PSG の BGM ドライバ（`src/game/snd.c`、中核は asm。テンポの外部制御・移調・
   ピッチベンド一括・シーケンスの中の PCM）、曲 21 本（`tools/songs.py` の MML を `tools/gen_sound.py` が翻訳）、PCM 12 本
   （オケヒ・シンバル・爆発・音声。`tools/snd_pcm.py` で合成）、場面に合わせた選曲と音の演出・PSG の効果音（`src/game/music.c`）。

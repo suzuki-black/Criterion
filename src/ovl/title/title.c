@@ -26,6 +26,8 @@
 #include "input.h"
 #include "assets.h"
 #include "sprite_data.h"
+#include "snd.h"
+#include "snd_data.h"
 
 #define LOGO_Y     64
 #define LOGO_BANDS 8
@@ -50,6 +52,72 @@ static u8  reveal;                /* 紋章を見せる行 */
 static u16 yjk_q;                 /* 地平線の横位置(1/8 ドット) */
 
 static u8 regs_top[2][16], regs_n[2][12], regs_ring[2][4], regs_b[2][4];
+
+/* ---- 隠しコンフィグ: タイトルで 上 上 下 下 左 右 左 右 B A(B と A はキーボードの B・A キー) ----
+   HUD の帯の 2 行に出す。上下で項目、左右で値、SPACE で決定。★オーバレイの変数は初期化されないので title_start で */
+enum { CF_INV, CF_STAGE, CF_BGM, CF_EXIT, CF_N };
+static u8 cf_on, cf_k, cf_item, cf_bgm, cf_dirty, cf_keys, cf_row, cf_cur;   /* cf_cur: 書いている行(bit) */
+static const u8 cf_seq[10] = { IN_UP, IN_UP, IN_DOWN, IN_DOWN, IN_LEFT, IN_RIGHT, IN_LEFT, IN_RIGHT, 0x80, 0x40 };   /* 0x80 = B、0x40 = A */
+static const char *const cf_song[SND_NSONG + 1] = {
+    "M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10", "M11", "M12", "M13", "M14A", "M14B", "M14C",
+    "M15", "M16", "M17", "J01", "J02", "STOP" };
+static char cf_line[20];
+
+__sfr __at(0xA9) CF_PPI_B;
+__sfr __at(0xAA) CF_PPI_C;
+
+/* キーボードの行 2 の B(bit7)と A(bit6)。押されているビットが 1 */
+static u8 cf_ba(void) {
+    u8 v;
+    __asm di __endasm;
+    CF_PPI_C = (u8)((CF_PPI_C & 0xF0) | 2);
+    v = CF_PPI_B;
+    __asm ei __endasm;
+    return (u8)(~v & 0xC0);
+}
+
+static void cf_put(const char *s, u8 at) { while (*s && at < 18) cf_line[at++] = *s++; }
+
+/* 1 行目の文字列を組む(18 文字、空白で埋める。元のタイトルの文字と同じ長さ) */
+static void cf_build(void) {
+    u8 i;
+    for (i = 0; i < 18; i++) cf_line[i] = ' ';
+    cf_line[18] = 0;
+    if (cf_item == CF_INV) { cf_put("INVINCIBLE", 0); cf_put(g_dbg_invul ? "ON" : "OFF", 13); }
+    else if (cf_item == CF_STAGE) { cf_put("STAGE", 0); cf_line[13] = (char)('0' + (g_start_stage ? g_start_stage : 1)); }
+    else if (cf_item == CF_BGM) { cf_put("BGM", 0); cf_put(cf_song[cf_bgm], 13); }
+    else cf_put("EXIT", 0);
+}
+
+/* タイトルの間、毎フレーム: コマンドを数え、入ったらコンフィグを動かす。1 = コンフィグ中(出撃しない) */
+static u8 cf_update(void) {
+    u8 ba = cf_ba(), ba_edge = (u8)(ba & ~cf_keys), e = (u8)((g_in_edge & 0x0F) | ba_edge);
+    cf_keys = ba;
+    if (!cf_on) {
+        if (e) {
+            if (e == cf_seq[cf_k]) { if (++cf_k == 10) { cf_on = 1; cf_item = 0; cf_dirty = 3; cf_k = 0; } }
+            else cf_k = (u8)(e == cf_seq[0] ? 1 : 0);
+        }
+        return cf_on;
+    }
+    if (g_in_edge & IN_UP) { cf_item = (u8)(cf_item ? cf_item - 1 : CF_N - 1); cf_dirty |= 1; if (cf_cur == 1) cf_dirty |= 0x10; }
+    if (g_in_edge & IN_DOWN) { cf_item = (u8)(cf_item + 1 < CF_N ? cf_item + 1 : 0); cf_dirty |= 1; if (cf_cur == 1) cf_dirty |= 0x10; }
+    if (g_in_edge & (IN_LEFT | IN_RIGHT)) {
+        u8 r = (u8)(g_in_edge & IN_RIGHT);
+        if (cf_item == CF_INV) g_dbg_invul = (u8)!g_dbg_invul;
+        else if (cf_item == CF_STAGE) {
+            u8 s = g_start_stage ? g_start_stage : 1;
+            s = r ? (u8)(s < 8 ? s + 1 : 1) : (u8)(s > 1 ? s - 1 : 8);
+            g_start_stage = s;
+        } else if (cf_item == CF_BGM) cf_bgm = r ? (u8)(cf_bgm < SND_NSONG ? cf_bgm + 1 : 0) : (u8)(cf_bgm ? cf_bgm - 1 : SND_NSONG);
+        cf_dirty |= 1; if (cf_cur == 1) cf_dirty |= 0x10;
+    }
+    if (g_in_edge & IN_A) {
+        if (cf_item == CF_BGM) bgm_play(cf_bgm < SND_NSONG ? cf_bgm : SND_NONE);
+        else if (cf_item == CF_EXIT) { cf_on = 0; cf_dirty = (u8)((cf_dirty & 0x10) | 0x0C); bgm_play(SONG_M01); }   /* タイトルの文字を戻す */
+    }
+    return 1;
+}
 
 /* ---- 素材 ---- */
 void title_load(void) {
@@ -116,6 +184,7 @@ void title_update(void) {
         for (i = 0; i < LOGO_BANDS; i++)
             if (g_pt >= 24 + i * 6) band_x[i] = ease(band_x[i], 0);
         yjk_q++;
+        if (cf_update()) return;                              /* 隠しコンフィグ */
         if ((g_in_edge & IN_A) && g_pt >= 30) enter(PH_SORTIE);
         return;
     }
@@ -148,6 +217,27 @@ void title_vram(void) {
     /* タイトルの文字(この時点ではまだ分割していない)。1 フレームに 1 行(まとめるとフレームが落ちた) */
     if (g_phase == PH_TITLE && g_pt == 1) font_text(HUD_PAGE, 72, HUD_ROW1, 11, 0, "PUSH SPACE KEY");
     if (g_phase == PH_TITLE && g_pt == 2) font_text(HUD_PAGE, 64, HUD_ROW2, 14, 0, "TDF 2026  M2 BUILD");
+    if (g_phase == PH_TITLE && cf_dirty) {                    /* 隠しコンフィグ。★1 フレームに文字の 1 ドット行ずつ(72 バイト、約 0.6ms)。
+                                                                 1 行(576 バイト、約 5ms)をまとめて書くと終わりが上の帯(SCREEN 12)の
+                                                                 表示に入り、書いた所が化けた */
+        const char *t;
+        u8 row, fg;
+        if (!cf_row) {                                        /* 書く行は書き始めに決める */
+            cf_cur = (u8)((cf_dirty & 1) ? 1 : (cf_dirty & 2) ? 2 : (cf_dirty & 4) ? 4 : 8);
+            cf_dirty &= (u8)~0x10;
+            if (cf_cur == 1) cf_build();
+        }
+        if (cf_cur == 1) { t = cf_line; row = HUD_ROW1; fg = 15; }   /* 白(色 11 は点滅に使う) */
+        else if (cf_cur == 2) { t = "UD ITEM LR CHANGE "; row = HUD_ROW2; fg = 14; }
+        else if (cf_cur == 4) { t = " PUSH SPACE KEY   "; row = HUD_ROW1; fg = 11; }
+        else { t = "TDF 2026  M2 BUILD"; row = HUD_ROW2; fg = 14; }
+        font_text_row(HUD_PAGE, 64, row, fg, 0, t, cf_row);    /* 元の 2 行目と同じ x = 64..207(元の 1 行目 72..183 も覆う) */
+        if (++cf_row == 8) {
+            cf_row = 0;
+            if (!(cf_cur == 1 && (cf_dirty & 0x10))) cf_dirty &= (u8)~cf_cur;   /* 途中で値が変わったら書き直す */
+            cf_cur = 0;
+        }
+    }
     if (g_phase == PH_SORTIE) {
         if (g_pt == 1) vdp_hmmv(0, 512 + HUD_VROW, 256, 24, 0x00);   /* タイトルの文字を消す */
         /* ゲームの HUD は上の帯(SCREEN12)が消えてから描く。★SCREEN12 の表示中に VRAM の書き込みが 244 行を
@@ -268,4 +358,4 @@ void title_build(void) {
     g_split_shown = n;
 }
 
-void title_start(void) { enter(PH_LOGO); }
+void title_start(void) { cf_on = 0; cf_k = 0; cf_dirty = 0; cf_keys = 0; cf_bgm = 0; cf_row = 0; cf_cur = 0; enter(PH_LOGO); }
