@@ -608,15 +608,21 @@ SCHEME_NAMES = list(SCHEMES)
 #   7・8 面 色が多い → 金属
 SCHEME_OF_OVL = ['COOL', 'COOL', 'COOL', 'WARM', 'WARM', 'COOL', 'WARM', 'COOL', 'METAL', 'METAL', 'METAL', 'COOL']
 
+# 枠の割り振り(spr.c の layouts と同じ数): 組・1 枚の敵・敵弾の枠の数。0 = ふつう、1・2 = 部品の多いボスの間
+LAYOUTS = [(8, 6, 6), (4, 10, 6), (2, 11, 7), (6, 6, 8)]
+
 def colors():
+    """色表: 割り振り × 色の組(番号 = 割り振り * 3 + 色の組)"""
     out = bytearray()
-    for sname in SCHEME_NAMES:
-        body, single, ebul = SCHEMES[sname]
-        groups = [(1, [9] * 16), (1, [0x4A] * 16), (6, [15, 11] * 8), (8, None), (6, single), (6, ebul), (4, [15] * 16)]
-        for n, rows in groups:
-            for i in range(n):
-                out += bytes(rows if rows else ([0x40 | c for c in body] if i & 1 else [8] * 16))
-    assert len(out) == 512 * len(SCHEMES)
+    for npair, nsingle, nebul in LAYOUTS:
+        for sname in SCHEME_NAMES:
+            body, single, ebul = SCHEMES[sname]
+            groups = [(1, [9] * 16), (1, [0x4A] * 16), (6, [15, 11] * 8), (npair, None), (nsingle, single), (nebul, ebul), (4, [15] * 16)]
+            assert sum(n for n, _ in groups) == 32
+            for n, rows in groups:
+                for i in range(n):
+                    out += bytes(rows if rows else ([0x40 | c for c in body] if i & 1 else [8] * 16))
+    assert len(out) == 512 * len(SCHEMES) * len(LAYOUTS)
     return bytes(out)
 
 def main(path):

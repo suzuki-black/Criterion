@@ -92,6 +92,10 @@ static void demo_input(void) {
    ★区間の番号は各面の sN.h の enum と合わせる(本体は面のヘッダを取り込まないので数で持つ) ---- */
 static const u8 boss_sec[] = { 5, 13, 22, 31, 41, 50, 53, 60, 61 };   /* 1〜6 面のボス、7 面 LIBRA、8 面の第 1・第 2 形態 */
 #define SEC_LAST 62                                                   /* 8 面の第 3 形態(SEC8_BOSS3) */
+/* ★部品の多いボスの区間: 戦っている間はスプライトの枠をボスの割り振りに(spr_layout。1 つの帯に 1 枚の敵が 7〜10 枚並び、
+   ふつうの 6 枠では消えて見えた)。1 面 PLUMB の鎖、2 面 CW、3 面 Metronome、4 面 VERNIER の光線、6 面の砂時計の目 */
+static const u8 big_sec[] = { 5, 11, 20, 29, 48 };
+static const u8 big_lay[] = { 2, 2, 1, 1, 3 };                       /* 割り振り(spr.c の layouts) */
 static u8 juice_t, juice_tier, juice_len, bs_last;
 static void juice(void) {
     u8 s = g_boss_state;
@@ -226,6 +230,11 @@ void main(void) {
         /* 音: 選曲と演出 → ドライバ。★毎フレーム必ず回す(先送りすると音が固まって出て、リズムがもたついた。M7 の測定で
            16 分音符の半分が 1 フレームより大きくずれた) */
         juice();
+        {
+            u8 s = g_boss_state, l = 0, i;
+            if (s != BS_NONE && s != BS_DONE) for (i = 0; i < sizeof big_sec; i++) if (big_sec[i] == g_sec) l = big_lay[i];
+            if (l != g_spr_layout) spr_layout(l);
+        }
         music_frame(state == ST_OVER); pcmx_service(); snd_frame(); pcmx_service();   /* ★間にも PCM の送出口(合わせて約 0.7ms。M7) */
         pcm_keep();
         if (g_phase >= PH_AIR) stage_pump_nb();   /* 列の描き込みと GHOST: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
@@ -284,7 +293,7 @@ void main(void) {
            写さない)を 112 バイトずつ 16 フレームで写す(1 回 ≒ 1ms)。★1 つを 1 フレームで写すと(4ms)、7 面の試験で
            オーバレイを読み直すたびに遅れた。面ごとに体の色を背景と反対の色相にする(M7 の後) */
         {   /* ★7 面の試験(過去の面のオーバレイを読み直す)の間は 7 面の色の組のまま(試験ごとに写すと PCM と重なって遅れた) */
-            u8 want = spr_scheme[g_calib ? OVL_S7 : g_ovl];
+            u8 want = (u8)(spr_scheme[g_calib ? OVL_S7 : g_ovl] + g_spr_layout * 3);   /* 割り振りごとに 3 つ(gen_sprites.py) */
             if (g_ovl_ready && want != col_now) { col_now = want; col_done = 0; }
         }
         if (col_done < 16 && (u16)(sys_timer() - g_frame_t0) < COL_DEADLINE) {

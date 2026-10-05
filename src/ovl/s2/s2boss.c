@@ -96,7 +96,7 @@ static void cw_update(void) {
     if (hp_r) { u8 n = shot_hit(rx, ry, 14, 14); while (n--) { if (hp_r) hp_r--; } touch(rx, ry, 12); }
     g_boss_hp = (u8)(hp_l + hp_r);
     if (!g_boss_hp) { g_boss_state = BS_DYING; t = 0; score_add(300); return; }
-    if (++fire_t >= 50) {
+    if (++fire_t >= 64) {                                     /* ★50 では上の帯に弾が 8〜9 発重なり、敵弾の枠(7)から溢れて消えた(M7 の後) */
         fire_t = 0;
         if (hp_l) enemy_shoot(FX(lx), FX(ly));
         if (hp_r) enemy_shoot(FX(rx), FX(ry));
