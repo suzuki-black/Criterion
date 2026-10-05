@@ -9,7 +9,7 @@
 #include "assets.h"
 #include "city_data.h"
 
-#define AIR1_LEN   512             /* 空中戦(ドット) */
+#define AIR1_LEN   1024            /* 空中戦(ドット。★512 = 約 8 秒は短すぎた。M7 の後) */
 #define DESC_LEN   256             /* 降下(この間に g_scam が -188 → 0) */
 #define S_AIR      (-188)
 #define S_AIR2     (-192)          /* 2 面の空中戦。★ブロック 23(s = -4..-1)が画面に出ない位置 */
@@ -23,7 +23,8 @@ static const u8 city_sky_s[6] = { 0, 14, 40, 70, 100, 130 };
 static void enter(u8 sec) {
     g_sec = sec; sec_wx = g_wx; sec_t = 0;
     switch (sec) {
-    case SEC_AIR1: case SEC_AIR2: enemy_waves(WAVES_AIR); break;
+    case SEC_AIR1: enemy_waves(g_calib ? WAVES_AIR : WAVES_SKY); break;   /* 試験は短い空中戦のまま */
+    case SEC_AIR2: enemy_waves(WAVES_AIR); break;
     case SEC_CITY1: case SEC_CITY2: enemy_waves(WAVES_CITY); break;
     default: enemy_waves(WAVES_NONE); break;
     }

@@ -15,7 +15,10 @@ Bullet g_pshot[MAX_PSHOT];
 u8  g_grav;
 s16 g_gx, g_gy, g_gcx, g_gcy;
 s16 g_pl_ymin, g_pl_ymax = PLAY_H - 16;
+s16 g_pl_dy;
 static s16 gvx, gvy;               /* 重力でついた速さ(固定小数点) */
+static u8  grav_key, grav_t;        /* 重力の種類と向き(替わったら立ち上げ直す)、替わってからのフレーム */
+#define WELL_R 56                   /* 渦(GRAV_CENTER)が引く範囲(ドット) */
 
 #define GV_MAX FX(1) + 8            /* 重力の速さの上限(1.5 ドット/フレーム) */
 
@@ -28,7 +31,7 @@ void player_init(void) {
     g_pl.x = START_X; g_pl.y = START_Y;
     g_pl.alive = 1; g_pl.invul = 120; g_pl.fire_cd = 0; g_pl.dead_t = 0;
     g_pl.lives = 3; g_pl.score = 0;
-    gvx = gvy = 0; g_grav = GRAV_NONE; g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16;
+    gvx = gvy = 0; g_grav = GRAV_NONE; g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; g_pl_dy = 0;
     for (i = 0; i < MAX_PSHOT; i++) g_pshot[i].on = 0;
 }
 
@@ -82,10 +85,24 @@ void player_update(void) {
         /* 重力: 放っておくと流される。重力に逆らう向きに入れると、その向きの流れは止まる */
         if (g_grav) {
             s16 ax = g_gx, ay = g_gy;
+            u8 key = (u8)(g_grav | ((g_gx & 3) << 2) | ((g_gy & 3) << 4));
+            if (key != grav_key) { grav_key = key; grav_t = 0; }
+            if (grav_t < 255) grav_t++;
             if (g_grav == GRAV_CENTER) {
-                ax = (s16)((g_gcx - PX(g_pl.x) - 8) >> 5); ay = (s16)((g_gcy - PX(g_pl.y) - 8) >> 5);
+                /* ★渦: 近づいたときだけ一定の強さで引く(画面の 1 点へ距離に比例して引くと、振り子のように回り続けて
+                   向きが毎フレーム変わり、人には追えなかった。ゴーファーの野望の重力面にならう。M7 の後) */
+                s16 dx = (s16)(g_gcx - PX(g_pl.x) - 8), dy = (s16)(g_gcy - PX(g_pl.y) - 8);
+                ax = ay = 0;
+                if (dx > -WELL_R && dx < WELL_R && dy > -WELL_R && dy < WELL_R) {
+                    ax = dx > 6 ? 1 : dx < -6 ? -1 : 0;
+                    ay = dy > 6 ? 1 : dy < -6 ? -1 : 0;
+                }
             }
-            gvx += ax; gvy += ay;
+            /* ★立ち上げ: 替わってから 40 フレームは掛けず、4 フレームに 1 回 → 2 フレームに 1 回 → 毎フレーム
+               (空中戦の直後にいきなり引かれるのはきつかった。予告は面が出す。M7 の後) */
+            if (!ax) gvx = gvx > 0 ? gvx - 1 : gvx < 0 ? gvx + 1 : 0;   /* 引かれない向きの流れは止まっていく */
+            if (!ay) gvy = gvy > 0 ? gvy - 1 : gvy < 0 ? gvy + 1 : 0;
+            if (!(grav_t < 40 || (grav_t < 100 && (grav_t & 3)) || (grav_t < 160 && (grav_t & 1)))) { gvx += ax; gvy += ay; }
             if (gvx > GV_MAX) gvx = GV_MAX; else if (gvx < -(GV_MAX)) gvx = -(GV_MAX);
             if (gvy > GV_MAX) gvy = GV_MAX; else if (gvy < -(GV_MAX)) gvy = -(GV_MAX);
             if ((g_in & IN_UP) && gvy > 0) gvy = 0;
@@ -124,8 +141,9 @@ void player_hit(void) {
 void player_draw(void) {
     u8 i;
     if (g_pl.alive && !(g_pl.invul & 4)) {
-        spr_put(PX(g_pl.x), PX(g_pl.y), PAT_SHIP_A, G_SHIP_A, 0);
-        spr_put(PX(g_pl.x), PX(g_pl.y), PAT_SHIP_B, G_SHIP_B, 0);  /* OR 合成(CC)= 直前の枠と重ねる */
+        s16 y = (s16)(PX(g_pl.y) + g_pl_dy);
+        spr_put(PX(g_pl.x), y, PAT_SHIP_A, G_SHIP_A, 0);
+        spr_put(PX(g_pl.x), y, PAT_SHIP_B, G_SHIP_B, 0);           /* OR 合成(CC)= 直前の枠と重ねる */
     }
     for (i = 0; i < MAX_PSHOT; i++) {
         const Bullet *b = &g_pshot[i];

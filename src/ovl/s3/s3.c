@@ -16,7 +16,7 @@
 #include "spr.h"
 #include "sprite_data.h"
 
-#define AIR_LEN  384
+#define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
 #define SINK_LEN 256
 #define S_TOP    (-192)
 
@@ -24,6 +24,19 @@ static u16 sec_wx, sec_t;
 static u8  bulk_t;
 static s16 scan_x;                 /* Scanner の測定線(停止の間) */
 static const u8 inside[3] = { 1, 1, 2 };
+
+/* ---- 隔壁(M7 の後): スプライトの柱で、すき間が 1 ドットずつ滑らかに上下する。★前は地図の列を 1.5 秒ごとに
+   書き換えて、すき間がいきなり別の高さへ跳び、予想できなかった。地図の隔壁の列は普通の通路にしてある ---- */
+#define PAT_PILLAR 60              /* 柱の絵(面ごとの絵の置き場) */
+#define GAP_H      50              /* すき間の高さ */
+static const u8 pillar_pat[32] = {    /* 16x16 の中の 4..11 列: 縁と斜めの縞(色は行ごと) */
+    0x0D, 0x0E, 0x0F, 0x0D, 0x0E, 0x0F, 0x0D, 0x0E, 0x0F, 0x0D, 0x0E, 0x0F, 0x0D, 0x0E, 0x0F, 0x0D,
+    0xB0, 0x70, 0xF0, 0xB0, 0x70, 0xF0, 0xB0, 0x70, 0xF0, 0xB0, 0x70, 0xF0, 0xB0, 0x70, 0xF0, 0xB0 };
+static u8 bulk_ph;                 /* すき間の位相(4 フレームに 1 進む。1 周 256 フレーム) */
+
+static s16 gap_top(u8 i) { return (s16)(94 - GAP_H / 2 + ((g_sin64[(u8)(bulk_ph + i * 21) & 63] * 48) >> 7)); }   /* 通り道 16..171 */
+static s16 bulk_sx(u8 i) { return (s16)((g_w0 + s3_bulk[i]) * 8u - g_wx); }
+static u8 bulk_at(u16 c) { u8 i; for (i = 0; i < S3_NBULK; i++) if (s3_bulk[i] == c) return i; return 0xFF; }
 
 static void set_streak(u8 on) {
     u8 i;
@@ -35,14 +48,15 @@ static void enter(u8 sec) {
     g_sec = sec; sec_wx = g_wx; sec_t = 0;
     g_wave_mirror = 0;
     switch (sec) {
-    case SEC3_AIR: case SEC3_SINK: case SEC3_ACCEL: case SEC3_TOP: enemy_waves(WAVES_AIR); break;
+    case SEC3_AIR: enemy_waves(g_calib ? WAVES_AIR : WAVES_SKY); break;
+    case SEC3_SINK: case SEC3_ACCEL: case SEC3_TOP: enemy_waves(WAVES_AIR); break;
     case SEC3_REV: g_wave_mirror = 1; enemy_waves(WAVES_AIR); break;
     default: enemy_waves(WAVES_NONE); break;
     }
     if (sec == SEC3_REV) g_col_rev = 31;                      /* 逆走: 窓は画面の左へ */
     if (sec == SEC3_MID) { g_col_rev = 16; b3_start(B3_MET); }   /* 振り子で前後: 窓は左右に半分ずつ */
     if (sec == SEC3_TOP) {
-        g_col_rev = 0; g_scroll_speed = g_calib ? 4 : 32; set_streak(!g_calib);
+        g_col_rev = 0; g_scroll_speed = g_calib ? 4 : 24; set_streak(!g_calib);
         g_map[S3_COL_STOP + 2] = 17; g_map[S3_COL_STOP + 6] = 16;   /* 停止の隔壁は開いている(まだ窓の外) */
         if (!g_calib) b3_load_dial();
     }
@@ -58,6 +72,8 @@ void ovl_init(void) {
     stage_load_strips(ASSET_S3_STRIPS_BANK, ASSET_S3_STRIPS_OFF);
     vdp_set_pal(6, 2, 2, 3);                                  /* 壁の影(暗い灰) */
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0;
+    { u8 i; for (i = 0; i < S3_NBULK; i++) g_map[s3_bulk[i]] = 14; }   /* 隔壁の列は通路にして、柱はスプライトで */
+    vdp_write_addr17(1, (u16)(0xF800u + PAT_PILLAR * 32u)); vdp_out_block(32, pillar_pat);
     if (g_calib) {                                            /* 7 面の試験 03: 白い空間から最高速の区間の終わりへ沈んで TACHOMETER */
         g_w0 = (u16)((g_wx >> 3) - (S3_COL_ARENA - 8 - 64));
         b3_load_dial();
@@ -74,34 +90,34 @@ static u16 col_of_screen(void) { return (u16)((g_wx >> 3) - g_w0); }
 static void terrain(void) {
     u16 c0 = (u16)(((g_wx + (u16)PX(g_pl.x)) >> 3) - g_w0), c;
     s16 lo = 0, hi = PLAY_H - 16;
-    if (g_sec < SEC3_SINK || g_sec == SEC3_OUT) { g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; return; }
+    /* ★沈む間は限りを掛けない(地形はまだ画面の下。掛けると自機が一番下へ押し込まれて見えた。M7 の後) */
+    if (g_sec <= SEC3_SINK || g_sec == SEC3_OUT) { g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; return; }
     for (c = c0; c <= (u16)(c0 + 2); c++) {
         u8 k;
         if (c >= S3_COLS) continue;
         k = g_map[c];
         if (s3_ymin[k] > lo) lo = s3_ymin[k];
         if (s3_ymax[k] < hi) hi = s3_ymax[k];
+        {   /* 隔壁の柱: その時のすき間 */
+            u8 b = bulk_at(c);
+            if (b != 0xFF && (g_sec == SEC3_ACCEL || g_sec == SEC3_TOP)) {
+                s16 t = gap_top(b);
+                if (t > lo) lo = t;
+                if (t + GAP_H - 16 < hi) hi = (s16)(t + GAP_H - 16);
+            }
+        }
     }
     lo -= g_scam; hi -= g_scam;
     if (hi < lo) hi = lo;                                     /* 閉じた隔壁: 押し戻される(上下には動けない) */
     g_pl_ymin = lo < 0 ? 0 : lo;
     g_pl_ymax = hi > PLAY_H - 16 ? PLAY_H - 16 : hi;
     /* 閉じた隔壁(すき間なし)の列に入ったら、左へ押し戻す */
-    if (s3_ymax[g_map[(u16)(c0 + 2) < S3_COLS ? (u16)(c0 + 2) : 0]] == 28 && g_pl.x > FX(8)) g_pl.x -= FX(1);
+    if (s3_ymax[g_map[(u16)(c0 + 2) < S3_COLS ? (u16)(c0 + 2) : 0]] == 16 && g_pl.x > FX(8)) g_pl.x -= FX(1);   /* 閉じた隔壁(限り 16..16) */
 }
 
-/* 隔壁: 窓の中のものを 1.5 秒ごとにすき間の位置を変えて描き直す */
+/* 隔壁: すき間の位相を進める */
 static void bulkheads(void) {
-    u8 i;
-    if (++bulk_t < 90) return;
-    bulk_t = 0;
-    for (i = 0; i < S3_NBULK; i++) {
-        u16 c = s3_bulk[i];
-        s16 sx = (s16)((g_w0 + c) * 8u - g_wx);
-        if (sx < 40 || sx > 400) continue;                    /* 自機の真上は替えない */
-        g_map[c] = (u8)(g_map[c] == 18 ? 16 : g_map[c] + 1);
-        stage_redraw_col((u16)(g_w0 + c));
-    }
+    if (!(++bulk_t & 3)) bulk_ph++;
 }
 
 void ovl_update(void) {
@@ -118,7 +134,7 @@ void ovl_update(void) {
     }
     case SEC3_ACCEL: {
         u16 c = col_of_screen();
-        s8 sp = c < 96 ? 2 : c < 144 ? 4 : c < 192 ? 8 : c < 240 ? 16 : 32;   /* 0.5 → 1 → 2 → 4 → 8 */
+        s8 sp = c < 96 ? 2 : c < 144 ? 4 : c < 192 ? 8 : c < 240 ? 16 : 24;   /* 0.5 → 1 → 2 → 4 → 6(★8 は狭い画面で避けきれなかった。M7 の後) */
         if (g_scroll_speed < sp && !(sec_t & 3)) g_scroll_speed++;
         set_streak(g_scroll_speed >= 16);
         bulkheads();
@@ -171,6 +187,16 @@ void ovl_logic(void) { b3_update(); }
 
 void ovl_draw(void) {
     b3_draw();
+    if (g_sec == SEC3_ACCEL || g_sec == SEC3_TOP) {           /* 隔壁の柱(すき間の上と下にスプライトを積む) */
+        u8 i;
+        for (i = 0; i < S3_NBULK; i++) {
+            s16 sx = bulk_sx(i), t, y;
+            if (sx < -12 || sx > 252) continue;
+            t = gap_top(i);
+            for (y = (s16)(t - 16); y > 16 - 16; y -= 16) spr_put(sx - 4, y < 16 ? 16 : y, PAT_PILLAR, G_ENEMY, 0);
+            for (y = (s16)(t + GAP_H); y < 172; y += 16) spr_put(sx - 4, y > 156 ? 156 : y, PAT_PILLAR, G_ENEMY, 0);
+        }
+    }
     if (g_sec == SEC3_STOP && sec_t > 40) {                   /* 測定線(スプライトを縦に 12 枚) */
         u8 i;
         for (i = 0; i < 12; i++) spr_put(scan_x - 8, (s16)(i * 16), PAT_SCAN, G_ENEMY, 0);

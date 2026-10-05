@@ -108,7 +108,9 @@ proc watch {} {
 after time 12.0 watch
 after time 15.0 { key 8 0x01 0.1 }
 after time 19.0 { debug write memory $INV 1; keymatrixdown 8 0x01 }
-for {set t 20} {\$t < 1000} {incr t 4} { after time \$t [list key 8 0x20 0.6]; after time [expr {\$t+2}] [list key 8 0x40 0.6] }
+# 上下を交互に押す(★KILOGRAM(区間 13)では押さない: 亀裂は ±4 ドットで、押すと狙いから外れる。M7 の後)
+proc keyx {row bit dur} { if {[rd $SEC] != 13} { key \$row \$bit \$dur } }
+for {set t 20} {\$t < 1000} {incr t 4} { after time \$t [list keyx 8 0x20 0.6]; after time [expr {\$t+2}] [list keyx 8 0x40 0.6] }
 # throttle off の画面は古いことがあるので、撮る前に少しだけ実時間で回す
 proc shot {name} { set ::throttle on; after time 0.2 [list apply {{n} { screenshot -raw "$OUT/m5_\$n.png"; set ::throttle off }} \$name] }
 proc finish {} {

@@ -12,23 +12,59 @@
 #include "rom.h"
 #include "assets.h"
 #include "s2_data.h"
+#include "snd.h"
+#include "snd_data.h"
+#include "spr.h"
 
-#define AIR_LEN  384               /* 空中戦の残り(ドット) */
+#define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
 #define SINK_LEN 256               /* 沈む(g_scam が -192 → 0) */
 #define S_TOP    (-192)
 
 static u16 sec_wx, sec_t;
 static const u8 space[3] = { 0, 0, 1 };
 
+/* ---- 渦(重力・中心の区間。M7 の後): 地図に固定した 3 つの渦。近づいたときだけ引く(player.c の GRAV_CENTER)。
+   ★前は画面の 1 点へ距離に比例して引いていて、自機が振り子のように回り続け、向きが毎フレーム変わって見えた
+   (ゴーファーの野望の重力面にならい、渦を見せて、近づくと引かれる形に) ---- */
+#define PAT_WELL 44                /* 渦の絵 4 コマ(44..47。面ごとの絵の置き場) */
+#define NWELL 3
+static const u16 well_col[NWELL] = { 296, 340, 384 };
+static const u8  well_y[NWELL]   = { 52, 112, 62 };      /* 左上(通り道は 26..162 行) */
+static const u8 well_pat[4][32] = {
+    { 0x00, 0x0C, 0x10, 0x30, 0x20, 0x21, 0x21, 0x23, 0x33, 0x11, 0x0F, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xF0, 0x88, 0xCC, 0xC4, 0x84, 0x84, 0x04, 0x0C, 0x08, 0x30, 0x00 },
+    { 0x00, 0x03, 0x06, 0x08, 0x18, 0x10, 0x11, 0x13, 0x0B, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x00, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0xF0, 0xD0, 0xC8, 0x88, 0x08, 0x18, 0x10, 0x60, 0xC0, 0x00 },
+    { 0x00, 0x00, 0x01, 0x03, 0x04, 0x04, 0x0D, 0x07, 0x07, 0x01, 0x40, 0x40, 0x30, 0x1F, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x0C, 0x02, 0x02, 0x80, 0xE0, 0xE0, 0xB0, 0x20, 0x20, 0xC0, 0x80, 0x00, 0x00 },
+    { 0x00, 0x00, 0x00, 0x00, 0x43, 0x42, 0x43, 0x43, 0x43, 0x61, 0x20, 0x18, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x18, 0x04, 0x86, 0xC2, 0xC2, 0xC2, 0x42, 0xC2, 0x00, 0x00, 0x00, 0x00 },
+};
+static void warn(const char *s) { stage_banner(s); pcm_req(PCM_V02); }   /* 重力が替わる予告(帯と声) */
+
+static s16 well_sx(u8 i) { return (s16)((s16)(well_col[i] - (u16)((g_wx >> 3) - g_w0)) * 8 - (s16)(g_wx & 7)); }
+
+/* 中心の区間: 自機にいちばん近い画面の中の渦を、重力の中心にする */
+static void wells(void) {
+    u8 i, best = 0xFF;
+    s16 bd = 0x7FFF;
+    for (i = 0; i < NWELL; i++) {
+        s16 sx = well_sx(i), d = (s16)(sx - PX(g_pl.x));
+        if (sx < -16 || sx > 256) continue;
+        if (d < 0) d = -d;
+        if (d < bd) { bd = d; best = i; }
+    }
+    if (best == 0xFF) { g_grav = GRAV_NONE; return; }
+    g_grav = GRAV_CENTER; g_gcx = (s16)(well_sx(best) + 8); g_gcy = (s16)(well_y[best] + 8);
+}
+
 static void enter(u8 sec) {
     g_sec = sec; sec_wx = g_wx; sec_t = 0;
     switch (sec) {
+    case SEC2_AIR: enemy_waves(WAVES_SKY); break;
     case SEC2_SINK: case SEC2_DOWN: case SEC2_FLIP: case SEC2_CENTER: enemy_waves(WAVES_AIR); break;
     default: enemy_waves(WAVES_NONE); break;
     }
-    if (sec == SEC2_DOWN) { g_grav = GRAV_DIR; g_gx = 0; g_gy = 1; }
+    if (sec == SEC2_DOWN) warn("WARNING  GRAVITY  DOWN");    /* ★重力は予告の後(DOWN の 90 フレーム目)。M7 の後 */
+    if (sec == SEC2_FLIP) warn("WARNING  GRAVITY  REVERSE");
     if (sec == SEC2_MID) { g_grav = GRAV_NONE; b2_start(B2_CW); }
-    if (sec == SEC2_CENTER) { g_grav = GRAV_CENTER; g_gcx = 128; g_gcy = 94; if (!g_calib) b2_prepare(); }
+    if (sec == SEC2_CENTER) { g_grav = GRAV_NONE; if (!g_calib) { b2_prepare(); warn("WARNING  GRAVITY  WELLS"); } }
     if (sec == SEC2_BOSS) { g_grav = GRAV_NONE; b2_start(B2_KG); }
     if (sec == SEC2_OUT) {
         u8 i;
@@ -38,6 +74,8 @@ static void enter(u8 sec) {
 }
 
 void ovl_init(void) {
+    u8 i;
+    for (i = 0; i < 4; i++) { vdp_write_addr17(1, (u16)(0xF800u + (PAT_WELL + i) * 32u)); vdp_out_block(32, well_pat[i]); }
     stage_reset_ground();
     g_w0 = (u16)((g_wx + AIR_LEN) >> 3);
     rom_to_ram(ASSET_S2_MAP_BANK, ASSET_S2_MAP_OFF, g_map, S2_COLS);
@@ -61,7 +99,8 @@ static void terrain(void) {
     u16 c0 = (u16)(((g_wx + (u16)PX(g_pl.x)) >> 3) - g_w0), c1 = (u16)(c0 + 2);
     s16 top = 0, bot = 188;
     u16 c;
-    if (g_sec < SEC2_SINK || g_sec == SEC2_OUT) { g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; return; }
+    /* ★沈む間は限りを掛けない(地形はまだ画面の下。掛けると自機が一番下へ押し込まれて見えた。M7 の後) */
+    if (g_sec <= SEC2_SINK || g_sec == SEC2_OUT) { g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; return; }
     for (c = c0; c <= c1; c++) {
         u8 k;
         if (c >= S2_COLS) continue;
@@ -86,18 +125,18 @@ void ovl_update(void) {
         if (d >= SINK_LEN) { g_scam_q = 0; enter(g_calib ? SEC2_CENTER : SEC2_DOWN); }
         else {
             g_scam_q = (s16)(S_TOP * 16 + (s16)(d * 12u));    /* 192 行 / 256 ドット(× 16) */
-            if (d > 128) { g_grav = GRAV_DIR; g_gx = 0; g_gy = 1; }   /* 沈む途中から重力 */
         }
         break;
     }
     case SEC2_DOWN:
+        if (sec_t == 90) { g_grav = GRAV_DIR; g_gx = 0; g_gy = 1; }
         if (col_of_screen() >= S2_COL_FLIP) enter(SEC2_FLIP);
         break;
     case SEC2_FLIP:
-        /* 警告の後、1/2 秒かけて画面が縦に一周する。回り終えたら重力は上向き */
-        if (sec_t < 30) g_grav = GRAV_NONE;
-        else if (sec_t < 62) g_roll = (u8)(g_roll + 8);
-        else if (sec_t == 62) { g_roll = 0; g_grav = GRAV_DIR; g_gy = -1; }
+        /* 予告(1.5 秒)の後、1/2 秒かけて画面が縦に一周する。回り終えたら重力は上向き(player.c が強さを立ち上げる) */
+        if (sec_t < 90) g_grav = GRAV_NONE;
+        else if (sec_t < 122) g_roll = (u8)(g_roll + 8);
+        else if (sec_t == 122) { g_roll = 0; g_grav = GRAV_DIR; g_gy = -1; }
         if (col_of_screen() + 8 >= S2_COL_ARENA1) enter(SEC2_MID);
         break;
     case SEC2_MID:
@@ -110,7 +149,7 @@ void ovl_update(void) {
         }
         break;
     case SEC2_CENTER:
-        g_gcx = 128; g_gcy = 94;
+        if (!g_calib) wells();
         if (col_of_screen() + 8 >= S2_COL_ARENA2) enter(SEC2_BOSS);
         break;
     case SEC2_OUT:
@@ -132,7 +171,16 @@ void ovl_update(void) {
 }
 
 void ovl_logic(void) { b2_update(); }
-void ovl_draw(void) { b2_draw(); }
+void ovl_draw(void) {
+    if (g_sec == SEC2_CENTER && !g_calib) {                   /* 渦(回る絵。1 枚で行ごとの色) */
+        u8 i;
+        for (i = 0; i < NWELL; i++) {
+            s16 sx = well_sx(i);
+            if (sx > -16 && sx < 256) spr_put(sx, well_y[i], (u8)(PAT_WELL + (((sec_t >> 2) + i) & 3)), G_ENEMY, 0);
+        }
+    }
+    b2_draw();
+}
 void ovl_vram(void) { b2_vram(); }
 
 /* 地面の帯: 宇宙の色(色 1)と、KILOGRAM の重力レンズ(球の上と下の HR ポーリング帯) */

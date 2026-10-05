@@ -15,7 +15,7 @@
 #include "s5_data.h"
 #include "ghost.h"
 
-#define AIR_LEN  256
+#define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
 #define SINK_LEN 256
 #define S_TOP    (-192)
 
@@ -41,7 +41,8 @@ static u16 col_of_screen(void) { return s5_col_at(0); }
 static void enter(u8 sec) {
     g_sec = sec; sec_wx = g_wx; sec_t = 0;
     switch (sec) {
-    case SEC5_AIR: case SEC5_APPROACH: enemy_waves(WAVES_AIR); break;
+    case SEC5_AIR: enemy_waves(WAVES_SKY); break;
+    case SEC5_APPROACH: enemy_waves(WAVES_AIR); break;
     case SEC5_BOW: case SEC5_DECK: enemy_waves(WAVES_CITY); break;
     default: enemy_waves(WAVES_NONE); break;
     }
@@ -206,7 +207,7 @@ void ovl_update(void) {
             }
             if (wreck_b >= 120 && sec_t > 400) { enter(SEC5_OUT); g_scroll_speed = 4; }
         }
-        g_pl_ymin = 0; g_pl_ymax = 30;                        /* 自機は空へ(沈む帯ではスプライトがずれる) */
+        g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16;
         break;
     case SEC5_OUT:                                            /* 宇宙へ上がる(沈んだ帯のまま) */
         if (g_calib) { cam_to = S_TOP * 16; if (calib_out(sec_t)) return; break; }
@@ -216,6 +217,7 @@ void ovl_update(void) {
             g_bands_all = 0;
             stage_banner("STAGE 6 / GNOMON CITADEL");
             ovl_request(OVL_S6);
+            g_pl_dy = 0;
             g_sec = SEC5_OUT + 1;                              /* = 6 面の空中戦(SEC6_AIR) */
             return;
         }
@@ -228,7 +230,14 @@ void ovl_update(void) {
         if (g_scam_q < cam_to) { g_scam_q += 16; if (g_scam_q > cam_to) g_scam_q = cam_to; }
         else if (g_scam_q > cam_to) { g_scam_q -= 16; if (g_scam_q < cam_to) g_scam_q = cam_to; }
     }
-    if (g_sec == SEC5_WRECK || g_sec == SEC5_OUT) return;
+    /* ★沈む帯(56..111 は wreck_a、112..171 は wreck_b だけ R#23 を減らす)ではスプライトが同じだけ下にずれるので、
+       自機を描く y で打ち消す(前は自機を上の 30 ドットへ押し上げていた = 勝手に動いて見えた。M7 の後) */
+    if (g_sec == SEC5_WRECK || g_sec == SEC5_OUT) {
+        s16 yc = (s16)(PX(g_pl.y) + 8);
+        g_pl_dy = yc >= 112 && yc < 172 ? -wreck_b : yc >= 56 && yc < 112 ? -wreck_a : 0;
+        return;
+    }
+    g_pl_dy = 0;
     if (g_sec < SEC5_APPROACH) { g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; }
     else terrain();
 }

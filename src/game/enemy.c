@@ -7,6 +7,7 @@
    ・敵弾: Tick / Tock がときどき自機を狙って撃つ(2 ドット/フレーム)。
    ・台本は区間ごと(g_wave_set): 空中戦は 1200 フレームで一周、都市はまばらな編隊、それ以外は出さない。 */
 #include "game.h"
+#include "ovl.h"
 #include "snd.h"
 void pcmx_service(void);   /* snd.c: PCM 方式 B の送出口 */
 #include "spr.h"
@@ -120,6 +121,15 @@ static const Wave script_air[] = {
     {  760, E_TICK, 140,  0 }, {  770, E_TOCK,  40,  0 }, {  900, E_NOTCH, 0,  1 },
     { 1000, E_TICK,  70,  0 }, { 1080, E_NOTCH, 0, -1 },
 };
+static const Wave script_sky[] = {                /* 空中戦(約 20 秒): 編隊を重ね、上下からの突っ込みも挟む(★短すぎた。M7 の後)。★終わりの 5 秒は出さない
+                                                  (残った編隊が次の重い区間に重なって遅れた) */
+    {   30, E_TICK,  40,  0 }, {   90, E_TOCK, 136,  0 }, {  150, E_NOTCH, 0,  1 },
+    {  202, E_TICK,  96,  0 }, {  255, E_TOCK,  48,  0 }, {  307, E_NOTCH, 0, -1 },
+    {  360, E_TICK, 140,  0 }, {  405, E_TICK,  30,  0 }, {  465, E_TOCK,  90,  0 },
+    {  517, E_NOTCH, 0,  1 }, {  555, E_NOTCH, 0, -1 }, {  615, E_TOCK,  40,  0 },
+    {  645, E_TICK, 130,  0 }, {  705, E_TICK,  70,  0 }, {  750, E_NOTCH, 0,  1 },
+    {  795, E_TOCK, 110,  0 }, {  840, E_NOTCH, 0, -1 },
+};
 static const Wave script_city[] = {               /* 都市: 砲台が主役。編隊は上空(ビルより上)をまばらに */
     {  240, E_TICK,  30,  0 }, {  700, E_NOTCH, 0,  1 }, {  950, E_TOCK,  24,  0 },
 };
@@ -135,6 +145,7 @@ static void run_script(void) {
     u8 i, n;
     if (g_wave_set == WAVES_AIR) { w = script_air; n = sizeof(script_air) / sizeof(script_air[0]); }
     else if (g_wave_set == WAVES_CITY) { w = script_city; n = sizeof(script_city) / sizeof(script_city[0]); }
+    else if (g_wave_set == WAVES_SKY) { w = script_sky; n = sizeof(script_sky) / sizeof(script_sky[0]); }
     else return;
     if (++wave_t >= LOOP) wave_t = 0;
     for (i = 0; i < n; i++)
@@ -227,7 +238,8 @@ static void move_enemy(Enemy *e) {
             u16 px = (u16)(e->turned == 2 ? 256 - PX(e->x) : PX(e->x));   /* 左から来る編隊は左右を返す */
             e->y = e->y0 + (((s16)g_sin64[(u8)((u8)(((px + 32) * 85u) >> 8) + e->phase) & 63] * 5) >> 1);
         }
-        if (e->x < FX(240) && e->x > FX(72) && (rnd8() < (u8)(g_loop ? 4 : 2))) enemy_fire(e);
+        /* 2 周目と、3 面から先の空中戦は倍撃つ(M7 の後) */
+        if (e->x < FX(240) && e->x > FX(72) && (rnd8() < (u8)(g_loop || (g_wave_set == WAVES_SKY && g_ovl >= OVL_S3) ? 4 : 2))) enemy_fire(e);
     }
     if (e->x < FX(-16) && e->turned != 2) kill_enemy(e, 0);
     else if (e->x > FX(280) || e->y < FX(-80) || e->y > FX(PLAY_H + 80)) kill_enemy(e, 0);

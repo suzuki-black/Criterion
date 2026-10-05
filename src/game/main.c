@@ -54,19 +54,76 @@ u16 g_frame_t0;                    /* このフレームの始まり(S1990 タ�
 #define COL_DEADLINE (150u * 16u)  /* これを過ぎていたらスプライトの色表の書き込みを次のフレームへ */
 #define SPR_DEADLINE (100u * 16u)  /* スプライトの段に入る時点でこれを過ぎていたら、そのフレームは描き直さない
                                       (スプライト・属性表・VRAM の仕事で残り 140 ライン前後かかる) */      /* 1 = 被弾しない(自動テスト用) */
-/* 段ごとの所要時間(S1990 タイマのカウント。1 ライン ≒ 16.27): 入力・自機・敵・スプライト・ラスター・HUD */
-#define NPROF 6
-volatile u16 g_prof_max[NPROF];
-volatile u32 g_prof_sum[NPROF];
-static u16 prof_t;
-static void prof(u8 k) {
-    u16 now = sys_timer(), d = (u16)(now - prof_t);
-    prof_t = now;
-    if (d > g_prof_max[k]) g_prof_max[k] = d;
-    g_prof_sum[k] += d;
-}
 
 static u8 state;
+
+/* ---- デモ(M7 の後、指摘 B8): タイトルで 15 秒触らないと、自動操縦の 1 面でパワーアップの使い方を見せる。
+   何か押すとタイトルへ戻る。説明は面の開始表示の帯に出す(フォントは英大文字・数字と - . " , / だけ) ---- */
+u8 g_demo;
+static u16 demo_t;
+static u8 demo_step, demo_seen, demo_prev;
+static void demo_input(void) {
+    u8 v = IN_A, i;
+    s16 px = (s16)(PX(g_pl.x) + 8), py = (s16)(PX(g_pl.y) + 8), tx = 56, ty = 90, bd = 0x7FFF;
+    demo_t++;
+    for (i = 0; i < MAX_ITEM; i++)                             /* アイテムがあれば取りに行く */
+        if (g_item[i].on) { tx = PX(g_item[i].x); ty = PX(g_item[i].y); bd = 0; break; }
+    if (bd) for (i = 0; i < MAX_ENEMY; i++) {                  /* 無ければ前にいちばん近い敵の高さへ */
+        s16 ex;
+        if (!g_enemy[i].type) continue;
+        ex = PX(g_enemy[i].x);
+        if (ex > px && (s16)(ex - px) < bd) { bd = (s16)(ex - px); ty = PX(g_enemy[i].y); }
+    }
+    if (py < ty - 3) v |= IN_DOWN; else if (py > ty + 3) v |= IN_UP;
+    if (px < tx - 3) v |= IN_RIGHT; else if (px > tx + 3) v |= IN_LEFT;
+    if (!(demo_seen & 1) && !bd) { demo_seen |= 1; stage_banner("FORMATION DOWN - QUANTA"); }
+    if (!(demo_seen & 2) && g_gauge.cursor) { demo_seen |= 2; stage_banner("QUANTA MOVES THE CURSOR"); }
+    /* THRUST(1)→ ECHO(2)で確定、最後は中心(4)で LIMIT BREAK */
+    if (g_gauge.armed && !(demo_prev & IN_B) && demo_step < 3 && g_gauge.cursor == (u8)(demo_step == 2 ? 4 : demo_step + 1)) {
+        v |= IN_B;
+        stage_banner(++demo_step == 3 ? "CENTER / B - LIMIT BREAK" : "PRESS B - POWER UP");
+    }
+    g_in_edge = (u8)(v & ~demo_prev);
+    g_in = demo_prev = v;
+}
+
+/* ---- 撃破の演出(M7 の後、指摘 C4): 中ボス = ちょっとした破壊、面ボス = 派手、ラスボス = やり過ぎなくらい。
+   ボスが BS_DYING になった区間で段階を決め、画面の揺れ(R#23 に足す g_roll)・閃光(色 0)・爆発の追加・爆発音を出す。
+   ★区間の番号は各面の sN.h の enum と合わせる(本体は面のヘッダを取り込まないので数で持つ) ---- */
+static const u8 boss_sec[] = { 5, 13, 22, 31, 41, 50, 53, 60, 61 };   /* 1〜6 面のボス、7 面 LIBRA、8 面の第 1・第 2 形態 */
+#define SEC_LAST 62                                                   /* 8 面の第 3 形態(SEC8_BOSS3) */
+static u8 juice_t, juice_tier, juice_len, bs_last;
+static void juice(void) {
+    u8 s = g_boss_state;
+    if (s == BS_DYING && bs_last != BS_DYING) {
+        u8 i;
+        juice_tier = 1;
+        if (!g_calib) {
+            if (g_sec == SEC_LAST) juice_tier = 3;
+            else for (i = 0; i < sizeof boss_sec; i++) if (boss_sec[i] == g_sec) juice_tier = 2;
+        }
+        juice_len = juice_t = juice_tier == 1 ? 45 : juice_tier == 2 ? 120 : 255;
+    }
+    bs_last = s;
+    if (!juice_t) return;
+    juice_t--;
+    {   /* 揺れ: 段階で幅を変え(±2 / ±4 / ±8)、終わりへ向けて小さく(★毎フレームの経路なので % を使わない) */
+        u8 m = (u8)(juice_tier == 1 ? 3 : juice_tier == 2 ? 7 : 15);
+        if (juice_t < 10) m >>= 2; else if (juice_t < 20) m >>= 1;
+        g_roll = juice_t ? (u8)((rnd8() & m) - (m >> 1)) : 0;
+    }
+    {   /* 閃光: 中ボス 1 回、面ボス 3 回、ラスボスは何度も(最後は白く飛ぶ) */
+        u8 e = (u8)(juice_len - juice_t), on;
+        if (juice_tier == 1) on = e < 2;
+        else if (juice_tier == 2) on = e < 3 || (e >= 30 && e < 32) || (e >= 70 && e < 72);
+        else on = (e < 4) || !(e & 15) || (juice_t < 24 && juice_t > 8);
+        if (on) vdp_set_pal(0, 7, 7, 7); else vdp_set_pal(0, 0, 0, 0);
+    }
+    /* ★爆発を足すのはラスボスだけ(爆発は G_MISC の 4 枠を ∞ と取り合って枠の色を書き直すので重く、処理落ちで
+       撃破が長引いた。ボスは撃破の間それぞれ爆発を出している) */
+    if (juice_tier == 3 && !(juice_t & 7)) fx_spawn(FX(64 + (rnd8() & 127)), FX(24 + (rnd8() & 127)));
+    if (juice_tier >= 2 && !(juice_t & 31)) sfx(SFX_BOOM);
+}
 
 void game_start(void) {
     player_init();
@@ -148,6 +205,7 @@ void main(void) {
     g_stat.idle_min = 0xFFFF;
 
     for (;;) {
+        static u8 demo_end;
         static u8 col_now, col_done;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
         u16 late0 = g_frame_late, idle;
         u8 ph;
@@ -162,31 +220,34 @@ void main(void) {
         g_stat.frames++;
         g_stat.idle_sum += idle;
 
-        prof_t = sys_timer();
         /* 音: 選曲と演出 → ドライバ。★毎フレーム必ず回す(先送りすると音が固まって出て、リズムがもたついた。M7 の測定で
            16 分音符の半分が 1 フレームより大きくずれた) */
+        juice();
         music_frame(state == ST_OVER); pcmx_service(); snd_frame(); pcmx_service();   /* ★間にも PCM の送出口(合わせて約 0.7ms。M7) */
         pcm_keep();
         if (g_phase >= PH_AIR) stage_pump_nb();   /* 列の描き込みと GHOST: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
         input_read();
-        prof(0);
+        if (g_demo) {                                          /* デモ: 何か押すか 50 秒でタイトルへ */
+            if (g_in || demo_t >= 3000) { g_demo = 0; demo_end = 1; }
+            else demo_input();
+        }
         ph = g_phase;
         if (ph <= PH_SORTIE) title_update();
         bg_scroll();
         if (g_phase >= PH_AIR) stage_update();   /* 敵(砲台)が世界の位置を使うので、敵より先に */
         infx_update();
         if (ph >= PH_SORTIE && state == ST_PLAY) {
-            if (g_dbg_invul) g_pl.invul = 2;
+            if (g_dbg_invul || g_demo) g_pl.invul = 2;
             player_update();
-            prof(1);
             if (ph >= PH_AIR) { stage_pump_nb(); if (!g_slow) { enemy_update(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_logic(); } }
-            prof(2);
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
                 state = ST_OVER;
                 font_text(HUD_PAGE, 136, HUD_ROW1, 13, 0, "GAME OVER");
             }
-        } else if (state == ST_OVER && (g_in_edge & IN_A)) {
-            /* ★ネームエントリーと巻き戻しは M8。今はタイトルの素材を読み直して起動ロゴから(読む間は表示を止める) */
+        } else if (state == ST_OVER && (g_in_edge & IN_A)) demo_end = 1;
+        if (demo_end) {
+            /* ★ネームエントリーと巻き戻しは M8。今はタイトルの素材を読み直して起動ロゴから(読む間は表示を止める)。
+               デモの終わりも同じ */
             *(volatile u8 *)0xF3E0 &= 0xBF;
             vdp_wreg(1, *(volatile u8 *)0xF3E0);
             bg_init();                   /* 表示リングは都市や空に描き替わっている */
@@ -195,6 +256,7 @@ void main(void) {
             game_start();
             title_start();
             frame_begin();
+            demo_end = 0; demo_t = 0; demo_step = 0; demo_seen = 0; demo_prev = 0;
         }
 
         /* ★処理落ちのフレームはスプライトも描き直さない(前のフレームの属性表のまま。敵は動いていないので
@@ -231,15 +293,12 @@ void main(void) {
         /* HUD の文字は次のフレームへ回してよい: フレームの残りが少なければ書かない(VDP のコマンドと重なると
            2 行の書き込みが 50 ライン近くかかることがある) */
         if (g_hud_on && (g_phase < PH_AIR || (u16)(sys_timer() - g_frame_t0) < HUD_DEADLINE)) hud_update();
-        prof(3);
         if (g_phase <= PH_SORTIE) { title_vram(); title_build(); }
         else { stage_vram(); stage_build(); }
-        prof(4);
         if (g_phase == PH_LOGO && g_pt == 2) {                 /* 起動ロゴのラスターリストが効いてから表示を戻す */
             *(volatile u8 *)0xF3E0 |= 0x40;
             vdp_wreg(1, *(volatile u8 *)0xF3E0);
         }
-        prof(5);
 
         g_pt++;
         g_stat.state = state;

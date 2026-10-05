@@ -53,8 +53,9 @@ set ::legion_wait 0
 after time 16.6 { keymatrixdown 8 0x01 }
 after time 16.8 { keymatrixup 8 0x01 }
 after time 19.0 { debug write memory $INV 1; keymatrixdown 8 0x01; watch }
-after time 45 { dump city }
-after time 85 { dump rotor }
+# ★1 面の空中戦を 512 → 1024 ドットに延ばした(M7 の後)ので、都市の時刻は 8.5 秒遅れる
+after time 54 { dump city }
+after time 94 { dump rotor }
 after time 200 { puts \$::f "timeout"; close \$::f; exit }
 TCL
 timeout 600 openmsx -machine "$MACHINE" -carta "$ROM" -romtype ASCII8 -script "$T" >/dev/null 2>&1 || true

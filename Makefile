@@ -121,8 +121,10 @@ GAME_CODE0_CORE := $(CODE0_CORE:%=$(BUILD)/%.rel)
 # 選曲と効果音(music.c)は CODE0 へ(常駐に空きが無い)
 $(BUILD)/g_music.rel: src/game/music.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) --opt-code-size $(DEFS) --codeseg CODE0 --constseg CODE0 -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+# 毎フレームの重い経路を自分では持たないファイルは大きさを優先する(常駐の空き。M7 の後。hud.c は逆に太ったので外した)
+SIZE_FIRST := main bg infx
 $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(SIZE_FIRST),$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 # ---- オーバレイ(src/include/ovl.h): ページ 0 の OVL_BASE..OVL_END へ ROM から読み込む場面のコード ----
 #   本体を先にリンクし、本体の .noi から大域シンボルを絶対番地で定義した resident.rel を作って、オーバレイを

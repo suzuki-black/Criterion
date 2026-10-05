@@ -15,7 +15,7 @@
 #include "s4_data.h"
 #include "ghost.h"
 
-#define AIR_LEN  256
+#define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
 #define SINK_LEN 256
 #define S_TOP    (-192)
 #define HAZE_LINE 149              /* 陽炎帯(画面の下 32 ライン)。HUD の項目(188 行)の手前 RAS_GAP まで */
@@ -46,7 +46,8 @@ static const u8 sky_dusk[S4_NL][3] = {
 static void enter(u8 sec) {
     g_sec = sec; sec_wx = g_wx; sec_t = 0;
     switch (sec) {
-    case SEC4_AIR: case SEC4_UPPER: case SEC4_SEA: case SEC4_HAZE: enemy_waves(WAVES_AIR); break;
+    case SEC4_AIR: enemy_waves(WAVES_SKY); break;
+    case SEC4_UPPER: case SEC4_SEA: case SEC4_HAZE: enemy_waves(WAVES_AIR); break;
     /* 大河は RULER の砲台が相手(編隊も出すと 12 帯 + 体節の当たりと重なって遅れた) */
     default: enemy_waves(WAVES_NONE); break;
     }
@@ -112,23 +113,24 @@ static void flow(void) {
     u8 i;
     if (v_want && !(sec_t & 3))                               /* 速さはゆっくり替える(帯がいきなり跳ねない) */
         for (i = 0; i < S4_NL; i++) { if (bv[i] < v_want[i]) bv[i]++; else if (bv[i] > v_want[i]) bv[i]--; }
-    {
-        u16 nx = bg_layer_x(2);
-        for (i = 0; i < S4_NL; i++) {
-            bq[i] += (u16)(s16)bv[i];
-            if (hold[i] == 0xFFFF) bx[i] = (u16)(nx + (bq[i] >> 2));
+    {   /* ★添字でなくポインタで回す(SDCC は配列の添字のたびに番地を計算し直して重かった。M7 の後) */
+        u16 nx = bg_layer_x(2), *q = bq, *x = bx, *h = hold;
+        const s8 *v = bv;
+        for (i = 0; i < S4_NL; i++, q++, x++, h++, v++) {
+            *q += (u16)(s16)*v;
+            if (*h == 0xFFFF) *x = (u16)(nx + (*q >> 2));
         }
     }
 }
 
 static void haze(void) {
-    u8 i, ph = (u8)(sec_t << 1);
-    u16 x = s4_band_x(8);                                     /* R#26 は上の帯(層 8)のまま(FINE は R#27 だけ書く) */
-    for (i = 0; i < HAZE_N; i++) {
-        s8 sv = g_sin64[(u8)(ph + i * 5) & 63];
-        u8 a = (u8)(sv + 128) >> 5;                           /* 0..7 */
-        if (sec_t < 64) a = (u8)((a * sec_t) >> 6);           /* 揺らぎは少しずつ */
-        haze_tbl[i * 2] = VDP_R26(x); haze_tbl[i * 2 + 1] = a;
+    /* ★添字の掛け算と R#26 の計算をループの外へ(1 行 53us かかり、陽炎だけで 1 フレームに 1.7ms 使って遅れた。M7 の後) */
+    u8 i, k = (u8)(sec_t << 1), r26 = VDP_R26(s4_band_x(8));  /* R#26 は上の帯(層 8)のまま(FINE は R#27 だけ書く) */
+    u8 *p = haze_tbl, ramp = sec_t < 64 ? (u8)sec_t : 64;
+    for (i = 0; i < HAZE_N; i++, k += 5) {
+        u8 a = (u8)((u8)(g_sin64[k & 63] + 128) >> 5);       /* 0..7 */
+        if (ramp < 64) a = (u8)((a * ramp) >> 6);             /* 揺らぎは少しずつ */
+        *p++ = r26; *p++ = a;
     }
 }
 

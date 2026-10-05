@@ -121,7 +121,7 @@ void enemy_init(void);
 void enemy_update(void);
 void enemy_draw(void);
 void limit_break(void);             /* ∞: 画面の敵と弾を一掃 */
-enum { WAVES_NONE, WAVES_AIR, WAVES_CITY };
+enum { WAVES_NONE, WAVES_AIR, WAVES_CITY, WAVES_SKY };   /* SKY = 面の頭の空中戦(長く濃い。M7 の後) */
 void enemy_waves(u8 set);           /* 出現の台本を区間に合わせて切り替える(時刻は 0 から) */
 extern u8 g_wave_mirror;            /* 1 = 編隊を左から出す(3 面の逆走) */
 void enemy_spawn_spirit(u16 wx, u8 roof);
@@ -146,6 +146,8 @@ enum { GRAV_NONE, GRAV_DIR, GRAV_CENTER };
 extern u8  g_grav;
 extern s16 g_gx, g_gy, g_gcx, g_gcy;
 extern s16 g_pl_ymin, g_pl_ymax;    /* ドット(自機の左上の y) */
+extern s16 g_pl_dy;
+extern u8  g_demo;                  /* 1 = デモ(自動操縦。main.c) */                 /* 自機を描くときに y へ足す(帯の R#23 でスプライトがずれる場面の打ち消し。普段は 0) */
 extern u8  g_roll;                  /* 画面の縦のロール(R#23 に足す。スプライトは動かさない) */
 /* ---- ∞ の紋章(infx.c。ROTOR のスプライト用) ---- */
 void infx_start(s16 x, s16 y);      /* 確定の演出: (x, y) から画面の中央へ */

@@ -197,7 +197,9 @@ static void kg_update(void) {
         g_gx = r == 0 ? 1 : r == 1 ? -1 : 0; g_gy = r == 2 ? 1 : r == 3 ? -1 : 0;
     }
     /* 赤道の亀裂(開いている間だけ傷が入る)。球の他の所に当たった弾は吸い込まれる */
-    if (open_t >= 240) { u8 n = shot_hit(KG_X, KG_Y, 26, 4); g_boss_aim = KG_Y; while (n--) hurt(1); }
+    /* ★亀裂の横幅は球と同じにする(弾は 1 フレームに 8 ドット進むので、亀裂を ±26 にすると、自機の位置しだいで弾が
+       球の縁(±28)の 2 ドットに入って先に吸い込まれ、亀裂の高さを撃っても当たらなかった。M7 の後) */
+    if (open_t >= 240) { u8 n = shot_hit(KG_X, KG_Y, 28, 4); g_boss_aim = KG_Y; while (n--) hurt(1); }
     shot_hit(KG_X, KG_Y, 28, 28);
     touch(KG_X, KG_Y, 26);
     /* 小衛星 */

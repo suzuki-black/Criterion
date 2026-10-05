@@ -93,7 +93,10 @@ proc watch {} {
 after time 12.0 watch
 after time 15.0 { key 8 0x01 0.1 }
 after time 19.0 { debug write memory $INV 1; keymatrixdown 8 0x01 }
-for {set t 20} {\$t < 700} {incr t 4} { after time \$t [list key 8 0x20 0.6]; after time [expr {\$t+2}] [list key 8 0x40 0.6] }
+# 上下を交互に押す(★KILOGRAM(区間 13)では押さない: 亀裂は ±4 ドットで、押すと狙いから外れる。前は画面の 1 点へ
+#   引く重力がたまたま亀裂の高さへ引き戻していた。渦は近くでしか引かない。M7 の後)
+proc keyx {row bit dur} { if {[rd $SEC] != 13} { key \$row \$bit \$dur } }
+for {set t 20} {\$t < 700} {incr t 4} { after time \$t [list keyx 8 0x20 0.6]; after time [expr {\$t+2}] [list keyx 8 0x40 0.6] }
 # throttle off の画面は古いことがあるので、撮る前に少しだけ実時間で回す
 proc shot {name} { set ::throttle on; after time 0.2 [list apply {{n} { screenshot -raw "$OUT/m4_\$n.png"; set ::throttle off }} \$name] }
 proc finish {} {
@@ -107,7 +110,7 @@ proc finish {} {
   }
   set rt [expr {[info exists ::t_sec(31)] && [info exists ::t_sec(30)] ? \$::t_sec(31) - \$::t_sec(30) : 999}]
   check ruler [expr {\$rt < 85}] "通り抜けた秒数=[format %.1f \$rt]"
-  check speed_top [expr {\$::spmax(17) >= 16 && \$::spmax(21) == 32}] "加速=\$::spmax(17) 最高速=\$::spmax(21)"
+  check speed_top [expr {\$::spmax(17) >= 16 && \$::spmax(21) == 24}] "加速=\$::spmax(17) 最高速=\$::spmax(21)(★8 → 6 ドット/フレーム。M7 の後)"
   check speed_stop [expr {\$::spmin(18) == 0}] "停止の最小=\$::spmin(18)"
   check speed_rev [expr {\$::spmin(19) <= -12}] "逆走の最小=\$::spmin(19)"
   check bands_upper [expr {\$::bands(26) >= 5}] "大気上層の帯(0 行より下)=\$::bands(26)"

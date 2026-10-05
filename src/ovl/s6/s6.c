@@ -18,7 +18,7 @@
 #include "spr.h"
 #include "sys.h"
 
-#define AIR_LEN  320
+#define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
 #define S_TOP    (-192)
 
 static u16 sec_wx, sec_t;
@@ -47,7 +47,8 @@ static void palette(void) {
 static void enter(u8 sec) {
     g_sec = sec; sec_wx = g_wx; sec_t = 0;
     switch (sec) {
-    case SEC6_AIR: case SEC6_WALL: case SEC6_SHADOW: enemy_waves(WAVES_AIR); break;
+    case SEC6_AIR: enemy_waves(WAVES_SKY); break;
+    case SEC6_WALL: case SEC6_SHADOW: enemy_waves(WAVES_AIR); break;
     case SEC6_DIAL: enemy_waves(WAVES_CITY); break;
     default: enemy_waves(WAVES_NONE); break;
     }

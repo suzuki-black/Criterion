@@ -36,7 +36,7 @@ static u16 col_of_screen(void) { return (u16)(((u16)(g_wx - (g_w0 << 3))) >> 3);
 
 static void enter(u8 sec) {
     g_sec = sec; sec_t = 0;
-    enemy_waves(sec == SEC8_AIR || sec == SEC8_WARP ? WAVES_AIR : WAVES_NONE);
+    enemy_waves(sec == SEC8_AIR ? WAVES_AIR : WAVES_NONE);   /* ★歪曲回廊(帯ごとに R#23 を替える、最も重い場面)は編隊なし(M7 の後) */
     if (sec == SEC8_MID) {
         u8 i;
         top_e = top_d = TOP0; bot_e = bot_d = BOT0; mid_t = 0; adv_t = 0;

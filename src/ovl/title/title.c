@@ -185,7 +185,8 @@ void title_update(void) {
             if (g_pt >= 24 + i * 6) band_x[i] = ease(band_x[i], 0);
         yjk_q++;
         if (cf_update()) return;                              /* 隠しコンフィグ */
-        if ((g_in_edge & IN_A) && g_pt >= 30) enter(PH_SORTIE);
+        if ((g_in_edge & IN_A) && g_pt >= 30) { g_demo = 0; enter(PH_SORTIE); }
+        else if (g_pt >= 900 && !cf_on && !g_in) { g_demo = 1; enter(PH_SORTIE); }   /* ★15 秒触らなければデモ(M7 の後) */
         return;
     }
     if (g_phase == PH_SORTIE) {

@@ -80,7 +80,8 @@ proc finish {} {
   close \$f; exit
 }
 # 2 面の空中戦に入って 12 秒で終える(入らなければ 200 秒で打ち切り)
-proc wait_end {} { if {[info exists ::t_sec(7)] && [machine_info time] > \$::t_sec(7) + 12} { finish } elseif {[machine_info time] > 200} { finish } else { after time 0.5 wait_end } }
+# ★2 面の空中戦の 10 秒後で終える(11 秒後に重力の予告の帯が出る。帯の行の後始末の判定に掛かる)
+proc wait_end {} { if {[info exists ::t_sec(7)] && [machine_info time] > \$::t_sec(7) + 10} { finish } elseif {[machine_info time] > 200} { finish } else { after time 0.5 wait_end } }
 after time 30 wait_end
 after time 60 { screenshot -raw "$OUT/m2_city.png" }
 TCL

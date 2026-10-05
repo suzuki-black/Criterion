@@ -87,14 +87,36 @@ void spr_init(void) {
     buf = 1;
 }
 
+/* 前のフレームに使った枠だけ隠す(A = 隠す Y)。★C では 1 枠 12us、両方の帯で 1 フレームに 0.8ms かかっていた(M7 の後) */
+static void spr_hide(u8 y) __naked {
+    (void)y;
+    __asm
+        ld   c, a
+        ld   hl, #_spr_shadow
+        ld   a, (_spr_last)
+        call 00001$
+        ld   hl, #_spr_shadow + 128   ; 下の帯(SLOTS * 4)
+        ld   a, (_spr_last + 1)
+    00001$:
+        or   a
+        ret  z
+        ld   b, a
+    00002$:
+        ld   (hl), c               ; Y
+        inc  hl
+        inc  hl
+        ld   (hl), #252            ; パターン = 空白(BLANK_PAT = 63 * 4)
+        inc  hl
+        inc  hl
+        djnz 00002$
+        ret
+    __endasm;
+}
+
 void spr_begin(void) {
-    u8 b, g, n, st;
-    for (b = 0; b < 2; b++) {
-        u8 *sh = &spr_shadow[b ? SLOTS * 4 : 0];
-        u8 hy = hide_y();
-        for (n = spr_last[b]; n; n--, sh += 4) { sh[0] = hy; sh[2] = BLANK_PAT; }   /* 前のフレームに使った枠だけ隠す */
-        spr_last[b] = 0;
-    }
+    u8 g, st;
+    spr_hide(hide_y());
+    spr_last[0] = spr_last[1] = 0;
     for (g = 0; g < G_COUNT; g++) {
         u8 c = spr_gcount[g];
         if (c > 1 && (rot_g[g] += (g == G_PAIR ? 2 : 1)) >= c) rot_g[g] = 0;   /* ちらつきの分散: グループの中で回す(組は 2 つずつ) */

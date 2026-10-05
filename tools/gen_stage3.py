@@ -6,7 +6,8 @@
 1. s3_strips.bin: 短冊 32 本(8x188、4bpp)。
      0..3   月面(上は星空、下 140 行から灰の地面とクレーター)
      4..5   チューブの入口(大きな壁と開口)
-     6..9   チューブの中(上の壁 0..27 行、下の壁 160..187 行、壁の面に照明パネル)
+     6..9   チューブの中(上の壁 0..15 行、下の壁 172..187 行、壁の面に照明パネル)。★通り道を 16..171 行に広げた
+            (28..159 では高速で避けきれなかった。M7 の後)
      10..13 その流線版(パネルが線になる。高速のとき 6..9 をこれに置き換える)
      14 / 15 照明なし / その流線版
      16..18 隔壁(すき間が上 / 中 / 下)
@@ -56,9 +57,9 @@ def wall_band(x0, y0, y1, k, lights, streak):
 
 def tube(k, lit, streak):
     x0 = k * 8; base_top(x0)
-    wall_band(x0, 4, 28, k, [20] if lit else [], streak)
-    wall_band(x0, 160, H, k, [164] if lit else [], streak)
-    LIMITS.append((28, 144))
+    wall_band(x0, 4, 16, k, [10] if lit else [], streak)
+    wall_band(x0, 172, H, k, [178] if lit else [], streak)
+    LIMITS.append((16, 156))
 
 def mouth(k):
     x0 = k * 8; base_top(x0)
@@ -69,15 +70,15 @@ def mouth(k):
 
 def bulkhead(k, gap):
     x0 = k * 8; base_top(x0)
-    wall_band(x0, 4, 28, k, [], False)
-    wall_band(x0, 160, H, k, [], False)
-    for y in range(28, 160):
+    wall_band(x0, 4, 16, k, [], False)
+    wall_band(x0, 172, H, k, [], False)
+    for y in range(16, 172):
         if gap and gap[0] <= y < gap[1]: continue
         for x in range(8):
             c = 13 if ((y + x) // 4) % 2 else 14
             if x in (0, 7): c = 7
             put(x0 + x, y, c)
-    LIMITS.append((gap[0], gap[1] - 16) if gap else (28, 28))
+    LIMITS.append((gap[0], gap[1] - 16) if gap else (16, 16))
 
 STRIPS = []
 for k in range(4): lunar(k)
@@ -85,7 +86,7 @@ mouth(4); mouth(5)
 for k in range(6, 10): tube(k, True, False)
 for k in range(10, 14): tube(k, True, True)
 tube(14, False, False); tube(15, False, True)
-bulkhead(16, (28, 76)); bulkhead(17, (76, 124)); bulkhead(18, (112, 160)); bulkhead(19, None)
+bulkhead(16, (16, 68)); bulkhead(17, (68, 120)); bulkhead(18, (120, 172)); bulkhead(19, None)
 for k in range(20, 32): tube(k, False, False)
 assert len(LIMITS) == 32
 
