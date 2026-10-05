@@ -67,7 +67,9 @@ static void touch_rect(s16 x, s16 y, u8 w, u8 h) {
 static u16 vt_rx, vb_rx;           /* 板の左端のリングの x */
 static s16 vt_sx, vb_sx;           /* 板の左端の画面の x */
 static u8  v_drawn;                /* 描いた命令の数(0..V_CMDS) */
-#define V_CMDS 4                   /* 板は部品(ページ 2)から左右 112 ずつ写す */
+#define V_CMDS 8                   /* 0..3: 板の層の板の外を空の色で塗る、4..7: 板を部品(ページ 2)から左右 112 ずつ写す */
+#define VT_R0  47                  /* 層 3 の行(47..62) */
+#define VB_R0  110                 /* 層 8 の行(110..124) */
 static u8  core_hp[2];
 static u8  beam_t;                 /* 0 = なし、1..30 予告、31..60 ビーム */
 static s16 beam_x;
@@ -79,7 +81,14 @@ static void parts_copy(u8 px, u8 py, u16 rx, s16 s, u8 w, u8 h) {
     ring_cmd((u16)(128u + px), (u16)(512u + py), (s16)(rx - g_wx), (s16)(s - g_scam), w, h, 0, 0);
 }
 static void vern_cmd(u8 k) {       /* 板の k 番目の描画命令(上の左・右、下の左・右) */
-    u16 rx = (u16)(((k & 2) ? vb_rx : vt_rx) + ((k & 1) ? 112u : 0u));
+    u16 rx;
+    if (k < 4) {   /* ★板の層の、板の外を空の色で塗る(板を帯ごとすべらせると雲の模様まで一緒に動き、背景が揺れて見えた。M7 の後) */
+        rx = (u16)(((k & 2) ? vb_rx : vt_rx) + V_W + ((k & 1) ? 144u : 0u));
+        ring_cmd(0, 0, (s16)(rx - g_wx), (s16)(((k & 2) ? VB_R0 : VT_R0) - g_scam), 144, (k & 2) ? 15 : 16, 1, 0x11);
+        return;
+    }
+    k -= 4;
+    rx = (u16)(((k & 2) ? vb_rx : vt_rx) + ((k & 1) ? 112u : 0u));
     parts_copy(0, (u8)(24 + (k & 1) * 10 + (k & 2) * 10), rx, (k & 2) ? VB_S : VT_S, 112, V_H);
 }
 
@@ -114,8 +123,8 @@ static void vern_update(void) {
         if (vt_sx <= 16 && vb_sx >= 16) { vt_sx = 16; vb_sx = 16; g_boss_state = BS_FIGHT; }
     } else if (g_boss_state == BS_DYING) {
         if (!(t & 3)) { fx_spawn(FX(vt_sx + (s16)(((u16)rnd8() * 7u) >> 3)), FX(VT_S + 4)); fx_spawn(FX(vb_sx + (s16)(((u16)rnd8() * 7u) >> 3)), FX(VB_S + 4)); }
-        if (t == 90) s4_ring_restore(vt_rx, VT_S, V_W, V_H);  /* 板を雲に戻す(1 フレーム 1 枚) */
-        if (t == 92) s4_ring_restore(vb_rx, VB_S, V_W, V_H);
+        if (t == 90) s4_ring_restore(0, VT_R0, 512, 16);     /* 板の層を雲に戻す(1 フレーム 1 層。塗った所ごと) */
+        if (t == 92) s4_ring_restore(0, VB_R0, 512, 15);
         if (t >= 96 && gq_free() == GQ_N) {
             s4_band_hold(VT_L, 0xFFFF); s4_band_hold(VB_L, 0xFFFF);
             g_boss_state = BS_DONE;
@@ -271,6 +280,7 @@ static s16 reel[NREEL];            /* 帯ごとのずれ(ドット。0 = 揃う)
 static s16 reel_to[NREEL];
 static u8  f_load, f_off;          /* 顔(0..143 行)と部品(144.. = 部品の 0..63 行)をページ 2 へ読む */
 static u8  f_cmd;                  /* 顔をリングへ写した数(8 行ずつ 18 回) */
+static u8  f_flat, f_rest;         /* 顔の行の顔の外を空の色で塗った数(36)/ 撃破の後に雲へ戻した数(18) */
 static u8  st_phase;               /* 0 = 揃っている、1 = ずれて核が出ている */
 static u16 st_t;
 static u8  core_band, core_hits;
@@ -283,7 +293,7 @@ static void stratum_start(void) {
     f_rx = (u16)((s4_band_x(5) + 320) & 0x1FE);               /* 顔は見えないところに描いて、リールで寄せる */
     nreel = RECAL ? 9 : 6; slice = RECAL ? 16 : 24;
     for (i = 0; i < NREEL; i++) { reel[i] = (s16)(256 + i * 40); reel_to[i] = 0; }
-    f_cmd = 0; st_phase = 0; st_t = 0; core_hits = 0;
+    f_cmd = 0; f_flat = 0; f_rest = 0; st_phase = 0; st_t = 0; core_hits = 0;
     f_top = s4_band_x(0); f_bot = s4_band_x(11);
     g_boss_hp = 36;
 }
@@ -403,12 +413,21 @@ void b4_vram(void) {
             else rom_to_vram(ASSET_S4_PARTS_BANK, (u16)(ASSET_S4_PARTS_OFF + (f_off - F_H) * 64u), 1, (u16)((f_off - F_H) * 128u + 64u), 64);   /* 部品は x = 128.. */
         if (f_off >= F_H + 64) f_load = 0;
     }
+    if (kind == B4_STRATUM && g_boss_state == BS_DYING && t > 30 && f_rest < F_H / 8 && gq_free() > 8) {
+        s4_ring_restore(0, (s16)(FY + f_rest * 8), 512, 8);    /* 撃破: 顔の行を雲に戻す(帯が流れ去る間に 8 行ずつ) */
+        f_rest++;
+    }
     if (g_boss_state != BS_NONE && g_boss_state != BS_DONE) {
         if (kind == B4_VERNIER)
             while (v_drawn < V_CMDS && gq_free() > 4 && n++ < 8) vern_cmd(v_drawn++);   /* 1 フレーム 8 個まで */
         else if (kind == B4_RULER && r_phase == 0) {
             while (!r_wait && r_cmd < R_CMDS && gq_free() > 4 && n++ < 4) ruler_cmd(r_cmd++);
             if (r_cmd >= R_CMDS) r_phase = 1;
+        } else if (kind == B4_STRATUM && f_flat < (F_H / 8) * 2 && gq_free() > 8) {
+            /* ★顔の行の、顔の外(リングの 384 ドット)を空の色で塗る。帯をリールのように動かすと、雲の層の模様まで一緒に
+               動いて背景が揺れて見えた(顔だけが動いて見えるように。M7 の後) */
+            for (n = 0; n < 2 && f_flat < (F_H / 8) * 2; n++, f_flat++)
+                ring_cmd(0, 0, (s16)(f_rx + F_W + (f_flat & 1) * 192u - g_wx), (s16)(FY + (f_flat >> 1) * 8 - g_scam), 192, 8, 1, 0x11);
         } else if (kind == B4_STRATUM && !f_load && f_cmd < F_H / 8 && gq_free() > 8) {
             for (n = 0; n < 2 && f_cmd < F_H / 8; n++, f_cmd++)   /* 8 行ずつ(1KB ≒ 6ms) */
                 ring_cmd(0, (u16)(512u + f_cmd * 8u), (s16)(f_rx - g_wx), (s16)(FY + f_cmd * 8 - g_scam), F_W, 8, 0, 0);

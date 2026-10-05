@@ -278,6 +278,8 @@ void ovl_bands(s16 sc, u16 nx) {
     }
     stage_ev_pal((s16)(106 - sc), g_sec == SEC5_ENGINE ? inside : gap);   /* 艦底と雲海の間(2 帯) */
     if (g_sec == SEC5_APPROACH) stage_ev_scroll((s16)(108 - sc), (u16)(nx + (cq >> 2)));
+    else if (g_sec >= SEC5_BOW && g_sec <= SEC5_UNDER)        /* ★雲海は戦艦の半分の速さ(同じ速さでは奥行きが出ない。M7 の後) */
+        stage_ev_scroll((s16)(108 - sc), (u16)(nx - (nx >> 1)));
     if (press_on) {                                           /* 床のプレス: 上げて見せる */
         u8 base = (u8)(g_vscroll + g_roll);
         stage_ev_vscroll((s16)(S5_FLOOR - s5_press_f - sc), (u8)(base + s5_press_f));
