@@ -95,12 +95,3 @@ void font_text_row(u8 page, u8 px, u8 py, u8 fg, u8 bg, const char *s, u8 row) {
     }
 }
 
-/* 10 進 n 桁(先頭ゼロ詰め)。 */
-void font_num(u8 page, u8 px, u8 py, u8 fg, u8 bg, u16 v, u8 digits) {
-    char buf[6];
-    u8 i;
-    if (digits > 5) digits = 5;
-    buf[digits] = 0;
-    for (i = digits; i > 0; i--) { buf[i - 1] = (char)('0' + v % 10u); v /= 10u; }
-    font_text(page, px, py, fg, bg, buf);
-}

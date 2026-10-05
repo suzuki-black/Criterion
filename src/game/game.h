@@ -148,6 +148,8 @@ extern s16 g_gx, g_gy, g_gcx, g_gcy;
 extern s16 g_pl_ymin, g_pl_ymax;    /* ドット(自機の左上の y) */
 extern s16 g_pl_dy;
 extern u8  g_demo;                  /* 1 = デモ(自動操縦。main.c) */                 /* 自機を描くときに y へ足す(帯の R#23 でスプライトがずれる場面の打ち消し。普段は 0) */
+void mag_pair(u8 *p, u8 m);         /* R#1 の組(RG1SAV に MAG を足す。stage.c) */
+extern u8  g_mag;                   /* 拡大スプライトの帯(1 = 上、2 = 下。stage.c)*/
 extern u8  g_roll;                  /* 画面の縦のロール(R#23 に足す。スプライトは動かさない) */
 /* ---- ∞ の紋章(infx.c。ROTOR のスプライト用) ---- */
 void infx_start(s16 x, s16 y);      /* 確定の演出: (x, y) から画面の中央へ */

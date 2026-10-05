@@ -871,7 +871,6 @@ static void start_song(u8 id) {
 static u8 play_req = 0xFE, play_wait;
 static u8 fade_to = 0xFE, fade_step, fade_t, fade_att;
 void bgm_play(u8 id) { play_req = id; play_wait = 0; fade_to = 0xFE; fade_att = 0; }
-void bgm_next(u8 id) { if (g_bgm == SND_NONE) bgm_play(id); else pend = id; }
 
 /* ★曲から別の曲へは、今の曲をフェードアウトしてから(step フレームごとに 1 段、15 段で無音 → 止めて次の曲)。
    いきなりつなぐと「何これ?」になる(グラディウス系の作法も空中戦の曲をフェードアウトしてから面の曲) */
@@ -879,7 +878,6 @@ void bgm_fade(u8 id, u8 step) {
     if (g_bgm == SND_NONE || !step) { bgm_play(id); return; }
     fade_to = id; fade_step = step; fade_t = 0;
 }
-void bgm_stop(void) { start_song(SND_NONE); }
 
 /* PSG のエンベロープ(毎フレーム) */
 static void psg_env(void) {
@@ -1164,12 +1162,6 @@ void snd_frame(void) {
     psg_mix_apply();
 }
 
-void snd_silence(void) {
-    sfx_t = 0;
-    psg_w(10, 0);
-    start_song(SND_NONE);
-    pcm_halt();
-}
 
 
 /* ---- MSX-MUSIC ----

@@ -37,16 +37,13 @@ extern u8  g_pcm_cur;         /* 鳴っている PCM(SND_NONE = 無し) */
 
 void snd_init(void);          /* 音源の初期化(消音) */
 void bgm_play(u8 id);         /* すぐ切り替える(SND_NONE = 止める) */
-void bgm_next(u8 id);         /* 次の小節の頭で切り替える */
 void bgm_fade(u8 id, u8 step);   /* 今の曲をフェードアウトしてから切り替える(step フレームごとに 1 段、15 段) */
-void bgm_stop(void);
 void sfx(u8 id);
 void pcm_req(u8 id);          /* PCM を鳴らす(鳴っているものより優先度が低ければ無視)。声など必ず鳴らすもの */
 void pcm_req_opt(u8 id);      /* 任意の PCM(オケヒ・爆発など): 処理落ちしていない時間が 1 秒続いているときだけ */
 void pcm_halt(void);          /* PCM を止める(重い読み込みの前など) */
 void snd_frame(void);         /* 毎フレーム 1 回(本体のループ) */
 void pcm_keep(void);          /* PCM の補充だけ(snd_frame を先送りしたフレーム) */
-void snd_silence(void);       /* 全部止める(BGM・効果音・PCM) */
 void music_frame(u8 over);    /* music.c(CODE0): 場面に合わせて曲を選ぶ。over = ゲームオーバー */
 
 #endif /* SND_H */

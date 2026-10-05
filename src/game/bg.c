@@ -14,7 +14,7 @@
 static u16 scroll_q;                /* 近景の位置(1/4 ドット単位) */
 s8 g_scroll_speed = 4;              /* 1/4 ドット/フレーム単位(4 = 1 ドット/フレーム。負 = 逆走) */
 
-static u8 regs_h[2][8];
+static u8 regs_h[2][16];
 u8 g_vscroll;                       /* プレイエリアの縦スクロール(R#23) */
 
 /* 空(上から): 色 1 の R, G, B。夜(タイトル)と夕焼け(1 面)の間を bg_mix で補間する */
@@ -63,8 +63,9 @@ void bg_fill_hud(RasEntry *e, u8 bi) {
     rh[2] = 23; rh[3] = HUD_R23;
     rh[4] = 5; rh[5] = spr_regs.r5h;
     rh[6] = 11; rh[7] = 3;
+    mag_pair(rh + 8, 0);                                     /* 拡大を解く(下の帯の拡大。stage.c) */
     e->line = HUD_Y; e->flags = RAS_SCROLL | RAS_REGS; e->r26 = 0; e->r27 = 0;
-    e->haze_n = 4; e->haze = rh;
+    e->haze_n = 5; e->haze = rh;
 }
 
 static void palette(void) {

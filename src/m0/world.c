@@ -2,6 +2,8 @@
    M0-1(scroll.c)で 1 ドット単位に検証した実装を、M0-3 でも同じ負荷として使うために切り出したもの。 */
 #include "world.h"
 #include "vdp.h"
+#include "font.h"
+#include "sys.h"
 
 #define RING_W     512u
 
@@ -137,3 +139,23 @@ void world_palette(void) {
     vdp_set_pal(15, 7, 7, 7);   /* 目盛り */
 }
 
+
+/* ---- M0 の検証 ROM だけが使うもの(本体の常駐の空きのため core から移した。M7 の後) ---- */
+/* 10 進 n 桁(先頭ゼロ詰め)。 */
+void font_num(u8 page, u8 px, u8 py, u8 fg, u8 bg, u16 v, u8 digits) {
+    char buf[6];
+    u8 i;
+    if (digits > 5) digits = 5;
+    buf[digits] = 0;
+    for (i = digits; i > 0; i--) { buf[i - 1] = (char)('0' + v % 10u); v /= 10u; }
+    font_text(page, px, py, fg, bg, buf);
+}
+
+void sys_hook_vblank(void (*fn)(void)) {
+    volatile u8 *h = (volatile u8 *)0xFD9F;   /* H.TIMI */
+    __asm di __endasm;
+    h[1] = (u8)(u16)fn;
+    h[2] = (u8)((u16)fn >> 8);
+    h[0] = 0xC3;                               /* JP fn */
+    __asm ei __endasm;
+}

@@ -12,14 +12,6 @@ void sys_r800(void) {
     __endasm;
 }
 
-void sys_hook_vblank(void (*fn)(void)) {
-    volatile u8 *h = (volatile u8 *)0xFD9F;   /* H.TIMI */
-    __asm di __endasm;
-    h[1] = (u8)(u16)fn;
-    h[2] = (u8)((u16)fn >> 8);
-    h[0] = 0xC3;                               /* JP fn */
-    __asm ei __endasm;
-}
 
 /* ---- RAM 実行(指示書 8.1「毎フレーム走るコードは RAM に転送して実行する」) ----
    R800 はカートリッジ ROM からの命令読み出しが遅い(前作の実機実測で RAM の約 3.8 倍)。

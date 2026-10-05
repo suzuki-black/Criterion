@@ -105,8 +105,11 @@ static void juice(void) {
         juice_len = juice_t = juice_tier == 1 ? 45 : juice_tier == 2 ? 120 : 255;
     }
     bs_last = s;
+    g_mag = 0;
     if (!juice_t) return;
     juice_t--;
+    /* ★面ボスとラスボスは、自機のいない帯のスプライトを 2 倍に(爆発が大きくなる。部分拡大、C5)。境は 96 行 */
+    if (juice_tier >= 2 && juice_t > 8) { u8 py = (u8)(g_pl.y >> 4); if (py >= 96) g_mag = 1; else if (py < 78) g_mag = 2; }
     {   /* 揺れ: 段階で幅を変え(±2 / ±4 / ±8)、終わりへ向けて小さく(★毎フレームの経路なので % を使わない) */
         u8 m = (u8)(juice_tier == 1 ? 3 : juice_tier == 2 ? 7 : 15);
         if (juice_t < 10) m >>= 2; else if (juice_t < 20) m >>= 1;

@@ -109,6 +109,7 @@ u8 stage_redraw_col(u16 wcol) {
     return 1;
 }
 u8 g_roll;
+u8 g_mag;                           /* 拡大スプライトの帯(1 = 上の帯、2 = 下の帯、0 = なし) */
 
 /* 地面のブロックを「何も描いていない」にして、列の流し込みを止める(次の面の短冊を読む前) */
 void stage_reset_ground(void) {
@@ -483,7 +484,7 @@ static void sat_entry(void) {
     RasEntry *c;
     sat_done = 1;
     c = slot(96, RAS_REGS);
-    if (c) { c->haze = sat_regs; c->haze_n = 2; }
+    if (c) { c->haze = sat_regs; c->haze_n = 3; }
 }
 static RasEntry *slot(s16 line, u8 kind) {
     RasEntry *c;
@@ -547,7 +548,10 @@ static const u8 hs_indigo[8][3] = { { 0, 0, 2 }, { 1, 0, 2 }, { 1, 0, 3 }, { 1, 
 static const u8 hs_black[8][3]  = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 1, 0, 1 }, { 1, 0, 2 } };
 static u8 hs_cur[8][3];
 static const u8 sky_line[7] = { 0, 16, 32, 48, 64, 80, 96 };
-static u8 regs_top[2][8], regs_b[2][4];
+static u8 regs_top[2][16], regs_b[2][8];
+
+/* R#1 の組(RG1SAV に MAG を足す)。★stage_build に直に書くと SDCC の割り当てが崩れて 150 バイト太った */
+void mag_pair(u8 *p, u8 m) { p[0] = 1; p[1] = (u8)(*(volatile u8 *)0xF3E0 | m); }
 
 void stage_build(void) {
     u8 bi = ras_back_index(), i;
@@ -560,7 +564,10 @@ void stage_build(void) {
     sat_regs[0] = 5; sat_regs[1] = spr_regs.r5b; sat_regs[2] = 11; sat_regs[3] = spr_regs.r11b;
     rt[0] = 5; rt[1] = spr_regs.r5a; rt[2] = 11; rt[3] = spr_regs.r11a;
     rt[4] = 2; rt[5] = 0x3F; rt[6] = 23; rt[7] = (u8)(g_vscroll + g_roll);
-    E[0].line = 0; E[0].flags = RAS_REGS; E[0].haze = rt; E[0].haze_n = 4;
+    /* ★部分拡大(MAG = R#1 bit0、M7 の後): 帯の境(96 行)で R#1 を替え、片方の帯だけスプライトを 2 倍にする。
+       境をまたぐスプライトは裂けるので、自機のいない帯だけ(main.c の撃破の演出) */
+    mag_pair(rt + 8, g_mag & 1); mag_pair(sat_regs + 4, g_mag >> 1);
+    E[0].line = 0; E[0].flags = RAS_REGS; E[0].haze = rt; E[0].haze_n = 5;
 
     if (g_bands_all && g_ovl_ready && g_ovl >= OVL_S1) {     /* 面が帯を全部出す(空の上にも帯を置く面。5 面の GAUGE BLOCK) */
         ovl_bands(sc, nx);
