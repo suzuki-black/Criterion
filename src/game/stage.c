@@ -430,6 +430,9 @@ static void banner_vram(void) {
     else if (banner_t == 2) vdp_hmmv(0, 768 + BAN_ROW - 8, 256, 24, 0x11);
     else if (banner_t >= 3 && banner_t < BAN_IN) {           /* 文字は 1 フレームに 2 行ずつ(一度に書くと 120 ライン。2 面の入りで遅れた) */
         u8 r = (u8)((banner_t - 3) << 1);
+        extern u16 g_frame_t0;
+        if ((u16)(sys_timer() - g_frame_t0) > 150u * 16u) return;   /* ★重いフレームは次へ(2 行で約 50 ライン。7 面の試験の
+                                                                   切り替えで描き替えの仕事と重なって遅れた) */
         vdp_cmd_wait();
         font_text_row(2, 40, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, r);
         font_text_row(2, 40, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, (u8)(r + 1));

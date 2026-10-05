@@ -168,15 +168,18 @@ static void hang_draw(void) {
 /* ======== HANGAR DECK ======== */
 #define LIFT_MAX 52                /* 板は格納庫の底(s 68)から甲板の上(s 16)まで昇る(★甲板より下は自機の弾が届かない) */
 static u8 door_n;                  /* 書き換えた扉の列 */
+static u8 door_w;                  /* 開いた幅(中央から片側。0..32 ドット) */
 static u8 lift, lift_drawn, lift_ph, lift_wait;
 static u8 boss_t;
 static s16 lift_s(void) { return (s16)(S5_DECK + 28 - lift); }
-void b5_hangar_start(void) { door_n = 0; lift = 0; lift_drawn = 0xFF; lift_ph = 0; lift_wait = 60; g_boss_state = BS_ENTER; g_boss_hp = 30; boss_t = 0; }
+void b5_hangar_start(void) { door_n = 0; door_w = 0; lift = 0; lift_drawn = 0xFF; lift_ph = 0; lift_wait = 60; g_boss_state = BS_ENTER; g_boss_hp = 30; boss_t = 0; }
 static void hangar_update(void) {
     s16 x = s5_sx(S5_COL_DOOR) + 8, y;
-    if (g_boss_state == BS_ENTER) {                           /* 扉を開ける(地図を書き換えて列を描き直す) */
-        while (door_n < 8 && stage_redraw_col((u16)(g_w0 + S5_COL_DOOR + door_n))) { g_map[S5_COL_DOOR + door_n] = 20; door_n++; }
-        if (door_n >= 8 && !stage_busy()) g_boss_state = BS_FIGHT;
+    if (g_boss_state == BS_ENTER) {                           /* 扉を開ける(描くのは hangar_vram。開き終えたら地図も格納庫の中に) */
+        if (door_w > 32 && !stage_busy()) {
+            for (door_n = 0; door_n < 8; door_n++) g_map[S5_COL_DOOR + door_n] = 20;
+            g_boss_state = BS_FIGHT;
+        }
         return;
     }
     if (g_boss_state == BS_DYING) {
@@ -202,8 +205,21 @@ static void hangar_update(void) {
     }
     shot_rect(x - 8, s5_sy(S5_DECK), 64, 34);                 /* 格納庫の中は弾を止める */
 }
+/* ★地形のアニメ(M7 の後、C6): 扉は中央から左右へ 2 ドットずつ引き込む。開いた所は格納庫の暗がり、動く縁は白く光る。
+   開き終えたら床(色 9)を引く。描いた絵は短冊 20(格納庫の中)と同じなので、地図は書き換えるだけで描き直さない */
+static void door_vram(void) {
+    s16 cx = s5_sx(S5_COL_DOOR) + 32, y = s5_sy(S5_DECK);
+    if (door_w > 32 || gq_free() < 6) return;
+    if (door_w) { ring_cmd(0, 0, cx - door_w, y, 2, 32, 1, 0x22); ring_cmd(0, 0, cx + door_w - 2, y, 2, 32, 1, 0x22); }
+    if (door_w < 32) {
+        ring_cmd(0, 0, cx - door_w - 2, y, 2, 32, 1, 0xFF); ring_cmd(0, 0, cx + door_w, y, 2, 32, 1, 0xFF);
+    } else ring_cmd(0, 0, cx - 32, y + 32, 64, 2, 1, 0x99);
+    door_w += 2;
+}
+
 static void hangar_vram(void) {
     s16 x = s5_sx(S5_COL_DOOR) + 8;
+    if (g_boss_state == BS_ENTER) { door_vram(); return; }
     if (g_boss_state != BS_FIGHT || lift_drawn == lift || gq_free() < 6) return;
     if (lift_drawn != 0xFF) {                                 /* 前の位置を消す: 甲板より上は空、下は格納庫の暗がり */
         s16 os = (s16)(S5_DECK + 28 - lift_drawn);
