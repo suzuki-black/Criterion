@@ -111,8 +111,11 @@ $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
 # ★割込み処理(raster)と ROM 読み出し(rom)はページ 1(0x8000 未満)に置く。ROM を読む間はページ 2 が
 #   カートリッジの別のバンクになるため(rom.c)。リンクの先頭に並べ、リンク後に番地を検査する。
 #   音のドライバ(snd)も曲を読む間はページ 2 が曲のバンクになるので、同じくページ 1 に置く(snd.c)。
-GAME_FIRST := $(BUILD)/raster.rel $(BUILD)/rom.rel $(BUILD)/g_snd.rel
-GAME_REST  := $(filter-out $(GAME_FIRST) $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel,$(CORE))   # pcmb(方式 B の試作)・pcmc(方式 A/C の制御)は M0 の検証用
+GAME_FIRST := $(BUILD)/g_raster.rel $(BUILD)/rom.rel $(BUILD)/g_snd.rel
+# 本体の割込み処理は直接方式・PCM 方式 B だけ(RAS_GAME。BIOS 方式と刻み方式は M0 の検証 ROM だけが持つ。常駐の空き)
+$(BUILD)/g_raster.rel: src/core/raster.c $(HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -DRAS_GAME $(INC) $< -o $@
+GAME_REST  := $(filter-out $(BUILD)/raster.rel $(GAME_FIRST) $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel,$(CORE))   # pcmb(方式 B の試作)・pcmc(方式 A/C の制御)は M0 の検証用
 GAME_MID   := $(filter-out $(GAME_FIRST),$(GAME_RELS))
 # ★ページ 0 のコード(CODE0、0x0100-OVL_BASE): 共通のエンジン(ROTOR / GHOST)。起動時に ROM の bank4-5 から
 #   RAM へ複製する(main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前には呼ばないこと。
@@ -212,7 +215,7 @@ $(BUILD)/ovl_%.ihx: $(BUILD)/ovlhdr_$$(OVL_$$*_HDR).rel $$(OVL_$$*_RELS) $(BUILD
 $(BUILD)/ovl_%.bin: $(BUILD)/ovl_%.ihx tools/gen_ovl.py
 	python3 tools/gen_ovl.py bin $< $(<:.ihx=.map) $@ $(OVL_BASE) $(OVL_END) $(OVL_DBEG) $(OVL_DEND)
 
-$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(GAME_CODE0_CORE) $(BUILD)/ovl_entries.rel
+$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/rom.rel $(GAME_RELS) $(GAME_CODE0_CORE) $(BUILD)/ovl_entries.rel
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
 	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_MID) $(GAME_REST) $(GAME_CODE0_CORE) \
 	    $(BUILD)/ovl_entries.rel -o $@
@@ -220,9 +223,10 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/rom.rel $(GAME_RELS) $(
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
 	@E=$$(awk '$$2=="s__CODE0"{s=$$3} $$2=="l__CODE0"{l=$$3} END{printf "%d", s+l}' $(@:.ihx=.noi)); \
 	    if [ $$E -gt $$(($(OVL_BASE))) ]; then echo "ERROR: CODE0 の末尾 $$E がオーバレイの窓 $(OVL_BASE) に入った(ovl.h)"; rm -f $@; exit 1; fi
-	@E=$$(awk '$$2=="s__DATA"{s=$$3} $$2=="l__DATA"{l=$$3} END{printf "%d", s+l}' $(@:.ihx=.noi)); \
-	    if [ $$E -gt $$(($(OVL_DBEG))) ]; then echo "ERROR: _DATA の末尾 $$E がオーバレイの変数 $(OVL_DBEG) に入った(ovl.h)"; rm -f $@; exit 1; fi
-	@for S in _ras_isr_direct _ras_isr_bios _ras_apply_next _ras_vblank _rom_copy _snd_frame _snd_end; do \
+	@E=$$(awk '$$2=="s__DATA"{s=$$3} $$2=="l__DATA"{l=$$3} $$2=="s__INITIALIZED"{si=$$3} $$2=="l__INITIALIZED"{li=$$3} \
+	    END{e=s+l; if (si+li>e) e=si+li; printf "%d", e}' $(@:.ihx=.noi)); \
+	    if [ $$E -gt $$(($(OVL_DBEG))) ]; then echo "ERROR: _DATA/_INITIALIZED の末尾 $$E がオーバレイの変数 $(OVL_DBEG) に入った(ovl.h)"; rm -f $@; exit 1; fi
+	@for S in _ras_isr_direct _ras_apply_next _ras_vblank _rom_copy _snd_frame _snd_end; do \
 	    A=$$(awk -v n=$$S '$$2==n{print $$3}' $(@:.ihx=.noi)); \
 	    if [ -z "$$A" ] || [ $$(printf '%d' $$A) -ge 32768 ]; then \
 	        echo "ERROR: $$S=$$A がページ 1(0x8000 未満)に無い。ROM を読む間に壊れる(rom.c)"; rm -f $@; exit 1; fi; \

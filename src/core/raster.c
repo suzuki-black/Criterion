@@ -18,14 +18,17 @@ volatile u8 ras_left;          /* 残り項目数 */
 volatile u8 ras_armed;         /* 今 R#19 に仕込んである値 */
 volatile u8 ras_r19;           /* ラスターの次の項目の R#19(ras_left > 0 のとき有効) */
 volatile u8 ras_vs;            /* 今の R#23(RAS_REGS で R#23 を書くと更新)。R#19 はこれを足した値で仕込む */
+#ifndef RAS_GAME                /* ★本体(RAS_GAME)は方式 B だけなので、刻み方式(方式 A/C)と BIOS 方式は入れない(常駐の空き。M7 の後) */
 volatile u8 ras_tl;            /* 刻み方式: 仕込んだ刻みの表示ライン(0, 2, .., 244)。R#19 = ras_tl + ras_vs。
                                   ★刻みを R#19 の値で数えると、帯で R#23 が変わったところで鎖が切れる(M7) */
 volatile u8 ras_lkey;          /* 次の項目の表示ラインのキー(line - g_ras_bias。R#23 を足さない)。刻み方式で比べる */
+#endif
 volatile u16 g_ras_irqs;       /* 割込みの総数(計測用) */
 volatile u16 g_ras_fh;         /* うち FH(走査線)の数 */
 volatile u16 g_ras_vb;         /* うち VBLANK の数 */
 volatile u16 g_ras_rearm;      /* 刻みの鎖が途切れて張り直した回数(計測用。0 が正常) */
 volatile u8 g_ras_mark;        /* RAS_MARK の項目が適用されるたびに +1 */
+#ifndef RAS_GAME
 volatile u8 ras_kick;          /* 1 = 次の VBLANK で刻みを張り直す(ras_kick_ticks) */
 
 /* PCM(走査線割込みに相乗り。指示書 8.6 の方式 A/C)。pcm_play() で開始する。 */
@@ -36,12 +39,15 @@ volatile u16 pcm_left;
 volatile u8  pcm_pend;         /* 1 = 次の VBLANK で pcm_on にする(フレームの途中から始めない) */
 const u8 *volatile pcm_next_ptr;   /* 鳴り終わったら続けて鳴らすデータ(pcm_queue)。切れ目を作らない */
 volatile u16 pcm_next_left;
+#endif
 void (*volatile ras_pcm_hook)(void);   /* 0 以外: 割込みの入口と HR ポーリング帯の 1 ラインごとに呼ぶ(PCM 方式 B の送出口)。
                                           A とフラグ以外を壊さないこと */
+#ifndef RAS_GAME
 volatile u8  ras_pstep = 2;     /* 刻みの幅(ライン)。2 = 7.9kHz(M0)、4 = 3.9kHz(本体。CPU の消費が半分。M7) */
 volatile u8  ras_pmask = 1;     /* ras_pstep - 1 */
 volatile u8  ras_regs_hit;      /* 刻み方式: この刻みでレジスタ列(RAS_REGS)の項目を適用した */
 volatile u8  pcm_end;          /* 1 = 刻み 212 で刻み方式をやめる(pcm_stop) */
+#endif
 
 volatile u8 g_ras_bias = 4;    /* openMSX(FS-A1ST)で境界のずれが 0 になる値。実機で取り直す */
 volatile u8 g_ras_busy_border;
@@ -125,6 +131,7 @@ void ras_isr_direct(void) __naked {
 
 /* BIOS 方式: BIOS の割込みハンドラ → H.KEYI から呼ばれる。R#15 の待機値は 0(BIOS が S#0 を読むため)。
    FH でなければ VBLANK とみなし、ret で BIOS へ戻す(BIOS が S#0 を読んで H.TIMI を呼ぶ)。PCM は使わない。 */
+#ifndef RAS_GAME
 void ras_isr_bios(void) __naked {
     __asm
         push bc
@@ -172,6 +179,10 @@ void ras_isr_bios(void) __naked {
         pop  de
         pop  bc
         ret
+#else
+void ras_isr_subs(void) __naked {    /* 直接方式の下請けだけ(本体は BIOS 方式を使わない) */
+    __asm
+#endif
 
         ; ---- FH ----
     ras_on_fh:
@@ -180,6 +191,7 @@ void ras_isr_bios(void) __naked {
         ld   (_g_ras_fh), hl
         ld   a, (_ras_armed)
         ld   d, a                  ; D = 今の割込みライン(R#19 値)
+#ifndef RAS_GAME
         ld   a, (_pcm_on)
         or   a
         jp   z, 00020$
@@ -296,6 +308,7 @@ void ras_isr_bios(void) __naked {
         or   a
         ret  z
         jp   pcm_gap
+#endif
         ; -- 項目方式 --
         ;   ★次の項目が 6 ライン未満なら、割込みを待たずに続けて適用する(項目は少し早まる)。割込みは
         ;     R#19 の 3 ライン後あたりで来て、適用に 2〜3 ラインかかるので、近い項目に R#19 を仕込むと
@@ -323,6 +336,7 @@ void ras_isr_bios(void) __naked {
 
         ; ---- VBLANK ----
     ras_on_vb:
+#ifndef RAS_GAME
         ; ★刻み方式の最中に VBLANK 割込みが来た = 本体が R#1 を書き直して IE0 が戻った(表示の on/off など)。
         ;   刻み 212 が VBLANK の仕事をするので、ここでは IE0 を止め直すだけ(JIFFY の二重の +1 も戻す)。
         ;   放っておくと項目方式の R#19 が仕込まれ、刻みが 1 フレームに 1 つになった(M7、起動ロゴの声)。
@@ -342,10 +356,14 @@ void ras_isr_bios(void) __naked {
         out  (0x99), a
         ret
     00030$:
+#endif
         ld   hl, (_g_ras_vb)
         inc  hl
         ld   (_g_ras_vb), hl
         call _ras_vblank           ; 表の差し替え、先頭(line 0)の適用
+#ifdef RAS_GAME
+        jp   ras_arm_item
+#else
         ld   a, (_pcm_pend)
         ld   e, a
         ld   a, (_ras_kick)
@@ -374,6 +392,7 @@ void ras_isr_bios(void) __naked {
         ld   a, (_ras_vs)
         add  a, e
         jp   ras_arm
+#endif
 
         ; ---- 項目方式の仕込み: 次の項目の行 ----
     ras_arm_item:
@@ -390,6 +409,7 @@ void ras_isr_bios(void) __naked {
         out  (0x99), a
         ret
 
+#ifndef RAS_GAME
         ; ---- 方式 C の穴埋め: HR を 16 回数え、2 本目ごとに出す(246, 248, .., 260) ----
     pcm_gap:
         push bc
@@ -443,6 +463,7 @@ void ras_isr_bios(void) __naked {
         ld   (_pcm_ptr), hl
         out  (0xA4), a
         ret
+#endif
     __endasm;
 }
 
@@ -481,8 +502,10 @@ void ras_apply_next(void) __naked {
         bit  4, d
         jr   z, 00009$
         ; ---- レジスタ列(RAS_REGS): (番号, 値) × haze_n。画面モードの切り替え(M0-4)など ----
+#ifndef RAS_GAME
         ld   a, #1
         ld   (_ras_regs_hit), a    ; 刻み方式: 書き終わる頃には次の刻みが過ぎていることがある(on_fh が 1 つ先を仕込む)
+#endif
         ld   e, 7 (ix)
         ld   l, 8 (ix)
         ld   h, 9 (ix)
@@ -524,6 +547,7 @@ void ras_apply_next(void) __naked {
         ; pcm_fill なら出力、そうでなければ数えるだけ(方式 A の欠落)。帯が終わったら次の刻みを仕込み直す。
         push bc                    ; ★C は呼び出し元の S#0(bit7 = VBLANK)。outi 用に C を使うので退避する
                                    ;   (退避し忘れて C=0x9B のまま戻り、陽炎帯の終わりを毎フレーム VBLANK と誤判定していた)
+#ifndef RAS_GAME
         ld   d, #0
         ld   a, (_pcm_on)
         or   a
@@ -531,6 +555,7 @@ void ras_apply_next(void) __naked {
         ld   a, (_ras_pstep)       ; 今の刻みのサンプルは出し済み。次は刻みの幅だけ後の HR
         ld   d, a
     00020$:
+#endif
         ld   e, 7 (ix)             ; ライン数
         ld   l, 8 (ix)
         ld   h, 9 (ix)             ; (r26, r27) 表
@@ -557,7 +582,11 @@ void ras_apply_next(void) __naked {
         jr   z, 00007$             ; 帰線(HR=1)
         outi                       ; R#27 ← (hl)(B は使わない)
         inc  hl                    ; 次の行の r27
+#ifdef RAS_GAME
+        call ras_hook
+#else
         call hz_pcm
+#endif
         dec  e
         jr   nz, 00006$
         jr   00012$
@@ -577,7 +606,11 @@ void ras_apply_next(void) __naked {
         jr   z, 00004$
         outi                       ; R#26
         outi                       ; R#27
+#ifdef RAS_GAME
+        call ras_hook
+#else
         call hz_pcm
+#endif
         dec  e
         jr   nz, 00010$
     00012$:
@@ -585,6 +618,7 @@ void ras_apply_next(void) __naked {
         out  (0x99), a
         ld   a, #0x8F              ; R#15 = 待機値
         out  (0x99), a
+#ifndef RAS_GAME
         ld   a, (_pcm_on)
         or   a
         jr   z, 00013$
@@ -608,6 +642,7 @@ void ras_apply_next(void) __naked {
         cpl
         and  c
         call ras_arm_tick
+#endif
     00013$:
         pop  bc
     00005$:
@@ -622,12 +657,15 @@ void ras_apply_next(void) __naked {
         ld   a, 0 (ix)
         sub  b
         ld   b, a
+#ifndef RAS_GAME
         ld   (_ras_lkey), a
+#endif
         ld   a, (_ras_vs)
         add  a, b                  ; ★R#19 は「表示の行 + R#23」で比べられる(縦スクロール中は足す)
         ld   (_ras_r19), a
         ret
 
+#ifndef RAS_GAME
         ; R#19 = A(刻み方式で帯の後に張り直す)
     ras_arm_tick:
         ld   (_ras_tl), a          ; 表示ライン → R#19 = + R#23
@@ -640,6 +678,7 @@ void ras_apply_next(void) __naked {
         out  (0x99), a
         ret
 
+#endif
         ; 送出口のフック(ras_pcm_hook)。HL を守り、A とフラグだけ壊す
     ras_hook:
         ld   a, (_ras_pcm_hook + 1)   ; ★空なら 3 命令で帰る(HR ポーリング帯で 1 ラインごとに呼ぶので軽く。関数の番地の
@@ -655,6 +694,7 @@ void ras_apply_next(void) __naked {
     ras_call_hl:
         jp   (hl)
 
+#ifndef RAS_GAME
         ; HR ポーリング帯の 1 ラインごとの PCM(D = 次のサンプルまでのライン数。0 = PCM なし)
     hz_pcm:
         ld   a, d
@@ -671,6 +711,7 @@ void ras_apply_next(void) __naked {
         call pcm_out
         pop  hl
         ret
+#endif
     __endasm;
 }
 
@@ -706,7 +747,9 @@ void ras_vblank(void) __naked {
         ld   a, b
         sub  d
         ld   b, a
+#ifndef RAS_GAME
         ld   (_ras_lkey), a
+#endif
         ld   a, (_ras_vs)
         add  a, b
         ld   (_ras_r19), a
@@ -733,14 +776,22 @@ void ras_commit(u8 n) {
 }
 
 void ras_init(void) {
-    volatile u8 *h = (volatile u8 *)0xFD9A;     /* H.KEYI */
     volatile u8 *rg0 = (volatile u8 *)0xF3DF;   /* RG0SAV */
+#ifdef RAS_GAME
+    ras_front_n = ras_back_n = ras_left = 0;
+    isr_mode = RAS_ISR_BIOS;
+    ras_set_isr(RAS_ISR_DIRECT);                /* ★本体は直接方式だけ。入れてから走査線割込みを有効に(先に有効に
+                                                   すると BIOS の割込みが FH を落とさず、割込みが続いて止まる) */
+    __asm di __endasm;
+#else
+    volatile u8 *h = (volatile u8 *)0xFD9A;     /* H.KEYI */
     ras_front_n = ras_back_n = ras_left = 0;
     isr_mode = RAS_ISR_BIOS;
     __asm di __endasm;
     h[1] = (u8)(u16)ras_isr_bios;
     h[2] = (u8)((u16)ras_isr_bios >> 8);
     h[0] = 0xC3;
+#endif
     *rg0 |= 0x10;                               /* IE1(走査線割込み)を有効に */
     VDP_CTRL = *rg0;
     VDP_CTRL = 0x80;
