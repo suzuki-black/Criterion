@@ -13,7 +13,8 @@
      16..18 隔壁(すき間が上 / 中 / 下)
      19     隔壁(閉じている)
    ★0..3 行は必ず色 6(stage.c のブロック 23)。3 面は色 6 を暗い灰にする。
-   使う色: 1 内部の暗がり(ラスター)/ 6 壁の影 / 7 縁 / 9 青灰 / 12 照明(黄)/ 13 危険の縞(赤)/ 14 灰 / 15 白い照明・星。
+   使う色: 1 内部の暗がり(ラスター)/ 2..5 流れる照明(s3.c がパレットを回す)/ 6 壁の影 / 7 縁 / 9 青灰 / 12 黄 /
+   13 危険の縞(赤)/ 14 灰 / 15 白・星。
 2. s3_map.bin: 地図 640 列(月面 → 入口 → 加速 → 停止(閉じた隔壁 2 枚)→ 最高速(隔壁が並ぶ)→ ボスの広場)。
 3. s3_data.h: 区間の列、短冊ごとの上下の限り(自機の当たり)、隔壁の列の一覧。
 4. tacho.bin: 回転計の盤(128x128、4bpp)。目盛りとレッドゾーン。数字はスプライト(壊せる)なので描かない。
@@ -44,7 +45,7 @@ def lunar(k):
             put(x0 + x, y, c)
     LIMITS.append((0, 134))
 
-def wall_band(x0, y0, y1, k, lights, streak):
+def wall_band(x0, y0, y1, k, lights, streak, lc=15):
     for y in range(y0, y1):
         for x in range(8):
             c = 9 if (y // 4) % 2 else 6
@@ -53,12 +54,12 @@ def wall_band(x0, y0, y1, k, lights, streak):
     for ly in lights:
         for x in range(8):
             if streak or x in (2, 3, 4, 5):
-                put(x0 + x, ly, 15); put(x0 + x, ly + 1, 12)
+                put(x0 + x, ly, lc); put(x0 + x, ly + 1, lc)
 
-def tube(k, lit, streak):
+def tube(k, lit, streak, lc=15):
     x0 = k * 8; base_top(x0)
-    wall_band(x0, 4, 16, k, [10] if lit else [], streak)
-    wall_band(x0, 172, H, k, [178] if lit else [], streak)
+    wall_band(x0, 4, 16, k, [10] if lit else [], streak, lc)
+    wall_band(x0, 172, H, k, [178] if lit else [], streak, lc)
     LIMITS.append((16, 156))
 
 def mouth(k):
@@ -83,8 +84,9 @@ def bulkhead(k, gap):
 STRIPS = []
 for k in range(4): lunar(k)
 mouth(4); mouth(5)
-for k in range(6, 10): tube(k, True, False)
-for k in range(10, 14): tube(k, True, True)
+# ★照明は色 2..5 を列ごとに順に使い、s3.c がパレットを回して壁を流れる光にする(M7 の後)
+for k in range(6, 10): tube(k, True, False, 2 + (k - 6))
+for k in range(10, 14): tube(k, True, True, 2 + (k - 10))
 tube(14, False, False); tube(15, False, True)
 bulkhead(16, (16, 68)); bulkhead(17, (68, 120)); bulkhead(18, (120, 172)); bulkhead(19, None)
 for k in range(20, 32): tube(k, False, False)
@@ -98,7 +100,7 @@ def tubecols(n, bulk_every=0):
         if bulk_every and i % bulk_every == bulk_every - 1:
             BULK.append(len(cmap)); cmap.append(16 + rnd.randrange(3))
         else:
-            cmap.append(6 + rnd.randrange(4) if rnd.random() < 0.7 else 14)
+            cmap.append(6 + (len(cmap) & 3))          # 照明の色 2..5 を列の順に(流れる光)
 
 SEC['LUNAR'] = 0
 for i in range(40): cmap.append(rnd.randrange(4))

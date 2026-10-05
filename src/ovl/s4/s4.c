@@ -178,9 +178,9 @@ void ovl_update(void) {
     }
     flow();
     if (g_sec == SEC4_HAZE) haze();
-    /* 稲妻: 雲海と陽炎帯でときどき空が光る */
-    if (flash_t) flash_t--;
-    else if ((g_sec == SEC4_SEA || g_sec == SEC4_HAZE) && rnd8() < 2) flash_t = 4;
+    /* 稲妻: 雲海と陽炎帯でときどき空が光る。★雲の頂(色 4・5)も一緒に照らす(パレットアニメ。M7 の後) */
+    if (flash_t) { if (--flash_t == 0) { vdp_set_pal(4, 5, 3, 2); vdp_set_pal(5, 6, 5, 4); } }
+    else if ((g_sec == SEC4_SEA || g_sec == SEC4_HAZE) && rnd8() < 2) { flash_t = 4; vdp_set_pal(4, 6, 6, 7); vdp_set_pal(5, 7, 7, 7); }
     for (i = 0; i < S4_NL; i++) {
         const u8 *c = sky_dusk[i];
         if (flash_t && i >= 6) { sky[i][0] = 6; sky[i][1] = 6; sky[i][2] = 7; }

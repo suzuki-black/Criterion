@@ -55,6 +55,19 @@ static u8 shot_rect(s16 x, s16 y, u8 w, u8 h) {
     }
     return n;
 }
+/* ★パレットアニメ(M7 の後): 板の縁(色 3)が中枢の鼓動のように 2 度ずつ光る。ボスの間は速く、脱出は赤い警報。宇宙へ抜けたら雲の色へ戻す */
+static const u8 beat[16] = { 7, 5, 3, 2, 6, 4, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1 };
+static void pulse(void) {
+    u8 v, r;
+    if (g_sec >= SEC8_OUT) { if (sec_t == 1) { bg_mix(15); bg_mix(16); } return; }   /* bg_mix は値が替わったときだけ書く */
+    if (sec_t & 1) return;
+    v = (u8)(sec_t >> 1);
+    if (g_sec < SEC8_BOSS1) v >>= 1;
+    v = beat[v & 15]; r = (u8)(v >> 1);
+    if (g_sec == SEC8_ESCAPE) { r = v; v = 0; }                   /* 赤い警報(1 つの呼び出しにまとめる。SDCC 4.6 は 0 の引数で ld hl, a を出した) */
+    vdp_set_pal(3, r, v, v);
+}
+
 static s16 col_of_screen(void) { return (s16)(((u16)(g_wx - (g_w0 << 3))) >> 3); }
 
 /* ======== 鐘のコマ(中枢の間に ROTOR で) ======== */
@@ -282,6 +295,7 @@ void ovl_init(void) {
 void ovl_update(void) {
     s16 c = col_of_screen();
     sec_t++;
+    pulse();
     switch (g_sec) {
     case SEC8_CORE:                                           /* 原器の間で、画面がページ 0 にそろったら止める */
         if (c >= S8_COL_BOSS && (g_wx & 511u) == 0 && rj >= 16) { g_scroll_speed = 0; enemy_waves(WAVES_NONE); boss_form(SEC8_BOSS1); }

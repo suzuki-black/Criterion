@@ -6,7 +6,8 @@
 1. s2_strips.bin: 短冊 32 本(8x188、4bpp。ページ 3 の 0..187 行)。軌道上の残骸の帯。
    地(色 1)は宇宙(ラスターで暗い藍)。天井(上)と床(下)に残骸の塊。高さは 4 段 × 4 段 = 16 通り × 2 柄。
    ★0..3 行は必ず色 6(表示リングの 188..191 行は描き替えないブロック。stage.c)。天井は最低 4 行。
-   使う色: 1 宇宙 / 6 残骸の影 / 7 縁の光 / 9 青灰の板 / 13 赤い灯 / 14 灰の板 / 15 星。
+   使う色: 1 宇宙 / 2 赤い灯(点滅)/ 3..5 瞬く星 / 6 残骸の影 / 7 縁の光 / 9 青灰の板 / 14 灰の板 / 15 星。
+   2..5 は s2.c がパレットを回す(KILOGRAM の間は KILOGRAM の色。そのころには残骸の帯は無い)。
 2. s2_map.bin: 地図(列ごとの短冊の番号、528 列)。区間ごとに天井と床の高さを変える。
 3. s2_data.h: 区間の列の位置、短冊ごとの天井の行数と床の上端の行(自機の当たり)。
 4. kg.bin: KILOGRAM(64x64、4bpp)。黒い球(色 2 / 3)、縁の光(4 / 5)、赤道の亀裂(13)。外は色 1。
@@ -33,7 +34,7 @@ def wreck(x0, y0, y1, seed, face):
             if (y // 6 + seed) % 3 == 1 and x in (2, 3, 4, 5): c = 14
             if y % 6 == 0: c = 6
             put(x0 + x, y, c)
-        if r.random() < 0.08: put(x0 + r.randrange(8), y, 13)
+        if r.random() < 0.08: put(x0 + r.randrange(8), y, 2)   # ★赤い灯は色 2(s2.c が点滅させる)
     edge = y1 - 1 if face == 1 else y0
     for x in range(8): put(x0 + x, edge, 7)
 
@@ -50,7 +51,7 @@ for v in range(2):
             # 星(宇宙の部分にまばらに)
             for i in range(3 + v):
                 y = rnd.randrange(t + 2, H - b - 2) if H - b - t > 6 else None
-                if y is not None: put(x0 + rnd.randrange(8), y, 15 if rnd.random() < 0.4 else 14)
+                if y is not None: put(x0 + rnd.randrange(8), y, 15 if rnd.random() < 0.4 else 3 + rnd.randrange(3))   # ★瞬く星(色 3..5)
             STRIPS.append((t, H - b))
 assert len(STRIPS) == 32
 

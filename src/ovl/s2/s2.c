@@ -36,6 +36,16 @@ static const u8 well_pat[4][32] = {
     { 0x00, 0x00, 0x01, 0x03, 0x04, 0x04, 0x0D, 0x07, 0x07, 0x01, 0x40, 0x40, 0x30, 0x1F, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x0C, 0x02, 0x02, 0x80, 0xE0, 0xE0, 0xB0, 0x20, 0x20, 0xC0, 0x80, 0x00, 0x00 },
     { 0x00, 0x00, 0x00, 0x00, 0x43, 0x42, 0x43, 0x43, 0x43, 0x61, 0x20, 0x18, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x18, 0x04, 0x86, 0xC2, 0xC2, 0xC2, 0x42, 0xC2, 0x00, 0x00, 0x00, 0x00 },
 };
+/* ★パレットアニメ(M7 の後): 残骸の赤い灯(色 2)は 1 秒に 1 回点き、星(色 3..5)は位相をずらして瞬く。
+   空中戦と沈む間は雲の色なので、宇宙の区間(DOWN〜CENTER)だけ。KILOGRAM は 2..5 を自分の色にする */
+static const u8 twk[8] = { 2, 3, 5, 7, 6, 4, 3, 2 };
+static void twinkle(void) {
+    u8 i, t = (u8)sec_t;
+    if (t & 3) return;
+    for (i = 0; i < 3; i++) { u8 v = twk[(u8)((t >> 2) + i * 3) & 7]; vdp_set_pal((u8)(3 + i), v, v, 7); }
+    if ((u8)(t & 63) < 12) vdp_set_pal(2, 7, 1, 1); else vdp_set_pal(2, 2, 0, 1);
+}
+
 static void warn(const char *s) { stage_banner(s); pcm_req(PCM_V02); }   /* 重力が替わる予告(帯と声) */
 
 static s16 well_sx(u8 i) { return (s16)((s16)(well_col[i] - (u16)((g_wx >> 3) - g_w0)) * 8 - (s16)(g_wx & 7)); }
@@ -116,6 +126,7 @@ static void terrain(void) {
 
 void ovl_update(void) {
     sec_t++;
+    if (g_sec >= SEC2_DOWN && g_sec <= SEC2_CENTER) twinkle();
     switch (g_sec) {
     case SEC2_AIR:
         if ((u16)(g_wx - sec_wx) >= AIR_LEN) enter(SEC2_SINK);

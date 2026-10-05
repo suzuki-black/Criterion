@@ -32,6 +32,8 @@ static s16 top_e, bot_e, top_d, bot_d;   /* 縁の行(画面)/ 描いてある�
 static u8  tu_hp[8], mid_t, adv_t;
 static const u8 tu_x[4] = { 40, 96, 152, 208 };
 
+/* ★パレットアニメ(M7 の後): 板の縁(色 3)が中枢の鼓動のように 2 度ずつ光る。空中戦の間は雲の色なので縦穴から */
+static const u8 beat[16] = { 7, 5, 3, 2, 6, 4, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1 };
 static u16 col_of_screen(void) { return (u16)(((u16)(g_wx - (g_w0 << 3))) >> 3); }
 
 static void enter(u8 sec) {
@@ -149,6 +151,7 @@ static void mid_vram(void) {
 
 void ovl_update(void) {
     sec_t++;
+    if (g_sec >= SEC8_SHAFT && !(sec_t & 3)) { u8 v = beat[(u8)(sec_t >> 2) & 15]; vdp_set_pal(3, (u8)(v >> 1), v, v); }
     switch (g_sec) {
     case SEC8_AIR:                                            /* 全種の編隊の中を上昇する */
         if (g_scam_q > S8_SHAFT_TOP * 16) g_scam_q -= 7;
