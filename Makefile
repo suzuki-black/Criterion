@@ -58,39 +58,39 @@ $(BUILD)/title.stamp: tools/gen_title.py | $(BUILD)
 $(BUILD)/city.stamp: tools/gen_city.py | $(BUILD)
 	python3 tools/gen_city.py $(BUILD) $(BUILD)/city_data.h
 	touch $@
-$(BUILD)/city_data.h: $(BUILD)/city.stamp
+$(BUILD)/city_data.h: $(BUILD)/city.stamp ; @:
 $(BUILD)/boss.stamp: tools/gen_boss.py | $(BUILD)
 	python3 tools/gen_boss.py $(BUILD)
 	touch $@
 $(BUILD)/stage2.stamp: tools/gen_stage2.py | $(BUILD)
 	python3 tools/gen_stage2.py $(BUILD) $(BUILD)/s2_data.h
 	touch $@
-$(BUILD)/s2_data.h: $(BUILD)/stage2.stamp
+$(BUILD)/s2_data.h: $(BUILD)/stage2.stamp ; @:
 $(BUILD)/stage3.stamp: tools/gen_stage3.py | $(BUILD)
 	python3 tools/gen_stage3.py $(BUILD) $(BUILD)/s3_data.h
 	touch $@
-$(BUILD)/s3_data.h: $(BUILD)/stage3.stamp
+$(BUILD)/s3_data.h: $(BUILD)/stage3.stamp ; @:
 $(BUILD)/stage4.stamp: tools/gen_stage4.py | $(BUILD)
 	python3 tools/gen_stage4.py $(BUILD) $(BUILD)/s4_data.h
 	touch $@
-$(BUILD)/s4_data.h: $(BUILD)/stage4.stamp
+$(BUILD)/s4_data.h: $(BUILD)/stage4.stamp ; @:
 $(BUILD)/stage5.stamp: tools/gen_stage5.py | $(BUILD)
 	python3 tools/gen_stage5.py $(BUILD) $(BUILD)/s5_data.h
 	touch $@
-$(BUILD)/s5_data.h: $(BUILD)/stage5.stamp
+$(BUILD)/s5_data.h: $(BUILD)/stage5.stamp ; @:
 $(BUILD)/stage6.stamp: tools/gen_stage6.py | $(BUILD)
 	python3 tools/gen_stage6.py $(BUILD) $(BUILD)/s6_data.h
 	touch $@
-$(BUILD)/s6_data.h: $(BUILD)/stage6.stamp
+$(BUILD)/s6_data.h: $(BUILD)/stage6.stamp ; @:
 $(BUILD)/stage8.stamp: tools/gen_stage8.py | $(BUILD)
 	python3 tools/gen_stage8.py $(BUILD) $(BUILD)/s8_data.h
 	touch $@
-$(BUILD)/s8_data.h: $(BUILD)/stage8.stamp
+$(BUILD)/s8_data.h: $(BUILD)/stage8.stamp ; @:
 # 音(tools/gen_sound.py: 曲の MML と PCM の合成 → snd.bin、ROM のバンク 40 から)
 $(BUILD)/snd.stamp: tools/gen_sound.py tools/songs.py tools/snd_pcm.py $(wildcard assets/pcm/*.wav) | $(BUILD)
 	python3 tools/gen_sound.py $(BUILD)/snd.bin $(BUILD)/snd_data.h
 	touch $@
-$(BUILD)/snd_data.h $(BUILD)/snd.bin: $(BUILD)/snd.stamp
+$(BUILD)/snd_data.h $(BUILD)/snd.bin: $(BUILD)/snd.stamp ; @:
 $(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/spr_col.bin $(BUILD)/spr_pat.bin $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp $(BUILD)/stage4.stamp $(BUILD)/stage5.stamp $(BUILD)/stage6.stamp $(BUILD)/stage8.stamp
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
@@ -105,7 +105,7 @@ $(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/spr_col.bin $(BUILD)/spr_pa
 	    S8_STRIPS=$(BUILD)/s8_strips.bin S8_MAP=$(BUILD)/s8_map.bin TBAR=$(BUILD)/tbar.bin BELL_I=$(BUILD)/bell_i.bin BELL96=$(BUILD)/bell96.bin \
 	    SPR_COL=$(BUILD)/spr_col.bin SPR_PAT=$(BUILD)/spr_pat.bin
 	touch $@
-$(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp
+$(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp ; @:
 
 # ---- 本体(GAME.ROM, 1MB) ----
 # ★割込み処理(raster)と ROM 読み出し(rom)はページ 1(0x8000 未満)に置く。ROM を読む間はページ 2 が
