@@ -1,9 +1,9 @@
 /* s6boss.c — 6 面の歯車・砂粒虫・数字の砲台、中ボス HOURGLASS、ボス GNOMON(指示書 5.6)。
-   ・歯車と砂時計は ROTOR で回したコマを面の入りで作ってページ 3(68 行から下: 6 面の短冊は 0..67 行しか使わない)
-     とページ 2 に置き、HMMM で表示リングへ写す(歯車 8 コマ = 45°(歯 8 枚)で一周、30fps。砂時計 6 コマ = 0..150°)。
+   ・歯車(ROTOR で回す)と砂時計(ROM の絵)のコマを面の入りで作ってページ 3(68 行から下: 6 面の短冊は 0..67 行しか
+     使わない)とページ 2 に置き、HMMM で表示リングへ写す(歯車 8 コマ = 45°(歯 8 枚)で一周、30fps。砂時計 5 コマ = 0..146°)。
    ・砂粒虫: 外壁の棚のスプライト。砂粒(落ちる弾)をこぼす。影の中では敵の体の色(12)が暗くなり、目(弾の色 8 の
      スプライト)だけが光る。
-   ・HOURGLASS: 64x64(★指示書は 96。ROTOR の写し先が 64x64 まで)。3 秒ごとに 180° 回り、回っている間だけ括れ
+   ・HOURGLASS: 96x96(C3。VRAM に置けるのは 5 コマ)。3 秒ごとに 180° 回り、回っている間だけ括れ
      (弱点)が出る。回り終えると上の砂が括れからこぼれる(落ちる弾)。
    ・数字の砲台: 文字盤の台座の上の I..XII(フォントで BG に描く。壊すと空で塗る)。
    ・GNOMON: 画面のリングがページ 0 にそろう位置で止め、根元(BG)を軸に長さ 120 の針を VDP の LINE で描く
@@ -58,37 +58,48 @@ static void touch_rect(s16 x, s16 y, u8 w, u8 h) {
 }
 
 /* ======== ROTOR のコマ(面の入りで作る) ======== */
-/* 0..7 歯車(32x32、元の半分の大きさ)、8..13 砂時計(64x64) */
-static const u8 hg_ang[6] = { 0, 5, 11, 16, 21, 27 };
+/* 0..7 歯車(32x32、元の半分の大きさ。ROTOR)、8..12 砂時計(96x96。★C3: 64x64 から大きくした。ROTOR で 1.5 倍にすると
+   縁が角ばるので、gen_stage6.py で 5 つの角度を描き直して ROM に置き、写すだけ。角度は HG96_ANG = 0..146°) */
+#define HG_N    96
+#define HG_NF   5                  /* 砂時計のコマ(★96x96 は VRAM に 5 コマまで) */
+#define RJ_END  (8 + HG_NF)
+/* 砂時計のコマは 16 行ずつの片に分けて置く(片 g = コマ × 6 + 段)。96 幅の列 2 本 × (ページ 2 の 48..207 行 =
+   片 10 個、ページ 3 の 100..179 行 = 片 5 個) = 30 片。★ページ 2 の 160..183 行は面の開始表示の帯でも使うが、
+   砂時計を作るのは 6 面の帯が終わってからで、次の面の帯は砂時計の後。ページ 3 の 180 行より先と 192 行〜は使わない */
+static u16 hg_sy;
+static u8  hg_sx;
+static void hg_slot(u8 g) {
+    if (g < 20) { hg_sx = g >= 10 ? 96 : 0; if (g >= 10) g -= 10; hg_sy = (u16)(512 + 48 + g * 16u); }
+    else { g -= 20; hg_sx = g >= 5 ? 96 : 0; if (g >= 5) g -= 5; hg_sy = (u16)(768 + 100 + g * 16u); }
+}
 static u8 rj, rph, rrow;           /* 仕事の番号 / 0 = 元を読む、1 = 回す、2 = VRAM へ / 進んだ行 */
-static u8 rot_n(void) { return rj < 8 ? 32 : 64; }
 static void rot_update(void) {
-    u8 n = rot_n();
-    if (rj >= 14 || g_sec < SEC6_SINK) return;
+    if (rj >= RJ_END || g_sec < SEC6_SINK) return;
     if (rph == 0) {
+        rrow = 0;
+        if (rj >= 8) { rph = 2; return; }                     /* 砂時計: 描いた絵(ROM)を写すだけ */
         if (rj == 0) rom_to_ram(ASSET_GEAR_BANK, ASSET_GEAR_OFF, ROTOR_SRC, 2048);
-        if (rj == 8) rom_to_ram(ASSET_HOURGLASS_BANK, ASSET_HOURGLASS_OFF, ROTOR_SRC, 2048);
-        rotor_begin(n, rj < 8 ? rj : hg_ang[rj - 8], rj < 8 ? 512 : 256, rj < 8 ? 2 : 1);
-        rph = 1; rrow = 0;
+        rotor_begin(32, rj, 512, 2);
+        rph = 1;
     } else if (rph == 1) {                                    /* 1 フレーム 256 ドットほど(約 3ms) */
-        u8 k = rj < 8 ? 8 : 4;
-        rotor_rows(ROTOR_DST + (u16)rrow * (n >> 1), k);
-        rrow += k;
-        if (rrow >= n) { rph = 2; rrow = 0; }
+        rotor_rows(ROTOR_DST + (u16)rrow * 16u, 8);
+        rrow += 8;
+        if (rrow >= 32) { rph = 2; rrow = 0; }
     }
 }
 static void rot_vram(void) {       /* 出来たコマを 8 行ずつ VRAM へ(重いフレームは次へ) */
     extern u16 g_frame_t0;
-    u8 k, n = rot_n();
-    if (rj >= 14 || rph != 2 || (u16)(sys_timer() - g_frame_t0) >= 150u * 16u) return;
+    u8 k, n = rj < 8 ? 32 : HG_N;
+    if (rj >= RJ_END || rph != 2 || (u16)(sys_timer() - g_frame_t0) >= 150u * 16u) return;
     for (k = 0; k < 8 && rrow < n; k++, rrow++) {
-        u16 a;
-        u8 hi = 1;
-        if (rj < 8) a = (u16)(0x8000u + (u16)(68 + rrow) * 128u + rj * 16u);                       /* ページ 3 の 68 行 */
-        else if (rj < 12) a = (u16)(0x8000u + (u16)(100 + rrow) * 128u + (rj - 8) * 32u);          /* ページ 3 の 100 行 */
-        else a = (u16)((u16)(48 + rrow) * 128u + (rj - 12) * 32u);                                /* ページ 2 の 48 行 */
-        vdp_write_addr17(hi, a);
-        vdp_out_block(n >> 1, ROTOR_DST + (u16)rrow * (n >> 1));
+        if (rj < 8) {
+            vdp_write_addr17(1, (u16)(0x8000u + (u16)(68 + rrow) * 128u + rj * 16u));            /* ページ 3 の 68 行 */
+            vdp_out_block(16, ROTOR_DST + (u16)rrow * 16u);
+        } else {
+            hg_slot((u8)((rj - 8) * 6 + (rrow >> 4)));
+            rom_to_vram(ASSET_HG96_BANK, (u16)(ASSET_HG96_OFF + ((u16)(rj - 8) * HG_N + rrow) * (HG_N / 2)), 1,
+                        (u16)((u16)(hg_sy - 512 + (rrow & 15)) * 128u + (hg_sx >> 1)), HG_N / 2);   /* ページ 2|3 */
+        }
     }
     if (rrow >= n) { rj++; rph = 0; }
 }
@@ -185,17 +196,17 @@ static void num_vram(void) {       /* 1 フレーム 1 個(CPU で VRAM を書�
 }
 
 /* ======== HOURGLASS ======== */
-#define HG_X  128                  /* 画面の左上(リングの見えない半分から寄せず、止めた画面に描く) */
+#define HG_X  112                  /* 画面の左上(リングの見えない半分から寄せず、止めた画面に描く。中心は 160) */
 #define HG_S  (-68)                /* 上端の行(空の行。ブロック 23 と YJK の行を避ける) */
 static u8  hg_f, hg_shown, hg_chunk, hg_ph;
 static u16 hg_t;
 static u8  b_t;
 void b6_mid_start(void) { hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_ph = 0; hg_t = 0; g_boss_state = BS_ENTER; g_boss_hp = 16; b_t = 0; }
 static void hg_update(void) {
-    s16 cy = s6_sy(HG_S + 32), cx = HG_X + 32;
-    if (g_boss_state == BS_ENTER) { if (rj >= 14 && hg_shown == 0) g_boss_state = BS_FIGHT; return; }
+    s16 cy = s6_sy(HG_S + HG_N / 2), cx = HG_X + HG_N / 2;
+    if (g_boss_state == BS_ENTER) { if (rj >= RJ_END && hg_shown == 0) g_boss_state = BS_FIGHT; return; }
     if (g_boss_state == BS_DYING) {
-        if (!(b_t & 3)) fx_spawn(FX(HG_X + (rnd8() & 63)), FX(s6_sy(HG_S) + (rnd8() & 63)));
+        if (!(b_t & 3)) fx_spawn(FX(HG_X + (rnd8() & 63) + (rnd8() & 31)), FX(s6_sy(HG_S) + (rnd8() & 63) + (rnd8() & 31)));
         if (++b_t == 90) hg_f = 0xFE;                         /* 空で塗る(b6_vram) */
         if (b_t > 100 && hg_shown == 0xFE) g_boss_state = BS_DONE;
         return;
@@ -204,36 +215,34 @@ static void hg_update(void) {
     if (hg_ph == 0) {                                         /* 止まっている: 括れから砂がこぼれる */
         if (hg_t < 100 && !(hg_t & 7)) enemy_bullet(FX(cx - 2 + (rnd8() & 3)), FX(cy + 4), (s16)((s16)(rnd8() & 15) - 8), 20 + (rnd8() & 7));
         if (hg_t >= 120) { hg_ph = 1; hg_t = 0; }
-    } else {                                                  /* 180° 回る(コマ 1..5、10 フレームずつ)→ 0 */
+    } else {                                                  /* 180° 回る(コマ 1..4、13 フレームずつ)→ 0 */
         u8 f = 1;
         u16 tt = hg_t;
-        while (tt >= 10) { tt -= 10; f++; }                   /* hg_t / 10(割り算はライブラリ呼び出し) */
-        if (f > 5) { f = 0; hg_ph = 0; hg_t = 0; }
+        while (tt >= 13) { tt -= 13; f++; }                   /* hg_t / 13(割り算はライブラリ呼び出し) */
+        if (f >= HG_NF) { f = 0; hg_ph = 0; hg_t = 0; }
         hg_f = f;
-        if (f >= 2 && f <= 4) {                               /* 括れ(弱点)が横を向いている */
+        if (f >= 2 && f <= 3) {                               /* 括れ(弱点)が横を向いている(73°・107°。26 フレーム) */
             g_boss_aim = cy;
-            if (shot_rect(cx - 8, cy - 8, 16, 16)) {
+            if (shot_rect(cx - 12, cy - 12, 24, 24)) {
                 if (g_boss_hp) g_boss_hp--;
                 if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(3000); return; }
             }
         }
     }
-    if (hg_ph == 0) shot_rect(HG_X, s6_sy(HG_S), 64, 64);     /* 止まっている間はガラスが弾を止める(回っている間は括れまで届く) */
-    touch_rect(HG_X + 6, s6_sy(HG_S) + 4, 52, 56);
+    if (hg_ph == 0) shot_rect(HG_X, s6_sy(HG_S), HG_N, HG_N); /* 止まっている間はガラスが弾を止める(回っている間は括れまで届く) */
+    touch_rect(HG_X + 9, s6_sy(HG_S) + 6, 78, 84);
 }
-static void hg_vram(void) {        /* コマが替わったら 16 行ずつ 4 回で写す */
+static void hg_vram(void) {        /* コマが替わったら 16 行ずつ 6 回で写す */
     u8 f = hg_f;
-    u16 sx, sy;
-    if (g_boss_state == BS_NONE || g_boss_state == BS_DONE || rj < 14 || gq_free() < 6) return;
+    if (g_boss_state == BS_NONE || g_boss_state == BS_DONE || rj < RJ_END || gq_free() < 6) return;
     if (f == 0xFE) {
-        if (hg_shown != 0xFE) { ring_cmd(0, 0, HG_X, s6_sy(HG_S), 64, 64, 1, 0x11); hg_shown = 0xFE; }
+        if (hg_shown != 0xFE) { ring_cmd(0, 0, HG_X, s6_sy(HG_S), HG_N, HG_N, 1, 0x11); hg_shown = 0xFE; }
         return;
     }
     if (hg_shown == f && hg_chunk == 0) return;
-    if (f < 4) { sx = (u16)(f * 64u); sy = 768 + 100; }
-    else { sx = (u16)((f - 4) * 64u); sy = 512 + 48; }
-    ring_cmd(sx, (u16)(sy + hg_chunk * 16u), HG_X, (s16)(s6_sy(HG_S) + hg_chunk * 16), 64, 16, 0, 0);
-    if (++hg_chunk >= 4) { hg_chunk = 0; hg_shown = f; }
+    hg_slot((u8)(f * 6 + hg_chunk));
+    ring_cmd(hg_sx, hg_sy, HG_X, (s16)(s6_sy(HG_S) + hg_chunk * 16), HG_N, 16, 0, 0);
+    if (++hg_chunk >= HG_N / 16) { hg_chunk = 0; hg_shown = f; }
 }
 
 /* ======== GNOMON ======== */

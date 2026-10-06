@@ -13,7 +13,7 @@
 2. s6_map.bin: 地図 640 列(空 64 → 外壁 160 → 影 128 → 砂時計 32 → 文字盤 128 → 指針 56 → 残り)
 3. s6_data.h: 区間の列、短冊ごとの上端(自機の当たり)、歯車・砂粒虫・数字の列
 4. yjk_even.bin / yjk_odd.bin: 惑星の帯(256x48 の YJK)。偶数バイト → ページ 0、奇数バイト → ページ 2 の 0..47 行
-5. gear.bin / hourglass.bin: ROTOR の元(64x64、4bpp)
+5. gear.bin: ROTOR の元(64x64、4bpp)。hg96.bin: 砂時計の 96x96 の 5 コマ(C3。ROTOR を使わず写す)
 6. s6_spr.bin: スプライト 2 枚(砂粒虫・影の中の目)
 """
 import math, os, random, sys
@@ -165,19 +165,35 @@ def gear():
                 s[y][x] = c
     return pack(s)
 
-def hourglass():
-    s = [[1] * 64 for _ in range(64)]
-    for y in range(64):
-        for x in range(64):
-            dx, dy = x - 31.5, y - 31.5
-            if abs(dy) > 25 and abs(dy) <= 29 and abs(dx) < 22: s[y][x] = 5 if abs(dy) < 28 else 3   # 枠
-            elif abs(dy) <= 25:
-                w = 3 + 16 * (abs(dy) / 25) ** 1.4                # 括れ
-                if abs(abs(dx) - w) < 1.2: s[y][x] = 15 if dx < 0 else 9   # ガラスの縁
-                elif abs(dx) < w and dy > 6: s[y][x] = 7          # 下に溜まった砂
-                elif abs(dx) < w: s[y][x] = 1
-            if abs(dx) > 18 and abs(dx) < 21 and abs(dy) <= 25: s[y][x] = 3   # 支柱
-    return pack(s)
+def hg_dot(dx, dy, k=1):
+    """砂時計の 1 ドットの色。dx, dy は中心からの位置(64x64 の大きさで k = 1)"""
+    c = 1
+    if abs(dy) > 25 * k and abs(dy) <= 29 * k and abs(dx) < 22 * k: c = 5 if abs(dy) < 28 * k else 3   # 枠
+    elif abs(dy) <= 25 * k:
+        w = (3 + 16 * (abs(dy) / (25 * k)) ** 1.4) * k        # 括れ
+        if abs(abs(dx) - w) < 1.2 * (k ** 0.5): c = 15 if dx < 0 else 9   # ガラスの縁(太さは大きさほどには増やさない)
+        elif abs(dx) < w and dy > 6 * k: c = 7                # 下に溜まった砂
+        elif abs(dx) < w: c = 1
+    if abs(dx) > 18 * k and abs(dx) < 21 * k and abs(dy) <= 25 * k: c = 3   # 支柱
+    return c
+
+HG96_ANG = (0, 6, 13, 19, 26)      # 64 で一周(s6boss.c の HG_NF = 5 コマ)
+
+def hourglass96():
+    """C3: 96x96 の 5 コマを直に描く(ROTOR で 1.5 倍にすると縁が角ばる)。回り方は ROTOR と同じ
+       (写し先の (x, y) → 元の (cos・x + sin・y, -sin・x + cos・y))"""
+    out = b''
+    for a in HG96_ANG:
+        c, s = math.cos(a * math.pi / 32), math.sin(a * math.pi / 32)
+        rows = []
+        for y in range(96):
+            row = []
+            for x in range(96):
+                X, Y = x - 47.5, y - 47.5
+                row.append(hg_dot(c * X + s * Y, -s * X + c * Y, 1.5))
+            rows.append(row)
+        out += pack(rows)
+    return out
 
 def sprites():
     def pat(rows):
@@ -196,7 +212,7 @@ def main(d, hpath):
     open(os.path.join(d, 'yjk_even.bin'), 'wb').write(ev)
     open(os.path.join(d, 'yjk_odd.bin'), 'wb').write(od)
     open(os.path.join(d, 'gear.bin'), 'wb').write(gear())
-    open(os.path.join(d, 'hourglass.bin'), 'wb').write(hourglass())
+    open(os.path.join(d, 'hg96.bin'), 'wb').write(hourglass96())
     open(os.path.join(d, 's6_spr.bin'), 'wb').write(sprites())
     with open(hpath, 'w') as f:
         f.write('/* s6_data.h — tools/gen_stage6.py が生成(手で編集しない)。6 面の区間と当たり。 */\n')
