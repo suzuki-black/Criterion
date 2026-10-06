@@ -102,7 +102,7 @@ $(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/spr_col.bin $(BUILD)/spr_pa
 	    S5_SPR=$(BUILD)/s5_spr.bin GAUGE=$(BUILD)/gauge.bin \
 	    S6_STRIPS=$(BUILD)/s6_strips.bin S6_MAP=$(BUILD)/s6_map.bin YJK_EVEN=$(BUILD)/yjk_even.bin YJK_ODD=$(BUILD)/yjk_odd.bin \
 	    GEAR=$(BUILD)/gear.bin HG96=$(BUILD)/hg96.bin S6_SPR=$(BUILD)/s6_spr.bin \
-	    S8_STRIPS=$(BUILD)/s8_strips.bin S8_MAP=$(BUILD)/s8_map.bin TBAR=$(BUILD)/tbar.bin BELL_O=$(BUILD)/bell_o.bin BELL_I=$(BUILD)/bell_i.bin \
+	    S8_STRIPS=$(BUILD)/s8_strips.bin S8_MAP=$(BUILD)/s8_map.bin TBAR=$(BUILD)/tbar.bin BELL_I=$(BUILD)/bell_i.bin BELL96=$(BUILD)/bell96.bin \
 	    SPR_COL=$(BUILD)/spr_col.bin SPR_PAT=$(BUILD)/spr_pat.bin
 	touch $@
 $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp

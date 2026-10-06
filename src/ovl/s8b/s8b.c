@@ -1,5 +1,5 @@
 /* s8b.c — 8 面「原器」の後半のオーバレイ: 中枢・ラスボス PROTOTYPE ZERO(3 形態)・脱出(指示書 5.8)。
-   ・中枢: 回廊を進む間に、二重の鐘のコマを ROTOR で作ってページ 2 に置く(外の鐘 64x64 × 8、内の鐘 32x32 × 8)。
+   ・中枢: 回廊を進む間に、二重の鐘のコマを作ってページ 2 に置く(外の鐘 96x96 × 4、内の鐘 32x32 × 8 は ROTOR)。
      原器の間でリングのページ 0 = 画面になる位置で止める(LINE の座標 = 画面の座標)。
    ・第 1 形態「二重の鐘」: 外の鐘と内の鐘を逆へ回す(コマを入れ替えて写す)。継ぎ目からレーザー(弾)が漏れる。
    ・第 2 形態「原器」: X 字断面の棒。LINE の 3 本の平行線と両端の十字で描き、回りながら伸び縮みする(遠ざかり、
@@ -70,39 +70,49 @@ static void pulse(void) {
 
 static s16 col_of_screen(void) { return (s16)(((u16)(g_wx - (g_w0 << 3))) >> 3); }
 
-/* ======== 鐘のコマ(中枢の間に ROTOR で) ======== */
-static u8 rj, rph, rrow;           /* 0..7 外の鐘、8..15 内の鐘 */
+/* ======== 鐘のコマ(中枢の間に作る) ======== */
+/* 外の鐘 96x96 × 4(★C3: 64x64 × 8 から大きくした。VRAM に入るのは 4 コマ = 0..33.75°、継ぎ目 8 本なので一周)、
+   内の鐘 32x32 × 8(ROTOR)。置き場はページ 2: 外 k → x (k&1)*96、行 (k>>1)*96、内 i → x 192 + (i&1)*32、行 (i>>1)*32 */
+#define BO_N   96
+#define BO_NF  4
+#define RJ_IN  BO_NF               /* 内の鐘の最初の仕事 */
+#define RJ_END (BO_NF + 8)
+static u8 rj, rph, rrow;           /* 0..3 外の鐘(gen_stage8.py で描いた絵を ROM から写すだけ。ROTOR で 1.5 倍にすると縁が角ばる)、
+                                      4..11 内の鐘(ROTOR) */
 static void rot_update(void) {
-    u8 n = rj < 8 ? 64 : 32;
-    if (rj >= 16) return;
+    if (rj >= RJ_END) return;
     if (rph == 0) {
-        if (rj == 0) rom_to_ram(ASSET_BELL_O_BANK, ASSET_BELL_O_OFF, ROTOR_SRC, 2048);
-        if (rj == 8) rom_to_ram(ASSET_BELL_I_BANK, ASSET_BELL_I_OFF, ROTOR_SRC, 2048);
-        rotor_begin(n, rj < 8 ? rj : (u8)((rj - 8) * 2), rj < 8 ? 256 : 512, 1);   /* 外は 45° で一周(継ぎ目 8)、内は 90°(4) */
-        rph = 1; rrow = 0;
+        rrow = 0;
+        if (rj < RJ_IN) { rph = 2; return; }
+        if (rj == RJ_IN) rom_to_ram(ASSET_BELL_I_BANK, ASSET_BELL_I_OFF, ROTOR_SRC, 2048);
+        rotor_begin(32, (u8)((rj - RJ_IN) * 2), 512, 1);       /* 内は 90° で一周(継ぎ目 4) */
+        rph = 1;
     } else if (rph == 1) {
-        u8 k = rj < 8 ? 4 : 8;
-        rotor_rows(ROTOR_DST + (u16)rrow * (n >> 1), k);
-        rrow += k;
-        if (rrow >= n) { rph = 2; rrow = 0; }
+        rotor_rows(ROTOR_DST + (u16)rrow * 16u, 8);
+        rrow += 8;
+        if (rrow >= 32) { rph = 2; rrow = 0; }
     }
 }
 static void rot_vram(void) {
-    u8 k, n = rj < 8 ? 64 : 32;
-    if (rj >= 16 || rph != 2) return;
+    u8 k, n = rj < RJ_IN ? BO_N : 32;
+    if (rj >= RJ_END || rph != 2) return;
     for (k = 0; k < 8 && rrow < n; k++, rrow++) {
-        u16 a = rj < 8 ? (u16)((u16)((rj >> 2) * 64u + rrow) * 128u + (rj & 3) * 32u)   /* ページ 2 の 0..127 行 */
-                       : (u16)((u16)(128u + rrow) * 128u + (rj - 8) * 16u);             /* 128..159 行 */
-        vdp_write_addr17(1, a);
-        vdp_out_block(n >> 1, ROTOR_DST + (u16)rrow * (n >> 1));
+        if (rj >= RJ_IN) {
+            u8 i = (u8)(rj - RJ_IN);
+            vdp_write_addr17(1, (u16)((u16)((i >> 1) * 32u + rrow) * 128u + 96u + (i & 1) * 16u));
+            vdp_out_block(16, ROTOR_DST + (u16)rrow * 16u);
+        } else
+            rom_to_vram(ASSET_BELL96_BANK, (u16)(ASSET_BELL96_OFF + ((u16)rj * BO_N + rrow) * (BO_N / 2)), 1,
+                        (u16)((u16)((rj >> 1) * 96u + rrow) * 128u + (rj & 1) * 48u), BO_N / 2);
     }
     if (rrow >= n) { rj++; rph = 0; }
 }
 
 /* ======== 第 1 形態: 二重の鐘 ======== */
-static u8 fo, fi, bell_ph;
+static u8 fo, fi;
 static void bell_update(void) {
-    if (!(t & 3)) { fo = (u8)((fo + 1) & 7); fi = (u8)((fi - 1) & 7); }
+    if (!(t & 7)) fo = (u8)((fo + 1) & 3);                   /* 外は 8 フレームで 11.25°(前の 4 フレームで 5.6° と同じ速さ) */
+    if (!(t & 3)) fi = (u8)((fi - 1) & 7);
     if (!(t & 31)) {                                          /* 継ぎ目からレーザー(4 方向、回る) */
         u8 a = (u8)(t >> 3), k;
         for (k = 0; k < 4; k++) {
@@ -112,17 +122,18 @@ static void bell_update(void) {
     }
     if (!(t & 63)) enemy_shoot(FX(CX), FX(CY));
     g_boss_aim = CY;
-    if (shot_rect(CX - 24, CY - 24, 48, 48)) {
+    if (shot_rect(CX - 36, CY - 36, 72, 72)) {
         if (g_boss_hp) g_boss_hp--;
         if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(4000); }
     }
 }
-static void bell_vram(void) {
-    if (gq_free() < 8 || (t & 3)) return;
-    if (bell_ph == 0) ring_cmd((u16)((fo & 3) * 64u), (u16)(512u + (fo >> 2) * 64u), CX - 32, CY - 32, 64, 32, 0, 0);
-    else if (bell_ph == 1) ring_cmd((u16)((fo & 3) * 64u), (u16)(512u + (fo >> 2) * 64u + 32u), CX - 32, CY, 64, 32, 0, 0);
-    else ring_cmd((u16)(fi * 32u), 512 + 128, CX - 16, CY - 16, 32, 32, 0, 0);
-    if (++bell_ph >= 3) bell_ph = 0;
+static void bell_in(void) { ring_cmd((u16)(192u + (fi & 1) * 32u), (u16)(512u + (fi >> 1) * 32u), CX - 16, CY - 16, 32, 32, 0, 0); }
+static void bell_vram(void) {      /* 外は替わったら 32 行ずつ 3 回。内は真ん中の片(内の鐘を覆う)のすぐ後と、その 4 フレーム後 */
+    u8 p = (u8)(t & 7);
+    if (gq_free() < 8 || (p & 1)) return;
+    if (p == 6) { bell_in(); return; }
+    ring_cmd((u16)((fo & 1) * 96u), (u16)(512u + (fo >> 1) * 96u + p * 16u), CX - 48, (s16)(CY - 48 + p * 16), 96, 32, 0, 0);
+    if (p == 2) bell_in();
 }
 
 /* ======== LINE の図形(第 2 形態の棒、第 3 形態のリング): 前の線を消して描く ======== */
@@ -287,7 +298,7 @@ static void boss_form(u8 sec) {
 }
 
 void ovl_init(void) {
-    g_boss_state = BS_NONE; t = 0; rj = 0; rph = 0; rrow = 0; fo = fi = 0; bell_ph = 0; ln = 0; ang = 0;
+    g_boss_state = BS_NONE; t = 0; rj = 0; rph = 0; rrow = 0; fo = fi = 0; ln = 0; ang = 0;
     g_sec = SEC8_CORE; sec_t = 0; sec_wx = g_wx;
     enemy_waves(WAVES_AIR);
 }
@@ -298,13 +309,13 @@ void ovl_update(void) {
     pulse();
     switch (g_sec) {
     case SEC8_CORE:                                           /* 原器の間で、画面がページ 0 にそろったら止める */
-        if (c >= S8_COL_BOSS && (g_wx & 511u) == 0 && rj >= 16) { g_scroll_speed = 0; enemy_waves(WAVES_NONE); boss_form(SEC8_BOSS1); }
+        if (c >= S8_COL_BOSS && (g_wx & 511u) == 0 && rj >= RJ_END) { g_scroll_speed = 0; enemy_waves(WAVES_NONE); boss_form(SEC8_BOSS1); }
         break;
     case SEC8_BOSS1: case SEC8_BOSS2: case SEC8_BOSS3:
         if (g_boss_state == BS_DYING) {
             if (!(b_t & 3)) fx_spawn(FX(CX - 40 + (rnd8() & 79)), FX(CY - 40 + (rnd8() & 79)));
             if (++b_t >= 120) {
-                if (g_sec == SEC8_BOSS1) { ring_cmd(0, 0, CX - 32, CY - 32, 64, 64, 1, 0x11); boss_form(SEC8_BOSS2); }
+                if (g_sec == SEC8_BOSS1) { ring_cmd(0, 0, CX - 48, CY - 48, 96, 96, 1, 0x11); boss_form(SEC8_BOSS2); }
                 else if (g_sec == SEC8_BOSS2) boss_form(SEC8_BOSS3);
                 else { g_boss_state = BS_NONE; g_sec = SEC8_ESCAPE; sec_t = 0; sec_wx = g_wx; stage_banner("ESCAPE"); }
             }

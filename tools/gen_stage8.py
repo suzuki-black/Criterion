@@ -10,7 +10,7 @@
 2. s8_map.bin: 地図 640 列(縦穴の底 16 → 歪曲回廊 192 → 中ボスの間 40 → 中枢 96 → 原器の間 64 → 脱出 232)
 3. s8_data.h: 区間の列、短冊ごとの天井と床
 4. tbar.bin: TOLERANCE のバーの縁(256x6。目盛りつき)
-5. bell_o.bin / bell_i.bin: ROTOR の元(64x64、4bpp)。外の鐘と内の鐘(ガラスの継ぎ目つき)
+5. bell_i.bin: 内の鐘の ROTOR の元(64x64、4bpp。ガラスの継ぎ目つき)。bell96.bin: 外の鐘の 96x96 の 4 コマ(C3。ROTOR を使わず写す)
 """
 import math, os, random, sys
 
@@ -94,12 +94,36 @@ def bell(inner):
                 s[y][x] = c
     return pack(s)
 
+BELL96_ROT = (0, 2, 4, 6)           # 外の鐘の 96x96 の 4 コマ(64 で一周。継ぎ目 8 本なので 0..33.75° で足りる)
+
+def bell96():
+    """C3: 外の鐘の 96x96 の 4 コマを直に描く(ROTOR で 1.5 倍にすると縁が角ばる)。回り方は ROTOR と同じ
+       (元の角度 a の点が a + 回転 に来る)。★ハイライトは回さない(光は動かない)"""
+    out = b''
+    k = 1.5
+    for rot in BELL96_ROT:
+        th = rot * math.pi / 32
+        s = [[1] * 96 for _ in range(96)]
+        for y in range(96):
+            for x in range(96):
+                dx, dy = x - 47.5, y - 47.5
+                r = math.hypot(dx, dy); a = math.atan2(dy, dx) - th
+                r0, r1 = 10 * k, 28 * k
+                if r0 < r < r1:
+                    c = 9 if (r1 - r) > 3 * k else 15
+                    if r < r0 + 3 * k: c = 15
+                    if (a * 4 / math.pi) % 1.0 < 0.08: c = 2
+                    if (dx + dy) > 20 * k and c == 9: c = 7
+                    s[y][x] = c
+        out += pack(s)
+    return out
+
 def main(d, hpath):
     open(os.path.join(d, 's8_strips.bin'), 'wb').write(pack(img))
     open(os.path.join(d, 's8_map.bin'), 'wb').write(bytes(cmap))
     open(os.path.join(d, 'tbar.bin'), 'wb').write(tbar())
-    open(os.path.join(d, 'bell_o.bin'), 'wb').write(bell(False))
     open(os.path.join(d, 'bell_i.bin'), 'wb').write(bell(True))
+    open(os.path.join(d, 'bell96.bin'), 'wb').write(bell96())
     with open(hpath, 'w') as f:
         f.write('/* s8_data.h — tools/gen_stage8.py が生成(手で編集しない)。8 面の区間と当たり。 */\n')
         f.write('#ifndef S8_DATA_H\n#define S8_DATA_H\n\n')
