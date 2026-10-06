@@ -18,7 +18,7 @@ s16 g_pl_ymin, g_pl_ymax = PLAY_H - 16;
 s16 g_pl_dy;
 static s16 gvx, gvy;               /* 重力でついた速さ(固定小数点) */
 static u8  grav_key, grav_t;        /* 重力の種類と向き(替わったら立ち上げ直す)、替わってからのフレーム */
-#define WELL_R 56                   /* 渦(GRAV_CENTER)が引く範囲(ドット) */
+u8 g_well_r = 56;                  /* 渦(GRAV_CENTER)が引く範囲(ドット)。2 面の KILOGRAM は球が大きいので広げる */
 
 #define GV_MAX FX(1) + 8            /* 重力の速さの上限(1.5 ドット/フレーム) */
 
@@ -93,7 +93,7 @@ void player_update(void) {
                    向きが毎フレーム変わり、人には追えなかった。ゴーファーの野望の重力面にならう。M7 の後) */
                 s16 dx = (s16)(g_gcx - PX(g_pl.x) - 8), dy = (s16)(g_gcy - PX(g_pl.y) - 8);
                 ax = ay = 0;
-                if (dx > -WELL_R && dx < WELL_R && dy > -WELL_R && dy < WELL_R) {
+                if (dx > -(s16)g_well_r && dx < (s16)g_well_r && dy > -(s16)g_well_r && dy < (s16)g_well_r) {
                     ax = dx > 6 ? 1 : dx < -6 ? -1 : 0;
                     ay = dy > 6 ? 1 : dy < -6 ? -1 : 0;
                 }

@@ -77,24 +77,26 @@ section('ARENA2', 40, 0, 0, 0, 0)
 section('OUT', 64, 0, 0, 0, 0)
 SEC['END'] = len(cmap)
 
-def kilogram():
-    s = [[1] * 64 for _ in range(64)]
-    cx = cy = 31.5; R = 30
-    for y in range(64):
-        for x in range(64):
+def kilogram(n=64):
+    """n x n。64 = ROTOR の元(近づく段)、96 = 戦う大きさの描き直し(C3。ROTOR で 1.5 倍にすると縁が角ばる)"""
+    k = n / 64
+    s = [[1] * n for _ in range(n)]
+    cx = cy = (n - 1) / 2; R = 30 * k
+    for y in range(n):
+        for x in range(n):
             dx, dy = x - cx, y - cy
             d = math.hypot(dx, dy)
             if d > R: continue
             l = (-dx * 0.6 - dy * 0.5) / R                # 左上から光
-            if d > R - 2: c = 5 if l > 0.2 else 4
-            elif abs(dy) < 1.5 and abs(dx) < R - 4: c = 13 # 赤道の亀裂(弱点)
+            if d > R - 2 * k: c = 5 if l > 0.2 else 4
+            elif abs(dy) < 1.5 * k and abs(dx) < R - 4 * k: c = 13 # 赤道の亀裂(弱点)
             elif l > 0.55: c = 4
             elif l > 0.1: c = 3
             else: c = 2
             s[y][x] = c
     out = bytearray()
-    for y in range(64):
-        for x in range(0, 64, 2): out.append((s[y][x] << 4) | s[y][x + 1])
+    for y in range(n):
+        for x in range(0, n, 2): out.append((s[y][x] << 4) | s[y][x + 1])
     return bytes(out)
 
 def main(d, hpath):
@@ -104,6 +106,7 @@ def main(d, hpath):
     open(os.path.join(d, 's2_strips.bin'), 'wb').write(bytes(out))
     open(os.path.join(d, 's2_map.bin'), 'wb').write(bytes(cmap))
     open(os.path.join(d, 'kg.bin'), 'wb').write(kilogram())
+    open(os.path.join(d, 'kg96.bin'), 'wb').write(kilogram(96))
     with open(hpath, 'w') as f:
         f.write('/* s2_data.h — tools/gen_stage2.py が生成(手で編集しない)。2 面の区間と短冊の当たり。 */\n')
         f.write('#ifndef S2_DATA_H\n#define S2_DATA_H\n\n')

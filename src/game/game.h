@@ -145,6 +145,7 @@ void boss_damage(u8 n);             /* LIMIT BREAK など: 次のフレームで
 enum { GRAV_NONE, GRAV_DIR, GRAV_CENTER };
 extern u8  g_grav;
 extern s16 g_gx, g_gy, g_gcx, g_gcy;
+extern u8  g_well_r;                /* GRAV_CENTER が引く範囲(ドット。ふつう 56) */
 extern s16 g_pl_ymin, g_pl_ymax;    /* ドット(自機の左上の y) */
 extern s16 g_pl_dy;
 extern u8  g_demo;                  /* 1 = デモ(自動操縦。main.c) */                 /* 自機を描くときに y へ足す(帯の R#23 でスプライトがずれる場面の打ち消し。普段は 0) */

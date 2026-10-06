@@ -1,11 +1,11 @@
 /* s2boss.c — 2 面の中ボス COUNTERWEIGHT とボス KILOGRAM(指示書 5.2)。
    ・COUNTERWEIGHT: 天秤の腕で結ばれた 2 つの錘(スプライト 32x32 × 2)。撃たれた方は軽くなって上がり、重い方が
      下がって自機の側へ振り下ろされる。両方を削らないと逃げ場がなくなる。腕はスプライトの節(回転は sin 表)。
-   ・KILOGRAM: 画面の奥から近づく黒い球。ROTOR で 6 段の大きさの絵を作ってページ 2 に置き、段階的に大きく
-     していく(BG)。着くと、球の上下の帯で背景が曲がる(重力レンズ: R#27 を毎ラインずらす HR ポーリング帯)。
+   ・KILOGRAM: 画面の奥から近づく黒い球。ROTOR で 6 段の大きさの絵(64x64 まで)を作り、最後に 96x96 の絵(ROM)を
+     写してページ 2 に置き、段階的に大きくしていく(BG)。着くと、球の上下の帯で背景が曲がる(重力レンズ: R#27 を毎ラインずらす HR ポーリング帯)。
      周りを小衛星 8 個(スプライト)が回る。一定時間ごとに自機を引き寄せる(重力を球へ)間だけ赤道の亀裂が
      開き(色 13 が明るくなる)、そこだけ傷が入る。
-   ★仮の簡略: 指示書の「腕は ROTOR」「最終的に 96x96 の拡大スプライト帯」は、節のスプライトと 64x64 の BG。 */
+   ★仮の簡略: 指示書の「腕は ROTOR」「最終的に 96x96 の拡大スプライト帯」は、節のスプライトと 96x96 の BG。 */
 #include "s2.h"
 #include "spr.h"
 #include "sprite_data.h"
@@ -125,9 +125,12 @@ static void cw_draw(void) {
 /* ---- KILOGRAM ---- */
 #define KG_X    176
 #define KG_Y    94
-#define NFR     6
+#define NFR     7
 #define NSAT    8
-static const u16 kg_step[NFR] = { 1707, 1024, 640, 427, 320, 256 };   /* 0.15 .. 1 倍 */
+#define KG_R    42                 /* 球の半径(当たり)。★C3: 最後の段は 96x96(描き直した絵) */
+#define BIG     (NFR - 1)          /* 96x96 の段。ページ 2 の x 128..223、64..159 行(2 面では空き。帯の文字は 160 行から) */
+#define BIG_N   96
+static const u16 kg_step[BIG] = { 1707, 1024, 640, 427, 320, 256 };   /* 0.15 .. 1 倍(ROTOR で作る段) */
 static u8  gen_k, gen_ph;
 static u16 cal_t;                  /* 再校正版の重力の替わり目 */
 static u16 src_off;
@@ -145,6 +148,15 @@ static void kg_gen(void) {
     if (src_off < ASSET_KG_LEN) {
         rom_to_ram(ASSET_KG_BANK, (u16)(ASSET_KG_OFF + src_off), ROTOR_SRC + src_off, 512);
         src_off += 512;
+        return;
+    }
+    if (gen_k == BIG) {                                       /* 96x96: 描き直した絵(ROM)を 4 行ずつ写す(★行ごとに番地が飛ぶので 1 行ずつ)。
+                                                                 ★C3: 64x64 を ROTOR で 1.5 倍にすると縁が角ばったので、Python で描き直した */
+        u8 r;
+        for (r = 0; r < 4; r++)
+            rom_to_vram(ASSET_KG96_BANK, (u16)(ASSET_KG96_OFF + (gen_ph * 4u + r) * (BIG_N / 2)), 1,
+                        (u16)((64u + gen_ph * 4u + r) * 128u + 64u), BIG_N / 2);
+        if (++gen_ph >= BIG_N / 4) { gen_ph = 0; gen_k++; }
         return;
     }
     if (gen_ph < 16) {
@@ -182,15 +194,15 @@ static void kg_update(void) {
         return;
     }
     if (g_boss_state == BS_DYING) {
-        if (!(t & 3)) fx_spawn(FX(KG_X - 28 + (rnd8() & 55)), FX(KG_Y - 28 + (rnd8() & 55)));
-        g_grav = GRAV_NONE;
+        if (!(t & 3)) fx_spawn(FX(KG_X - KG_R + (rnd8() & 63) + (rnd8() & 15)), FX(KG_Y - KG_R + (rnd8() & 63) + (rnd8() & 15)));
+        g_grav = GRAV_NONE; g_well_r = 56;
         if (t >= 120) g_boss_state = BS_DONE;
         return;
     }
     if (lens_nx != bg_layer_x(2)) lens_tables(bg_layer_x(2));
     if (++open_t >= 360) open_t = 0;
-    if (open_t == 240) { kg_crack(1); g_grav = GRAV_CENTER; g_gcx = KG_X; g_gcy = KG_Y; }
-    if (open_t == 0) { kg_crack(0); g_grav = GRAV_NONE; }
+    if (open_t == 240) { kg_crack(1); g_grav = GRAV_CENTER; g_gcx = KG_X; g_gcy = KG_Y; g_well_r = KG_R + 34; }   /* 球の外 34 ドットまで引く */
+    if (open_t == 0) { kg_crack(0); g_grav = GRAV_NONE; g_well_r = 56; }
     if (RECAL && open_t < 240 && ++cal_t >= 300) {          /* 再校正版: 重力の向きが 5 秒ごとにでたらめに替わる */
         u8 r = (u8)(rnd8() & 3);
         cal_t = 0; g_grav = GRAV_DIR;
@@ -199,13 +211,13 @@ static void kg_update(void) {
     /* 赤道の亀裂(開いている間だけ傷が入る)。球の他の所に当たった弾は吸い込まれる */
     /* ★亀裂の横幅は球と同じにする(弾は 1 フレームに 8 ドット進むので、亀裂を ±26 にすると、自機の位置しだいで弾が
        球の縁(±28)の 2 ドットに入って先に吸い込まれ、亀裂の高さを撃っても当たらなかった。M7 の後) */
-    if (open_t >= 240) { u8 n = shot_hit(KG_X, KG_Y, 28, 4); g_boss_aim = KG_Y; while (n--) hurt(1); }
-    shot_hit(KG_X, KG_Y, 28, 28);
-    touch(KG_X, KG_Y, 26);
+    if (open_t >= 240) { u8 n = shot_hit(KG_X, KG_Y, KG_R, 6); g_boss_aim = KG_Y; while (n--) hurt(1); }
+    shot_hit(KG_X, KG_Y, KG_R, KG_R);
+    touch(KG_X, KG_Y, KG_R - 2);
     /* 小衛星 */
     for (k = 0; k < NSAT; k++) {
         u8 a = (u8)((t >> 1) + k * 8);
-        s16 x = (s16)(KG_X + ((g_sin64[(u8)(a + 16) & 63] * 46) >> 7)), y = (s16)(KG_Y + ((g_sin64[a & 63] * 34) >> 7));
+        s16 x = (s16)(KG_X + ((g_sin64[(u8)(a + 16) & 63] * 66) >> 7)), y = (s16)(KG_Y + ((g_sin64[a & 63] * 52) >> 7));   /* 球の外を回る */
         if (!sat_hp[k]) { if (++sat_t[k] >= 240) { sat_hp[k] = 2; sat_t[k] = 0; } continue; }
         if (shot_hit(x, y, 7, 7) && --sat_hp[k] == 0) { fx_spawn(FX(x), FX(y)); score_add(5); continue; }
         touch(x, y, 6);
@@ -219,7 +231,7 @@ static void kg_draw(void) {
     for (k = 0; k < NSAT; k++) {
         u8 a = (u8)((t >> 1) + k * 8);
         if (!sat_hp[k]) continue;
-        spr_put((s16)(KG_X + ((g_sin64[(u8)(a + 16) & 63] * 46) >> 7)) - 8, (s16)(KG_Y + ((g_sin64[a & 63] * 34) >> 7)) - 8,
+        spr_put((s16)(KG_X + ((g_sin64[(u8)(a + 16) & 63] * 66) >> 7)) - 8, (s16)(KG_Y + ((g_sin64[a & 63] * 52) >> 7)) - 8,
                 PAT_SAT, G_ENEMY, 0);
     }
 }
@@ -256,9 +268,10 @@ void b2_vram(void) {
     if (gen_k < NFR) kg_gen();
     if (kind != B2_KG || g_boss_state == BS_NONE) { gq_pump(0); return; }
     if (g_boss_state == BS_DONE) {
-        if (fr_drawn != 0xFF && gq_free() >= 8) { ring_cmd(0, 0, KG_X - 32, KG_Y - 32, 64, 64, 1, 0x11); fr_drawn = 0xFF; }
+        if (fr_drawn != 0xFF && gq_free() >= 8) { ring_cmd(0, 0, KG_X - BIG_N / 2, KG_Y - BIG_N / 2, BIG_N, BIG_N, 1, 0x11); fr_drawn = 0xFF; }
     } else if (gen_k >= NFR && fr != fr_drawn && gq_free() >= 8) {
-        ring_cmd((u16)((fr & 3) * 64u), (u16)(512u + (fr >> 2) * 64u), KG_X - 32, KG_Y - 32, 64, 64, 0, 0);
+        if (fr == BIG) ring_cmd(128, 512u + 64u, KG_X - BIG_N / 2, KG_Y - BIG_N / 2, BIG_N, BIG_N, 0, 0);
+        else ring_cmd((u16)((fr & 3) * 64u), (u16)(512u + (fr >> 2) * 64u), KG_X - 32, KG_Y - 32, 64, 64, 0, 0);
         fr_drawn = fr;
     }
     gq_pump(0);
@@ -266,6 +279,6 @@ void b2_vram(void) {
 
 u8 b2_lens(s16 *top, s16 *bot) {
     if (kind != B2_KG || g_boss_state != BS_FIGHT || lens_nx == 0xFFFF) return 0;
-    *top = KG_Y - 32 - 24; *bot = KG_Y + 33;
+    *top = KG_Y - BIG_N / 2 - 24; *bot = KG_Y + BIG_N / 2 + 1;
     return 1;
 }
