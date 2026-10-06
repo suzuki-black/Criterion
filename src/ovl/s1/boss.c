@@ -5,7 +5,7 @@
      ★動いている Pawn(粒子)は最大 NPART 体。2 フレームに 1 回 1 マス(4 ドット)動き、そのたびに前のマスを
        「積んであれば Pawn、なければ空」で描き戻す。人型の揺れは、人型の行の帯ごとにラスターで横位置を
        ずらして見せる(VRAM の描き直し 0。広場の背景は空と街路で一様なので背景のずれは見えない)。
-   ・PLUMB: 上空から鎖(スプライト 12 節)で吊られた直径約 44 ドット(64x64 の枠)の真鍮の下げ振り。BG に描く。
+   ・PLUMB: 上空から鎖(スプライト 12 節)で吊られた直径約 58 ドット(64x64 の枠いっぱい)の真鍮の下げ振り。BG に描く。
      振り子で揺れる傾きは ROTOR(rotor.c)で前もって作った 7 枚(±34 度)から選ぶ。自転は胴の経線の縞
      (色 2..5)のパレットを回して見せる。体力が半分を切ると鎖が切れ、縮小した 3 枚(遠近)を使って跳ね回り、
      自転が速くなる。上部の吊り輪は 2 倍の傷。
@@ -29,7 +29,42 @@
 
 static u8  kind;
 static u16 t;
-static s16 bx, by;
+/* 下げ振り 1 個ぶんの状態(7 面の再校正版は 2 個を入れ替えて動かすので 1 つにまとめる)。
+   dr_*: 表示リングに描いてある枠(画面の座標、切り詰めた後)。w = 0 で無し。
+   sh_*: 最後に写した絵の中心と枠(鎖はこれの吊り輪へつなぐ。★絵は 30Hz で写し、傾きは 7 枚に丸め、x は偶数に寄せるので、
+         その時々の振れ角から吊り輪を求めると鎖の先が絵からずれて、ちょん切れて見えた)。sh_fr = 0xFF で無し。
+   pd_*: 積んだがまだ VDP へ出ていない写し(pd_n = 1)。★待ち行列は混むと数フレーム遅れて出る(登場の直後で最もずれた)
+         ので、鎖は写しが実際に出てから切り替える。出るまでは次の写しを積まない(積み重ねると覚えきれず、絵が先に
+         進んで鎖が 1 つ前に残った) */
+typedef struct {
+    s16 bx, by, fx, fy, fvx, fvy, dr_x, dr_y, pivot, sh_x, sh_y, pd_x, pd_y;
+    s8  swing;
+    u8  broken, cur_fr, dr_w, dr_h, ph, sh_fr, pd_fr, pd_mk, pd_n;
+} Plumb;
+static Plumb P;
+#define bx P.bx
+#define by P.by
+#define fx P.fx
+#define fy P.fy
+#define fvx P.fvx
+#define fvy P.fvy
+#define dr_x P.dr_x
+#define dr_y P.dr_y
+#define dr_w P.dr_w
+#define dr_h P.dr_h
+#define pivot P.pivot              /* 吊り元の x(普段は 128) */
+#define swing P.swing
+#define broken P.broken            /* 鎖が切れた(fx..fvy は切れてから。固定小数点) */
+#define cur_fr P.cur_fr
+#define ph P.ph                    /* 振れの位相 */
+#define sh_x P.sh_x
+#define sh_y P.sh_y
+#define sh_fr P.sh_fr
+#define pd_x P.pd_x
+#define pd_y P.pd_y
+#define pd_fr P.pd_fr
+#define pd_mk P.pd_mk
+#define pd_n P.pd_n
 
 /* ---- LEGION ---- */
 #define LG_W   12
@@ -65,34 +100,18 @@ static s8  sway[5];                /* 帯ごとの横のずれ(頭 → 脚)。�
 /* 枠の並び(gen_boss.py の FRAMES と同じ): 傾き -6..6(64 で一周)× 等倍、直立の縮小 0.85 / 0.7 / 0.55 */
 static const s8  fr_angle[NFRAME] = { -6, -4, -2, 0, 2, 4, 6, 0, 0, 0 };
 static const u16 fr_step[NFRAME]  = { 256, 256, 256, 256, 256, 256, 256, 301, 366, 465 };
-static const u8  fr_r[NFRAME]     = { 14, 14, 14, 14, 14, 14, 14, 12, 10, 8 };   /* 当たりの半径 */
+static const u8  fr_r[NFRAME]     = { 18, 18, 18, 18, 18, 18, 18, 15, 13, 10 };  /* 当たりの半径(C3: 胴の半径 29 に合わせた) */
 static const u8  brass[4][3] = { { 3, 2, 1 }, { 5, 4, 1 }, { 7, 6, 3 }, { 5, 4, 1 } };
 static s16 anchor_y;
-static s8  swing;
-static u8  broken, cur_fr, spin;
-static s16 fx, fy, fvx, fvy;       /* 鎖が切れてから(固定小数点) */
+static u8  spin;
 static u8  gen_k, gen_ph;          /* 絵を作る進み(gen_k == NFRAME で終わり) */
-/* 表示リングに描いてある枠(画面の座標、切り詰めた後)。w = 0 で無し */
-static s16 dr_x, dr_y;
-static u8  dr_w, dr_h;
-static s16 pivot;                  /* 吊り元の x(普段は 128) */
-static u8  ph;                     /* 振れの位相 */
-/* 7 面の再校正版: 下げ振りが 2 個(吊り元を左右に分け、逆の位相で振って鎖を交差させる)。同じ変数を入れ替えて
+/* 7 面の再校正版: 下げ振りが 2 個(吊り元を左右に分け、逆の位相で振って鎖を交差させる)。P を入れ替えて
    2 個ぶん動かす(体力は共有) */
-typedef struct { s16 bx, by, fx, fy, fvx, fvy, dr_x, dr_y, pivot; s8 swing; u8 broken, cur_fr, dr_w, dr_h, ph; } Plumb;
 static Plumb pl[2];
 static u8 npl, cur_pl;
-static void pl_save(u8 i) {
-    Plumb *p = &pl[i];
-    p->bx = bx; p->by = by; p->fx = fx; p->fy = fy; p->fvx = fvx; p->fvy = fvy; p->dr_x = dr_x; p->dr_y = dr_y;
-    p->pivot = pivot; p->swing = swing; p->broken = broken; p->cur_fr = cur_fr; p->dr_w = dr_w; p->dr_h = dr_h; p->ph = ph;
-}
-static void pl_load(u8 i) {
-    const Plumb *p = &pl[i];
-    bx = p->bx; by = p->by; fx = p->fx; fy = p->fy; fvx = p->fvx; fvy = p->fvy; dr_x = p->dr_x; dr_y = p->dr_y;
-    pivot = p->pivot; swing = p->swing; broken = p->broken; cur_fr = p->cur_fr; dr_w = p->dr_w; dr_h = p->dr_h; ph = p->ph;
-    cur_pl = i;
-}
+static void pl_cp(u8 *d, const u8 *src) { u8 n = sizeof(Plumb); while (n--) *d++ = *src++; }
+static void pl_save(u8 i) { pl_cp((u8 *)&pl[i], (const u8 *)&P); }
+static void pl_load(u8 i) { pl_cp((u8 *)&P, (const u8 *)&pl[i]); cur_pl = i; }
 /* 場面の始め(game_start): 何も作っていない状態へ */
 void boss_reset(void) {
     g_boss_state = BS_NONE; kind = 0xFF; gen_k = NFRAME; dr_w = 0; broken = 0;
@@ -107,7 +126,7 @@ void boss_start(u8 k) {
         for (i = 0; i < NPART; i++) part[i].mode = P_OFF;
         for (i = 0; i < 5; i++) sway[i] = 0;
     } else {
-        g_boss_hp = PLUMB_HP; bx = 128; anchor_y = -110; broken = 0; aim_t = 0; spin = 0; dr_w = 0;
+        g_boss_hp = PLUMB_HP; bx = 128; anchor_y = -110; broken = 0; aim_t = 0; spin = 0; dr_w = 0; sh_fr = 0xFF; pd_n = 0;
         cur_fr = FR_UP; swing = 0; pivot = 128; ph = 0; npl = 1; cur_pl = 0;
         if (RECAL) {                                        /* 再校正版: 2 個 */
             npl = 2;
@@ -335,12 +354,14 @@ static void plumb_pos(void) {
     if (cur_fr > 6) cur_fr = swing > 0 ? 0 : 6;
 }
 
-/* 吊り輪の位置(弱点) */
-static s16 ring_x(void) { return broken ? bx : (s16)(bx - ((g_sin64[(u8)swing & 63] * RING_D) >> 7)); }
-static s16 ring_y(void) {
-    if (broken) return (s16)(by - (s16)((RING_D * 256u / fr_step[cur_fr])));
-    return (s16)(by - ((g_sin64[(u8)(swing + 16) & 63] * RING_D) >> 7));
-}
+/* 吊り輪の位置(弱点)。中心 (x, y) の枠 fr の絵の中の吊り輪 = (x + rg_dx, y - rg_dy)。ROTOR は角度 a で時計回りに
+   回すので (25 sin a, 25 cos a)、縮小の枠は 25 / 倍率(四捨五入。fr_angle / fr_step と合わせる) */
+static const s8 rg_dx[NFRAME] = { -14, -10, -5, 0, 5, 10, 14, 0, 0, 0 };
+static const u8 rg_dy[NFRAME] = { 21, 23, 25, 25, 25, 23, 21, 21, 17, 14 };
+#define rg_x(x, fr) ((s16)((x) + rg_dx[fr]))
+#define rg_y(y, fr) ((s16)((y) - rg_dy[fr]))
+static s16 ring_x(void) { return rg_x(bx, cur_fr); }
+static s16 ring_y(void) { return rg_y(by, cur_fr); }
 
 static void plumb_update(void) {
     if (g_boss_state == BS_ENTER) {
@@ -432,7 +453,7 @@ static void erase(s16 x, s16 y, s16 w, s16 h) {
 
 static void plumb_blit(u8 show) {
     s16 x = (s16)((bx - 32) & ~1), y = (s16)(by - 32), w = 64, h = 64, ox = 0, oy = 0;
-    if (!show) w = h = 0;
+    if (!show) { w = h = 0; sh_fr = 0xFF; pd_n = 0; }
     if (y < SKY_TOP) { oy = SKY_TOP - y; h -= oy; y = SKY_TOP; }
     if (y + h > SKY_BOT) h = SKY_BOT - y;
     if (x < 0) { ox = -x; w -= ox; x = 0; }
@@ -452,6 +473,12 @@ static void plumb_blit(u8 show) {
     }
     if (w) ring_cmd((u16)(SLOT_X(cur_fr) + ox), (u16)(SLOT_Y(cur_fr) + oy), x, y, (u8)w, (u8)h, 0, 0);
     dr_x = x; dr_y = y; dr_w = (u8)w; dr_h = (u8)h;
+    if (show) {
+        pd_n = 1; pd_x = (s16)(((bx - 32) & ~1) + 32); pd_y = by; pd_fr = cur_fr; pd_mk = (u8)(gq_done + gq_count);
+    }
+}
+static void pd_settle(void) {      /* VDP へ出た写しを「写した絵」にする */
+    if (pd_n && (s8)(gq_done - pd_mk) >= 0) { sh_x = pd_x; sh_y = pd_y; sh_fr = pd_fr; pd_n = 0; }
 }
 
 /* VRAM の窓で毎フレーム(stage.c): 絵を作る段と、PLUMB を写す */
@@ -465,7 +492,7 @@ void boss_vram(void) {
         if (npl > 1) pl_load(i);
         if (g_boss_state == BS_DONE || g_boss_state == BS_NONE) {
             if (dr_w) plumb_blit(0);                          /* 最後に消す */
-        } else if (npl > 1 || !(t & 1)) plumb_blit(1);        /* 30Hz */
+        } else if (npl > 1 || !(t & 1)) { pd_settle(); if (!pd_n) plumb_blit(1); }   /* 30Hz(前の写しが出てから) */
         if (npl > 1) pl_save(i);
     }
     gq_pump(0);                                               /* 待たない(メインループの数か所でも出す) */
@@ -490,8 +517,9 @@ void boss_draw(void) {
     }
     for (k = 0; k < npl; k++) {
     if (npl > 1) pl_load(k);
-    if (!broken && g_boss_state != BS_DYING) {               /* 吊り元から吊り輪まで 13 等分(1/13 ≒ 20/256) */
-        s16 rx = ring_x(), ry = ring_y();
+    pd_settle();
+    if (!broken && g_boss_state != BS_DYING && sh_fr != 0xFF) {   /* 吊り元から、写した絵の吊り輪まで 13 等分(1/13 ≒ 20/256) */
+        s16 rx = rg_x(sh_x, sh_fr), ry = rg_y(sh_y, sh_fr);
         s16 stx = (s16)((rx - pivot) * 20), sty = (s16)((ry - anchor_y) * 20), ax = stx, ay = sty;
         if (npl > 1) { stx <<= 1; sty <<= 1; ax = stx; ay = sty; }   /* 2 個のときは 1 つおきの節(スプライトの段が遅れた) */
         for (i = 0; i < (npl > 1 ? CHAIN_N / 2 : CHAIN_N); i++, ax += stx, ay += sty)

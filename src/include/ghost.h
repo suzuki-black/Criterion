@@ -15,5 +15,7 @@ void gq_line(u16 x, u16 y, s16 dx, s16 dy, u8 col);   /* (x, y) から (dx, dy) 
 u8   gq_free(void);                /* 空きの数 */
 void gq_pump(u16 budget);          /* budget = S1990 タイマのカウント(1 ライン ≒ 16.27) */
 void gq_clear(void);
+/* 積んだ物が VDP へ出たか: 積んだ直後に gq_done + gq_count を覚え、(s8)(gq_done - 覚えた値) >= 0 になったら出た */
+extern u8 gq_count, gq_done;
 
 #endif /* GHOST_H */

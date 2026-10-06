@@ -7,8 +7,9 @@ static u8 q[GQ_N][15];
 static u8 head, tail;
 u8 gq_count;                      /* 積んである数(計測用に非 static) */
 #define count gq_count
+u8 gq_done;                       /* VDP へ出した(または捨てた)コマンドの通し番号(256 で一周)。積んだ物が画面に出たかを知る */
 
-void gq_clear(void) { head = tail = count = 0; }
+void gq_clear(void) { gq_done += count; head = tail = count = 0; }
 u8 gq_free(void) { return (u8)(GQ_N - count); }
 
 u16 g_gq_drop;                     /* 入りきらずに捨てたコマンドの数(0 であること。検証が読む) */
@@ -68,6 +69,6 @@ void gq_pump(u16 budget) {
         }
         vdp_cmd_issue(q[head]);
         if (++head >= GQ_N) head = 0;
-        count--;
+        count--; gq_done++;
     }
 }
