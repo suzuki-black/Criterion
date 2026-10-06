@@ -203,6 +203,7 @@ void calib_begin(u8 k);                     /* 試験 k の始まり(各面の o
 u8   calib_out(u16 t);                      /* 試験に合格したあと(各面から毎フレーム): 判定文 → 上がって次の試験へ。1 = 頼んだ */
 void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */
 void stage_ev_pal(s16 line, const u8 *rgb);
+void stage_ev_ps(s16 line, const u8 *rgb, u16 x);   /* 色 1 と横スクロールを 1 つの項目に */
 void stage_ev_pal_i(s16 line, u8 idx, const u8 *rgb);   /* 色 idx を(1 項目に 1 色)*/
 void stage_ev_haze(s16 line, u8 n, u8 *tbl);  /* HR ポーリング帯(R#27 を毎ライン。tbl は (r26, r27) × n) */
 void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */

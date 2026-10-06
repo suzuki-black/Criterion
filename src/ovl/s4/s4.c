@@ -28,7 +28,6 @@ static u16 hold[S4_NL];            /* ボスが決めた横位置(0xFFFF = 流�
 static u16 bx[S4_NL];              /* 今の横位置(流れか押さえ。帯を組むたびに求め直さない) */
 static u8  haze_tbl[HAZE_N * 2];
 static u8  flash_t;                /* 稲妻 */
-static u8  sky[S4_NL][3];
 
 /* 区間ごとの層の速さ(1/4 ドット/フレーム) */
 static const s8 v_upper[S4_NL] = { 1, 1, 2, 2, 3, 3, 4, 4, 6, 6, 8, 8 };              /* 2 層ずつ = 6 帯 */
@@ -109,18 +108,76 @@ static void palette(void) {
     vdp_set_pal(6, 1, 0, 1); vdp_set_pal(7, 7, 7, 6); vdp_set_pal(2, 1, 0, 1);
 }
 
+/* 層ごとに bq += bv、押さえていなければ bx = nx + (bq >> 2)(★asm。C ではポインタ 4 本が IX に溢れ、12 層で 0.6ms かかった。
+   VERNIER の間の空きが 0 だった。M7 の後)。HL = nx。IX・IY は守る */
+static void flow_x(u16 nx) __naked {
+    (void)nx;
+    __asm
+        push ix
+        push iy
+        ex   de, hl                ; DE = nx
+        ld   hl, #_bq
+        ld   ix, #_bx
+        ld   iy, #_hold
+        ld   bc, #_bv
+        ld   a, #S4_NL
+    00001$:
+        push af
+        push de
+        ld   a, (bc)               ; DE = (s16)bv
+        ld   e, a
+        rla
+        sbc  a, a
+        ld   d, a
+        ld   a, (hl)               ; bq += bv
+        add  a, e
+        ld   (hl), a
+        inc  hl
+        ld   a, (hl)
+        adc  a, d
+        ld   (hl), a
+        pop  de
+        ld   a, 0 (iy)             ; hold == 0xFFFF ?
+        and  1 (iy)
+        inc  a
+        jr   nz, 00002$
+        push bc
+        ld   b, (hl)
+        dec  hl
+        ld   c, (hl)
+        inc  hl
+        srl  b
+        rr   c
+        srl  b
+        rr   c
+        ld   a, c                  ; bx = nx + (bq >> 2)
+        add  a, e
+        ld   0 (ix), a
+        ld   a, b
+        adc  a, d
+        ld   1 (ix), a
+        pop  bc
+    00002$:
+        inc  hl
+        inc  ix
+        inc  ix
+        inc  iy
+        inc  iy
+        inc  bc
+        pop  af
+        dec  a
+        jr   nz, 00001$
+        pop  iy
+        pop  ix
+        ret
+    __endasm;
+}
+
 static void flow(void) {
     u8 i;
     if (v_want && !(sec_t & 3))                               /* 速さはゆっくり替える(帯がいきなり跳ねない) */
         for (i = 0; i < S4_NL; i++) { if (bv[i] < v_want[i]) bv[i]++; else if (bv[i] > v_want[i]) bv[i]--; }
-    {   /* ★添字でなくポインタで回す(SDCC は配列の添字のたびに番地を計算し直して重かった。M7 の後) */
-        u16 nx = bg_layer_x(2), *q = bq, *x = bx, *h = hold;
-        const s8 *v = bv;
-        for (i = 0; i < S4_NL; i++, q++, x++, h++, v++) {
-            *q += (u16)(s16)*v;
-            if (*h == 0xFFFF) *x = (u16)(nx + (*q >> 2));
-        }
-    }
+    flow_x(bg_layer_x(2));
 }
 
 static void haze(void) {
@@ -181,11 +238,6 @@ void ovl_update(void) {
     /* 稲妻: 雲海と陽炎帯でときどき空が光る。★雲の頂(色 4・5)も一緒に照らす(パレットアニメ。M7 の後) */
     if (flash_t) { if (--flash_t == 0) { vdp_set_pal(4, 5, 3, 2); vdp_set_pal(5, 6, 5, 4); } }
     else if ((g_sec == SEC4_SEA || g_sec == SEC4_HAZE) && rnd8() < 2) { flash_t = 4; vdp_set_pal(4, 6, 6, 7); vdp_set_pal(5, 7, 7, 7); }
-    for (i = 0; i < S4_NL; i++) {
-        const u8 *c = sky_dusk[i];
-        if (flash_t && i >= 6) { sky[i][0] = 6; sky[i][1] = 6; sky[i][2] = 7; }
-        else { sky[i][0] = c[0]; sky[i][1] = c[1]; sky[i][2] = c[2]; }
-    }
     g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16;
 }
 
@@ -201,11 +253,16 @@ void ovl_bands(s16 sc, u16 nx) {
     if (g_sec < SEC4_SINK) return;
     if (b4_bands(sc)) return;
     if (g_sec == SEC4_HAZE) nl = 9;                          /* 層 9 から下は陽炎(R#26 は層 8 の項目のまま) */
-    for (i = 0; i < nl; i += step) {
-        s16 l = (s16)(s4_layer[i] - sc);
-        if (l >= PLAY_H) break;
-        stage_ev_pal(l, sky[i]);
-        stage_ev_scroll(l, s4_band_x(i));
+    {   /* ★ポインタで回し、色とスクロールは 1 つの項目に(stage_ev_ps。帯ごとに 2 回 slot を呼ぶと VERNIER の間は空きが 0) */
+        static const u8 sky_flash[3] = { 6, 6, 7 };            /* 稲妻: 層 6 から下の空(色の表を毎フレーム写さない) */
+        const u8 *ly = s4_layer, *sk = sky_dusk[0];
+        const u16 *x = bx;
+        u8 sk_step = (u8)(step * 3);
+        for (i = 0; i < nl; i += step, ly += step, sk += sk_step, x += step) {
+            s16 l = (s16)(*ly - sc);
+            if (l >= PLAY_H) break;
+            stage_ev_ps(l, (flash_t && i >= 6) ? sky_flash : sk, *x);
+        }
     }
     if (nl < S4_NL) {
         stage_ev_haze((s16)(HAZE_LINE - sc), HAZE_N, haze_tbl);

@@ -546,6 +546,15 @@ void stage_ev_pal_i(s16 line, u8 idx, const u8 *rgb) {
     if (c) { c->pidx = idx; c->prb = (u8)((rgb[0] << 4) | rgb[2]); c->pg = rgb[1]; }
 }
 void stage_ev_pal(s16 line, const u8 *rgb) { stage_ev_pal_i(line, 1, rgb); }
+/* 色 1 と横スクロールを 1 つの項目に(slot を 1 回で済ませる。雲の層を 12 帯並べる 4 面で、帯ごとに pal と scroll を別に
+   呼ぶと項目を組むだけで 1 フレーム 1ms 近く使い、VERNIER の間は空きが 0 になった。M7 の後) */
+void stage_ev_ps(s16 line, const u8 *rgb, u16 x) {
+    RasEntry *c = slot(line, RAS_PAL | RAS_SCROLL);
+    if (c) {
+        c->pidx = 1; c->prb = (u8)((rgb[0] << 4) | rgb[2]); c->pg = rgb[1];
+        c->r26 = VDP_R26(x); c->r27 = VDP_R27(x);
+    }
+}
 
 static const u8 hs_indigo[8][3] = { { 0, 0, 2 }, { 1, 0, 2 }, { 1, 0, 3 }, { 1, 1, 3 }, { 2, 1, 3 }, { 2, 1, 4 }, { 3, 1, 4 }, { 3, 2, 4 } };
 static const u8 hs_black[8][3]  = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 1, 0, 1 }, { 1, 0, 2 } };
