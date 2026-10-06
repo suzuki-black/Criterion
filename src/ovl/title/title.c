@@ -62,6 +62,7 @@ static const char *const cf_song[SND_NSONG + 1] = {
     "M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10", "M11", "M12", "M13", "M14A", "M14B", "M14C",
     "M15", "M16", "M17", "J01", "J02", "STOP" };
 static char cf_line[20];
+#define CF_COPY "@ 2026 SUZUKI-BLACK"   /* 著作権表示(@ は ©。font.c)。19 文字 = x 52..203 */
 
 __sfr __at(0xA9) CF_PPI_B;
 __sfr __at(0xAA) CF_PPI_C;
@@ -76,17 +77,17 @@ static u8 cf_ba(void) {
     return (u8)(~v & 0xC0);
 }
 
-static void cf_put(const char *s, u8 at) { while (*s && at < 18) cf_line[at++] = *s++; }
+static void cf_put(const char *s, u8 at) { while (*s && at < 19) cf_line[at++] = *s++; }
 
 /* 1 行目の文字列を組む(18 文字、空白で埋める。元のタイトルの文字と同じ長さ) */
 static void cf_build(void) {
     u8 i;
-    for (i = 0; i < 18; i++) cf_line[i] = ' ';
-    cf_line[18] = 0;
-    if (cf_item == CF_INV) { cf_put("INVINCIBLE", 0); cf_put(g_dbg_invul ? "ON" : "OFF", 13); }
-    else if (cf_item == CF_STAGE) { cf_put("STAGE", 0); cf_line[13] = (char)('0' + (g_start_stage ? g_start_stage : 1)); }
-    else if (cf_item == CF_BGM) { cf_put("BGM", 0); cf_put(cf_song[cf_bgm], 13); }
-    else cf_put("EXIT", 0);
+    for (i = 0; i < 19; i++) cf_line[i] = ' ';
+    cf_line[19] = 0;
+    if (cf_item == CF_INV) { cf_put("INVINCIBLE", 1); cf_put(g_dbg_invul ? "ON" : "OFF", 14); }
+    else if (cf_item == CF_STAGE) { cf_put("STAGE", 1); cf_line[14] = (char)('0' + (g_start_stage ? g_start_stage : 1)); }
+    else if (cf_item == CF_BGM) { cf_put("BGM", 1); cf_put(cf_song[cf_bgm], 14); }
+    else cf_put("EXIT", 1);
 }
 
 /* タイトルの間、毎フレーム: コマンドを数え、入ったらコンフィグを動かす。1 = コンフィグ中(出撃しない) */
@@ -217,7 +218,7 @@ void title_draw(void) {
 void title_vram(void) {
     /* タイトルの文字(この時点ではまだ分割していない)。1 フレームに 1 行(まとめるとフレームが落ちた) */
     if (g_phase == PH_TITLE && g_pt == 1) font_text(HUD_PAGE, 72, HUD_ROW1, 11, 0, "PUSH SPACE KEY");
-    if (g_phase == PH_TITLE && g_pt == 2) font_text(HUD_PAGE, 64, HUD_ROW2, 14, 0, "TDF 2026  M2 BUILD");
+    if (g_phase == PH_TITLE && g_pt == 2) font_text(HUD_PAGE, 52, HUD_ROW2, 14, 0, CF_COPY);
     if (g_phase == PH_TITLE && cf_dirty) {                    /* 隠しコンフィグ。★1 フレームに文字の 1 ドット行ずつ(72 バイト、約 0.6ms)。
                                                                  1 行(576 バイト、約 5ms)をまとめて書くと終わりが上の帯(SCREEN 12)の
                                                                  表示に入り、書いた所が化けた */
@@ -229,10 +230,10 @@ void title_vram(void) {
             if (cf_cur == 1) cf_build();
         }
         if (cf_cur == 1) { t = cf_line; row = HUD_ROW1; fg = 15; }   /* 白(色 11 は点滅に使う) */
-        else if (cf_cur == 2) { t = "UD ITEM LR CHANGE "; row = HUD_ROW2; fg = 14; }
-        else if (cf_cur == 4) { t = " PUSH SPACE KEY   "; row = HUD_ROW1; fg = 11; }
-        else { t = "TDF 2026  M2 BUILD"; row = HUD_ROW2; fg = 14; }
-        font_text_row(HUD_PAGE, 64, row, fg, 0, t, cf_row);    /* 元の 2 行目と同じ x = 64..207(元の 1 行目 72..183 も覆う) */
+        else if (cf_cur == 2) { t = " UD ITEM LR CHANGE "; row = HUD_ROW2; fg = 14; }
+        else if (cf_cur == 4) { t = "  PUSH SPACE KEY   "; row = HUD_ROW1; fg = 11; }
+        else { t = CF_COPY; row = HUD_ROW2; fg = 14; }
+        font_text_row(HUD_PAGE, 52, row, fg, 0, t, cf_row);    /* 元の 2 行目と同じ x = 52..203、19 文字(元の 1 行目 72..183 も覆う) */
         if (++cf_row == 8) {
             cf_row = 0;
             if (!(cf_cur == 1 && (cf_dirty & 0x10))) cf_dirty &= (u8)~cf_cur;   /* 途中で値が変わったら書き直す */
