@@ -23,6 +23,12 @@ ORGAN = [0x22, 0x21, 0x1E, 0x00, 0xF0, 0xF0, 0x0F, 0x0F]
 SYNBASS = [0x01, 0x01, 0x18, 0x05, 0xF3, 0xF4, 0x24, 0x26]
 GLASS = [0x13, 0x11, 0x0C, 0x00, 0xF3, 0xF2, 0x23, 0x24]
 LEAD = [0x31, 0x21, 0x12, 0x06, 0xF1, 0xF3, 0x12, 0x05]
+# ★メロディーは必ず自作音色にする(M7 の後。聴き比べで決めた。自作音色は 1 曲に 1 つなので、パッドに使っていた曲はパッドを内蔵 @1 へ)
+GTR = [0x21, 0x61, 0x0E, 0x0F, 0xF3, 0xF1, 0x24, 0x15]      # 哀愁のギター(M04)。変調器を半波・帰還 7 で歪ませたリード
+VIBE = [0x14, 0x81, 0x1A, 0x00, 0xF5, 0xF2, 0x64, 0xF4]     # ビブラフォン(M05)。変調 4 倍・トレモロ・長い減衰
+HARP = [0x13, 0x11, 0x14, 0x05, 0xF4, 0xF3, 0x55, 0xF5]     # ハープシコード(M09)。変調 3 倍の爪弾き
+TPT = [0x21, 0x61, 0x12, 0x06, 0x82, 0xF2, 0x13, 0x05]      # 金管のリード(M11)。変調器の立ち上がりを遅く
+FLUTE = [0x22, 0x61, 0x2A, 0x00, 0x61, 0x71, 0x11, 0x06]    # オカリナ寄りの笛(M16)
 # 内蔵音色: 1 Violin 2 Guitar 3 Piano 4 Flute 5 Clarinet 6 Oboe 7 Trumpet 8 Organ 9 Horn 10 Synth
 #           11 Harpsichord 12 Vibraphone 13 Synth bass 14 Wood bass 15 E.guitar
 
@@ -174,7 +180,7 @@ SONGS.append(Song('M03', 150, {
 # ---- M04 Dusk Over Ruins(1 面): 哀愁のギター、行進するタム ----
 m04 = ['Am', 'F', 'G', 'Em', 'Am', 'F', 'E', 'E', 'F', 'G', 'Am', 'Am', 'Dm', 'E', 'Am', 'E7']
 SONGS.append(Song('M04', 132, {
-    'FM0': 'L @15 v13 q2 '
+    'FM0': 'L @0 v13 q2 '
            'o5e4. d8 c4 o4b4 | a2. o5c4 | d4. c8 o4b4 g4 | e2. r4 | '
            'o5e4. d8 c4 e4 | a2 g4 f4 | e4 g+4 b4 o6d4 | c4 o5b4 g+2 | '
            'a4. g8 f4 e4 | d4 e4 f4 g4 | e4. d8 c4 o4b4 | a1 | '
@@ -185,21 +191,21 @@ SONGS.append(Song('M04', 132, {
     'RHY': 'PP02 L ' + rep('bt4 t8 t8 st4 t8 t8', 7) + ' bt4 t8 t8 s8 s8 sc4 | '
            + rep('bt4 t8 t8 st4 t8 t8', 7) + ' bt8 t8 t8 t8 s16 s16 s16 s16 sc4',
     'PSGA': 'L @3 v8 ' + arp(m04, 69, 12, (0, 1, 2, 3)),
-}, user=LEAD))
+}, user=GTR))
 
 # ---- M05 Weightless(2 面): F# リディア、ハーフタイム、残響の長いアルペジオ(PSG の疑似ディレイ) ----
 m05 = ['F#maj7', 'G#/F#', 'F#maj7', 'G#/F#', 'D#m7', 'G#', 'F#add9', 'F#add9']
 m05c = ['F#maj7', 'G#', 'F#maj7', 'G#', 'D#m7', 'G#', 'F#add9', 'F#add9']
 m05_arp = arp(m05c, 66, 6, (0, 2, 1, 3, 4, 2, 5, 3))
 SONGS.append(Song('M05', 112, {
-    'FM0': 'L @12 v12 q0 o5c+2. o4a+4 | o5c2 d+2 | f+2. f4 | g+1 | f+2. d+4 | c2 o4a+4 o5c4 | c+1& | c+1',
-    'FM1': 'L @0 v9 ' + pad(m05c, 0, 54),
-    'FM2': 'L @0 v8 ' + pad(m05c, 2, 58),
+    'FM0': 'L @0 v12 q0 o5c+2. o4a+4 | o5c2 d+2 | f+2. f4 | g+1 | f+2. d+4 | c2 o4a+4 o5c4 | c+1& | c+1',
+    'FM1': 'L @1 v9 ' + pad(m05c, 0, 54),
+    'FM2': 'L @1 v8 ' + pad(m05c, 2, 58),
     'FM3': 'L @14 v12 o2f+1 f+1 f+1 f+1 d+1 g+1 f+1 f+1',
     'RHY': 'L ' + rep('b4 h8 h8 s4 h8 h8', 6) + ' b4 h8 h8 s8 h8 sh8 h8 | b4 h4 s4 c4',
     'PSGA': 'L @7 v10 ' + m05_arp,
     'PSGB': 'L @7 v6 ' + rot(m05_arp, 2),
-}, user=GLASS))
+}, user=VIBE))
 
 # ---- M06 Redline(3 面): 加速曲。速さはスクロールに合わせる(g_snd_tempo) ----
 m06 = ['C#m', 'A', 'B', 'C#m', 'C#m', 'A', 'B', 'G#7']
@@ -253,14 +259,14 @@ def arp78(prog, lo):
         out += ' '.join(nn(n, '8') for n in seq) + ' '
     return out
 SONGS.append(Song('M09', 100, {
-    'FM0': 'L @11 v12 q2 ' + arp78(m09, 67),
-    'FM1': 'L @11 v10 q2 o5d4 c8 o4b-8 a4. | g4 a8 b-8 o5c4. | d4 f+8 a8 g4. | f+4 d8 o4b-8 g4. | '
+    'FM0': 'L @0 v12 q2 ' + arp78(m09, 67),
+    'FM1': 'L @0 v10 q2 o5d4 c8 o4b-8 a4. | g4 a8 b-8 o5c4. | d4 f+8 a8 g4. | f+4 d8 o4b-8 g4. | '
            'o5g4 f8 d+8 d4. | c4 d+8 d8 c4. | o4b-4 a8 b-8 o5c4. | d2 r4.',
     'FM2': 'L @1 v8 ' + pad(m09, 1, 58, B7),
     'FM3': 'L @14 v12 q3 ' + ''.join(nn(tones(s, 31)[0], '4') + ' ' + nn(tones(s, 31)[0], '4') + ' ' + nn(tones(s, 31)[1], '4.') + ' ' for s in m09),
     'RHY': 'L ' + rep('b4 h4 s4.', 7) + ' b4 s8 s8 s8 s8 s8',
     'PSGC': 'L N1 @1 v11 q1 ' + rep('o5c8 o4c8 o4c8 o4c8 o5c8 o4c8 o4c8', 8),
-}, bar=B7, user=GLASS))
+}, bar=B7, user=HARP))
 
 # ---- M10 Calibration(7 面): 冷たいミニマル。半音と三全音の機械的な列 ----
 cal = 'o4c16 c+16 f+16 g16 c16 c+16 f+16 g16 o5c16 o4b16 f16 e16 c16 c+16 f+16 g16 '
@@ -275,17 +281,17 @@ SONGS.append(Song('M10', 140, {
 # ---- M11 The Prototype(8 面): B 短調、タイトルの動機を短調で、合唱のパッド ----
 m11 = ['Bm', 'G', 'A', 'F#m', 'Bm', 'G', 'Em', 'F#', 'G', 'A', 'Bm', 'Bm', 'Em', 'F#', 'Bm', 'F#7']
 SONGS.append(Song('M11', 152, {
-    'FM0': 'L @7 v13 q2 o4b4 o5f+4 b4 o6c+4 | d2 c+4 o5b4 | a4. b8 o6c+4 e4 | c+1 | '
+    'FM0': 'L @0 v13 q2 o4b4 o5f+4 b4 o6c+4 | d2 c+4 o5b4 | a4. b8 o6c+4 e4 | c+1 | '
            'o4b4 o5f+4 b4 o6c+4 | d2 e4 f+4 | g4. f+8 e4 d4 | c+2 o5a+2 | '
            'o5b4 o6d4 g4 f+4 | e4 c+4 a4 g4 | f+2. d4 | b1 | g4 e4 o6c+4 o5b4 | a+4 o6c+4 e4 f+4 | d4. c+8 o5b4 f+4 | a+2 f+2',
-    'FM1': 'L @0 v10 ' + pad(m11, 0, 54),
-    'FM2': 'L @0 v10 ' + pad(m11, 1, 58),
-    'FM3': 'L @0 v9 ' + pad(m11, 2, 62),
+    'FM1': 'L @1 v10 ' + pad(m11, 0, 54),
+    'FM2': 'L @1 v10 ' + pad(m11, 1, 58),
+    'FM3': 'L @1 v9 ' + pad(m11, 2, 62),
     'FM4': 'L @13 v13 q3 ' + bass(m11, 2, (0, 0, 12, 0, 0, 12, 0, 7), 12),
     'RHY': 'PP02 L ' + rep('bh8 h8 sh8 h8 bh8 bh8 sh8 h8', 7) + ' bc8 h8 sh8 h8 s16 s16 s16 s16 sc8 s8 | '
            + rep('bh8 h8 sh8 h8 bh8 bh8 sh8 h8', 7) + ' bc8 b8 s8 s8 s16 s16 s16 s16 sc4',
     'PSGA': 'L @1 v9 ' + arp(m11, 66, 6, (0, 1, 2, 3)),
-}, user=CHOIR))
+}, user=TPT))
 
 # ---- M12 Tolerance Check(中ボス、全面共通): 半音ずつ上がる低音 ----
 crom = ' '.join(nn(40 + i // 2, '8') for i in range(16))       # e2 から 1 拍ごとに半音上がる(2 小節)
@@ -372,14 +378,14 @@ SONGS.append(Song('M15', 180, {
 m16 = ['D', 'A/C#', 'Bm', 'G', 'D', 'A', 'G', 'A', 'Bm', 'G', 'D', 'A', 'G', 'A', 'D', 'D']
 m16c = ['D', 'A', 'Bm', 'G', 'D', 'A', 'G', 'A', 'Bm', 'G', 'D', 'A', 'G', 'A', 'D', 'D']
 SONGS.append(Song('M16', 76, {
-    'FM0': 'L @4 v12 o4d2 a2 | o5d2 e2 | f+2. e4 | d1 | o4d2 a2 | o5d2 e4 f+4 | g2 f+4 e4 | e1 | '
+    'FM0': 'L @0 v12 o4d2 a2 | o5d2 e2 | f+2. e4 | d1 | o4d2 a2 | o5d2 e4 f+4 | g2 f+4 e4 | e1 | '
            'f+2 e4 d4 | d2 o4b2 | a2 o5d4 e4 | e1 | d2 e4 f+4 | g2 a2 | a1& | a1',
-    'FM1': 'L @0 v9 ' + pad(m16c, 1, 60),
-    'FM2': 'L @0 v9 ' + pad(m16c, 2, 62),
+    'FM1': 'L @1 v9 ' + pad(m16c, 1, 60),
+    'FM2': 'L @1 v9 ' + pad(m16c, 2, 62),
     'FM3': 'L @14 v11 ' + pad(m16c, 0, 38),
     'PSGA': 'L @7 v8 ' + arp(m16c, 66, 12, (0, 1, 2, 3, 2, 1, 2, 1)),
     'PSGB': 'L @7 v5 ' + rot(arp(m16c, 66, 12, (0, 1, 2, 3, 2, 1, 2, 1)), 1),
-}, user=STRINGS))
+}, user=FLUTE))
 
 # ---- M17 Measured(ゲームオーバー、約 8 秒): 下降する和音、最後に時計のチック 1 回 ----
 SONGS.append(Song('M17', 60, {
