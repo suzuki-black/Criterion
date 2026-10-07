@@ -87,9 +87,15 @@ static void terrain(void) {
     u8 k;
     /* いる側: 室内の列にいれば室内、艦体の列では今の側のまま(穴の列でだけ上下が替わる) */
     k = c0 < S5_COLS ? g_map[c0] : 0;
-    if (s5_kind[k] == 2) side = 2;
-    else if (s5_kind[k] == 0) side = py > S5_HULL_B - 30 ? 1 : 0;
-    else if (side == 2) side = py < 70 ? 0 : 1;              /* 室内から出た */
+    {
+        /* ★船底の下に自機の通れる余裕(20 ドット)があるときだけ「下を通る側」にする。カメラの高さによっては船底の下が
+           12 ドットしか無く、低く飛んでいた自機が船底の下へ押し込まれて閉じ込められ、上へ入れても押し戻されるので
+           下へ引かれる重力のように感じた(指摘「戦艦面の謎の重力」) */
+        u8 under = (s16)(PLAY_H - 16) - (s16)(S5_HULL_B - g_scam) >= 20;
+        if (s5_kind[k] == 2) side = 2;
+        else if (s5_kind[k] == 0) side = under && py > S5_HULL_B - 30 ? 1 : 0;
+        else if (side == 2) side = under && py >= 70 ? 1 : 0;   /* 室内から出た */
+    }
     for (c = c0; c <= (u16)(c0 + 2); c++) {
         s16 t, b;
         if (c >= S5_COLS) continue;
