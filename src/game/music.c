@@ -91,7 +91,13 @@ void music_frame(u8 over) {
         else if (w == ST) w = SND_NONE;
     }
     if (g_pcm_cur == PCM_V04) v04 = 1;
-    if (g_phase != ph_prev) { ph_prev = g_phase; if (g_phase == PH_LOGO) pcm_req(PCM_V03); }
+    if (g_phase != ph_prev) {
+        ph_prev = g_phase;
+        if (g_phase == PH_LOGO) pcm_req(PCM_V03);
+        if (g_phase == PH_SORTIE) pcm_halt();                       /* ★出撃: タイトルの曲のオケヒを止める(押す瞬間に鳴って
+                                                                          いると出撃に入っても鳴り続け、開始直後に破裂音が出たり
+                                                                          出なかったりした。指摘) */
+    }
     /* 試験の声: 1 つ目は測定空間から入るとき、2 つ目からは前の試験のボスを倒した直後(判定文の静かな間。次の試験の
        予告)。★試験の入りは読み込みと降下で重いフレームが続き、そこで鳴らすと遅れた */
     if (g_calib != calib_prev) { if (g_calib == 1) pcm_req(PCM_V06); calib_prev = g_calib; }
