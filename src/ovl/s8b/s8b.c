@@ -317,7 +317,11 @@ void ovl_update(void) {
             if (++b_t >= 120) {
                 if (g_sec == SEC8_BOSS1) { ring_cmd(0, 0, CX - 48, CY - 48, 96, 96, 1, 0x11); boss_form(SEC8_BOSS2); }
                 else if (g_sec == SEC8_BOSS2) boss_form(SEC8_BOSS3);
-                else { g_boss_state = BS_NONE; g_sec = SEC8_ESCAPE; sec_t = 0; sec_wx = g_wx; stage_banner("ESCAPE"); }
+                else {                                       /* ★判定文(リングの BG の文字)を消す。消さずにいると脱出の始めに
+                                                                   「FINITY」が残って流れた */
+                    ring_cmd(0, 0, 56, 14, 144, 8, 1, 0x11);
+                    g_boss_state = BS_NONE; g_sec = SEC8_ESCAPE; sec_t = 0; sec_wx = g_wx; stage_banner("ESCAPE");
+                }
             }
         }
         break;
