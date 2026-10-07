@@ -61,11 +61,10 @@ void bg_fill_hud(RasEntry *e, u8 bi) {
     u8 *rh = regs_h[bi];
     rh[0] = 2; rh[1] = 0x7F;
     rh[2] = 23; rh[3] = HUD_R23;
-    rh[4] = 5; rh[5] = spr_regs.r5h;
-    rh[6] = 11; rh[7] = 3;
-    mag_pair(rh + 8, 0);                                     /* 拡大を解く(下の帯の拡大。stage.c) */
-    e->line = HUD_Y; e->flags = RAS_SCROLL | RAS_REGS; e->r26 = 0; e->r27 = 0;
-    e->haze_n = 5; e->haze = rh;
+    rh[4] = 5; rh[5] = spr_regs.r5h;                         /* ★R#11 はどの表でも 3 なので書かない(RAS_BLANK で消す前に書く組を減らす) */
+    mag_pair(rh + 6, 0);                                     /* 拡大を解く(下の帯の拡大。stage.c) */
+    e->line = HUD_IRQ; e->flags = RAS_SCROLL | RAS_REGS | RAS_BLANK; e->r26 = 0; e->r27 = 0;   /* ★最後の組(mag_pair)は R#1 */
+    e->haze_n = 4; e->haze = rh;
 }
 
 static void palette(void) {

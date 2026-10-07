@@ -502,7 +502,7 @@ static RasEntry *slot(s16 line, u8 kind) {
         if (line == 0 || !(c->flags & kind)) { c->flags |= kind; return c; }
         line = (s16)(c->line + RAS_GAP);
     }
-    if (line >= PLAY_H - RAS_GAP || K >= RAS_MAX - 1) return 0;   /* HUD の項目(188 行)の手前はあける */
+    if (line >= ITEM_END || K >= RAS_MAX - 1) return 0;     /* HUD の項目(HUD_IRQ)の手前はあける */
     c = &E[K++];
     c->line = (u8)line; c->flags = kind;
     return c;
@@ -525,7 +525,11 @@ void stage_ev_haze(s16 line, u8 n, u8 *tbl) {
     if (line < 0) line = 0;
     c = &E[K - 1];
     if (line < (s16)c->line + RAS_GAP) line = (s16)(c->line + RAS_GAP);
-    if (line + n >= PLAY_H - RAS_GAP || K >= RAS_MAX - 1) return;
+    {   /* ★下は切り詰める(HUD の項目の手前まで) */
+        s16 m = (s16)(ITEM_END - 1 - line);
+        if (m <= 0 || K >= RAS_MAX - 1) return;
+        if (n > m) n = (u8)m;
+    }
     c = &E[K++];
     c->line = (u8)line; c->flags = RAS_HAZE | RAS_HAZE_FINE; c->haze = tbl; c->haze_n = n;
 }
@@ -622,7 +626,7 @@ tail:
         s16 line = (s16)(BAN_LINE + (banner_t > BAN_SUCK ? (banner_t - BAN_SUCK) >> 1 : 0));
         RasEntry *c = &E[K - 1];
         if (line < (s16)c->line + RAS_GAP) line = (s16)(c->line + RAS_GAP);
-        if (line <= PLAY_H - RAS_GAP && K < RAS_MAX - 1) {
+        if (line < ITEM_END && K < RAS_MAX - 1) {
             c = &E[K++];
             /* ページ 2|3。★R#23 も 252(s = -192 のときの値)にする: プレイエリアの R#23 のままだと、カメラが宇宙の
                高さにいない面の途中(7 面の判定文など)で帯がページ 2 の別の行(ボスの絵)を見せた */

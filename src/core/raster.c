@@ -17,6 +17,7 @@ RasEntry *volatile ras_ptr;    /* 次に適用する項目 */
 volatile u8 ras_left;          /* 残り項目数 */
 volatile u8 ras_armed;         /* 今 R#19 に仕込んである値 */
 volatile u8 ras_r19;           /* ラスターの次の項目の R#19(ras_left > 0 のとき有効) */
+static u8 ras_r1v;              /* RAS_BLANK: 戻す R#1 */
 volatile u8 ras_vs;            /* 今の R#23(RAS_REGS で R#23 を書くと更新)。R#19 はこれを足した値で仕込む */
 #ifndef RAS_GAME                /* ★本体(RAS_GAME)は方式 B だけなので、刻み方式(方式 A/C)と BIOS 方式は入れない(常駐の空き。M7 の後) */
 volatile u8 ras_tl;            /* 刻み方式: 仕込んだ刻みの表示ライン(0, 2, .., 244)。R#19 = ras_tl + ras_vs。
@@ -477,6 +478,8 @@ void ras_apply_next(void) __naked {
         ld   hl, #_g_ras_mark      ; RAS_MARK: 適用されたことをメインへ知らせる
         inc  (hl)
     00014$:
+        bit  6, d
+        jp   nz, 00030$            ; RAS_BLANK
         bit  0, d
         jr   z, 00001$
         ld   a, 2 (ix)
@@ -510,21 +513,7 @@ void ras_apply_next(void) __naked {
         ld   l, 8 (ix)
         ld   h, 9 (ix)
     00008$:
-        ld   a, (hl)               ; 番号
-        inc  hl
-        cp   #23
-        jr   nz, 00019$
-        ld   a, (hl)
-        ld   (_ras_vs), a          ; R#23(縦スクロール)を覚える: 以降の R#19 に足す
-        ld   a, #23
-    00019$:
-        or   #0x80
-        ld   b, a
-        ld   a, (hl)               ; 値
-        inc  hl
-        out  (0x99), a
-        ld   a, b
-        out  (0x99), a
+        call 00050$
         dec  e
         jr   nz, 00008$
         ; ★仕込み済みの R#19 を書き直す。刻み方式は先に次の刻みを仕込んでから項目を適用するが、
@@ -538,6 +527,145 @@ void ras_apply_next(void) __naked {
     00009$:
         bit  2, d
         jp   z, 00005$
+        jp   00040$
+        ; ---- RAS_BLANK(raster.h): 帰線で表示を消す → 横スクロール・レジスタ列 → 次の帰線で戻す ----
+        ;   帰線では 0x9B への OUT 1 回だけ(R#17 = 1、自動加算なし。R#15 = 2 で HR を見る)。パレットは消す前に書く
+    00030$:
+        push bc                    ; ★C は呼び出し元の S#0
+        bit  1, d
+        jr   z, 00031$
+        ld   a, 4 (ix)
+        out  (0x99), a
+        ld   a, #0x90              ; R#16 = パレット番号
+        out  (0x99), a
+        ld   a, 5 (ix)
+        out  (0x9A), a
+        ld   a, 6 (ix)
+        out  (0x9A), a
+    00031$:
+        ld   e, 7 (ix)
+        ld   l, 8 (ix)
+        ld   h, 9 (ix)
+        push hl
+        ld   a, e
+        add  a, a
+        dec  a                     ; 最後の組の値 = 2n - 1
+        add  a, l
+        ld   l, a
+        jr   nc, 00032$
+        inc  h
+    00032$:
+        ld   a, (hl)
+        ld   (_ras_r1v), a         ; 戻す R#1
+        and  #0xBF                 ; BL = 0
+        ld   b, a
+        pop  hl
+        ; 3 組目から最後の 1 つ前(HUD では属性表の R#5・R#11)は消す前に書く(FH を待つ前に。★FH は行の終わりに立つので、そのあとに書くと
+        ;   その行の帰線を逃した。消す行を 2 行に)。
+        ;   ★先頭の 2 組(ページ R#2・縦スクロール R#23)と最後の R#1 だけを消している間に書く
+        push hl
+        inc  hl
+        inc  hl
+        inc  hl
+        inc  hl
+        ld   a, e
+        sub  #3
+        jr   z, 00048$
+        jr   c, 00048$
+        push bc
+        ld   c, a
+    00049$:
+        call 00050$
+        dec  c
+        jr   nz, 00049$
+        pop  bc
+        ld   e, #3                 ; 消している間に書くのは 2 組 + 最後の R#1
+    00048$:
+        pop  hl
+        ld   a, #0x81
+        out  (0x99), a
+        ld   a, #0x91              ; R#17 = 1(自動加算なし)。★これも FH を待つ前に
+        out  (0x99), a
+        ld   c, #0x9B
+        ld   a, #2
+        out  (0x99), a
+        ld   a, #0x8F              ; R#15 = 2(S#2: HR)
+        out  (0x99), a
+        ; ★消すのは入ってから最初の帰線(割込みの遅れは 1 ライン未満の約束。FH で 2 行先を待つ形は、待ちが 1 フレームに
+        ;   4〜5 行になり、1 周の遅れが増えた)
+        call 00038$                ; その行の帰線まで待つ
+        out  (c), b                ; R#1 = 表示を消す
+        bit  0, d
+        jr   z, 00033$
+        ld   a, 2 (ix)
+        out  (0x99), a
+        ld   a, #0x9A              ; R#26
+        out  (0x99), a
+        ld   a, 3 (ix)
+        out  (0x99), a
+        ld   a, #0x9B              ; R#27
+        out  (0x99), a
+    00033$:
+        ; ★表示を消している間は FH が立たないので、戻す行は数えて決める: 1 行に 2 組ずつ書いて帰線を待つ
+        ;   (書き込みの長さが帰線の境目に重なると、戻す行が 1 行ずれて HUD の上の行が出たり出なかったりした)
+        dec  e                     ; 最後の R#1 は戻すときに
+    00034$:
+        call 00038$                ; 次の行の始まり(帰線)
+        ld   a, e
+        or   a
+        jr   z, 00036$
+        ld   d, #2
+    00035$:
+        call 00050$
+        dec  e
+        jr   z, 00034$
+        dec  d
+        jr   nz, 00035$
+        jr   00034$
+    00036$:
+        ld   a, (_ras_r1v)
+        out  (c), a                ; R#1 = 表示を戻す(帰線の中。消してから 3 行)
+        ld   a, (_g_vdp_status_rest)
+        out  (0x99), a
+        ld   a, #0x8F              ; R#15 = 待機値
+        out  (0x99), a
+        ld   a, (_ras_armed)
+        out  (0x99), a
+        ld   a, #0x93              ; R#19 を書き直す(RAS_REGS と同じ)
+        out  (0x99), a
+        pop  bc
+        jp   00005$
+        ; (HL) の (番号, 値) を 1 組書いて HL を進める。R#23 は覚える(以降の R#19 に足す)。A を壊す
+    00050$:
+        inc  hl
+        ld   a, (hl)               ; 値
+        out  (0x99), a
+        dec  hl
+        ld   a, (hl)               ; 番号
+        inc  hl
+        inc  hl
+        cp   #23
+        jr   nz, 00051$
+        dec  hl
+        ld   a, (hl)
+        inc  hl
+        ld   (_ras_vs), a
+        ld   a, #23
+    00051$:
+        or   #0x80
+        out  (0x99), a
+        ret
+        ; 表示期間に入るのを待ってから帰線(HR = 1)を待つ。A を壊す
+    00038$:
+        in   a, (0x99)
+        and  #0x20
+        jr   nz, 00038$
+    00039$:
+        in   a, (0x99)
+        and  #0x20
+        jr   z, 00039$
+        ret
+    00040$:
         ; ---- HR ポーリング帯 ----
         ; 帰線期間(HR=1)に入ってからの書き込みを最小にするため、R#17(間接レジスタ番号)は
         ; 表示期間のうちに設定し、帰線では 0x9B への OUT だけを行う。

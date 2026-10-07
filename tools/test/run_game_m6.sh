@@ -45,7 +45,7 @@ proc watch {} {
   set fr [rd16 [expr {$ST+6}]]
   set s [rd $SEC]; set cal [rd $CAL]
   if {![info exists ::ending_seen]} {
-    if {[expr {[debug read {VDP regs} 1] & 0x40}] == 0} { incr ::blank }
+    if {[expr {[debug read {VDP regs} 1] & 0x40}] == 0} { after time 0.002 { if {([debug read {VDP regs} 1] & 0x40) == 0} { incr ::blank } } }   ;# ★HUD 帯の境は毎フレーム 3 行だけ表示を消す(RAS_BLANK)。2ms 後(約 30 行後)も消えていたら数える
     if {\$fr == \$::fr_prev} { incr ::stall }
     set lt [rd16 [expr {$ST+4}]]
     if {\$lt != \$::late_prev} { lappend ::late_at "[format %.2f [machine_info time]](+[expr {\$lt - \$::late_prev}] 区間 \$s 試験 \$cal)"; set ::late_prev \$lt }
