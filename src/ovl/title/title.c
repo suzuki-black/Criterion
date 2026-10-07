@@ -52,6 +52,7 @@ static u8  ring_logo;             /* 1 = ロゴの区間も表示リングにし
 static u8  fade15;                /* 紋章の明るさ(0..7) */
 static u8  reveal;                /* 紋章を見せる行 */
 static u16 yjk_q;                 /* 地平線の横位置(1/8 ドット) */
+static u8  v13;                   /* 色 13 に書いた値の目印(タイトルに入るときに 0xFF。title_logo_pal) */
 
 static u8 regs_top[2][16], regs_n[2][12], regs_ring[2][4], regs_b[2][4];
 
@@ -152,7 +153,7 @@ static void enter(u8 ph) {
     }
     if (ph == PH_TITLE) {
         for (i = 0; i < LOGO_BANDS; i++) band_x[i] = (i & 1) ? -256 : 256;   /* 奇数帯は左から、偶数帯は右から */
-        g_split_n = 0; ring_logo = 0;
+        g_split_n = 0; ring_logo = 0; v13 = 0xFF;
         g_scroll_speed = 1;
         bg_mix(0);
         vdp_set_pal(15, 7, 7, 7);
@@ -264,6 +265,16 @@ static void sky_pal(RasEntry *e, u8 band) {
     e->pidx = 1; e->prb = (u8)((c[0] << 4) | c[2]); e->pg = c[1];
 }
 
+/* ロゴの帯 4・5 の地(色 13)を空の色に固定する。ロゴが雲の表示に替わったら爆発の色(bg.c と同じ)へ戻す */
+static void title_logo_pal(void) {
+    const u8 *c = bg_sky(5);
+    u8 v = ring_logo ? 0xFE : (u8)((c[0] << 5) ^ (c[1] << 2) ^ c[2]);
+    if (v == v13) return;
+    v13 = v;
+    if (ring_logo) vdp_set_pal(13, 6, 3, 2);
+    else vdp_set_pal(13, c[0], c[1], c[2]);
+}
+
 void title_build(void) {
     RasEntry *e = ras_back();
     u8 bi = ras_back_index(), k = 0, i;
@@ -293,13 +304,16 @@ void title_build(void) {
         return;
     }
 
+    title_logo_pal();
     /* 上の帯(SCREEN12)は 244 行で切り替える */
     if (n) {
         u16 yx = yjk_q >> 3;
         rt[0] = 0; rt[1] = R0_G7; rt[2] = 25; rt[3] = R25_YJK; rt[4] = 2; rt[5] = 0x1F;
         rt[6] = 8; rt[7] = R8_NOSP; rt[8] = 23; rt[9] = 0; rt[10] = 5; rt[11] = spr_regs.r5a; rt[12] = 11; rt[13] = 3;
-        put_e(&e[k], TOP_SWITCH, RAS_REGS | RAS_SCROLL);
-        e[k].haze = rt; e[k].haze_n = 7; e[k].r26 = (u8)(VDP_R26(yx) & 31); e[k].r27 = VDP_R27(yx); k++;   /* SP2 なし = 256 幅 */
+        put_e(&e[k], TOP_SWITCH, RAS_REGS | RAS_SCROLL | RAS_PAL);
+        e[k].haze = rt; e[k].haze_n = 7; e[k].r26 = (u8)(VDP_R26(yx) & 31); e[k].r27 = VDP_R27(yx);   /* SP2 なし = 256 幅 */
+        e[k].pidx = 11; e[k].prb = 0x67; e[k].pg = 7; k++;   /* ★色 11 を戻す(HUD 帯で PUSH SPACE KEY を点滅させる色。ロゴの文字の
+                                                              2・3 段目も色 11 なので、戻さないとロゴの一部が一緒に点滅した) */
     }
     /* n 行: SCREEN5 へ。タイトル中はページ 3(黒)、出撃中は表示リング(描き戻した空)。
        ★ロゴの 64 行に近い(RAS_GAP 未満)ときは、ロゴの最初の帯の項目にまとめる(merge) */
@@ -327,7 +341,11 @@ void title_build(void) {
         } else {
             u16 x = (u16)band_x[i];
             b->r26 = VDP_R26(x); b->r27 = VDP_R27(x);
-            sky_pal(b, (u8)(i < 4 ? 4 : i < 6 ? 5 : 6));           /* ロゴの地(色 1)= その高さの空の色 */
+            /* ロゴの地 = その高さの空の色。帯 0..3 は色 1(64 行で書く。地平線の中で効く)、帯 4・5 は色 13(固定。
+               title_logo_pal)、帯 6・7 は色 1 を 112 行で書き換える(早めに効いて 110・111 行に掛かるが、そこの地は色 13) */
+            if (i == 0) sky_pal(b, 4);
+            else if (i == 6) sky_pal(b, 6);
+            else b->flags &= (u8)~RAS_PAL;
         }
         if (i == 0 && merge) {                                   /* n 行の項目をまとめた(SCREEN5 へ戻すのもここ) */
             b->flags |= RAS_REGS | RAS_MARK; b->haze = rn; b->haze_n = 6;

@@ -66,7 +66,10 @@ METAL = [15, 15, 11, 11, 14, 14, 9, 9]               # 文字の 8 行それぞ�
 
 def logo():
     text = 'CRITERION'
-    img = [[1] * W for _ in range(H)]                 # 地は色 1(空の色。帯ごとにラスターで変わる)
+    # 地は色 1(空の色)。★32..47 行(画面の 96..111 行 = ロゴの帯 4・5)だけ色 13 にする: 帯ごとに色 1 を書き換えると、
+    #   書き込みが行の途中に届いて左端が点滅した。色 13 はその高さの空の色に固定し(title.c)、色 1 の書き換えは
+    #   この区間の中(色 1 の画素が無い所)で済ませる
+    img = [[13 if 32 <= y < 48 else 1] * W for y in range(H)]
     cw = 28                                           # 1 文字の幅(ドット)
     x0 = (W - cw * len(text)) // 2
     for ci, ch in enumerate(text):
@@ -82,9 +85,9 @@ def logo():
                             x = x0 + ci * cw + gx * 3 + sx
                             if 0 <= x < W: img[y][x] = METAL[gy] if sy < 7 else 9
         # 目盛りの意匠: 文字の下に刻み
-    for x in range(x0, x0 + cw * len(text), 4):
-        img[H - 2][x] = 14
-        if (x - x0) % 28 == 0: img[H - 3][x] = 14
+    for x in range(x0, x0 + cw * len(text), 4):       # ★57・58 行(125..127 行は 128 行の切り替えが早めに効いて揺れる)
+        img[H - 6][x] = 14
+        if (x - x0) % 28 == 0: img[H - 7][x] = 14
     out = bytearray()
     for y in range(H):
         for x in range(0, W, 2):
