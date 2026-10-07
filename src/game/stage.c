@@ -415,7 +415,10 @@ void stage_pump_nb(void) {
      Y がずれる)なので、2 面の空中戦(g_scam = -192、R#23 = 252)では画面の 172..187 行 = 168..183 行。
      ページ 2 のそこは起動ロゴの黒い区間、ページ 3 は都市の短冊(もう使わない)なので、色 1 で塗って使い、
      終わったらページ 2 を黒へ戻す。横は 256(ページ 3 = 何もない)から 0 へ寄せて、文字を左から入れる。
-     帯の色 1 はその高さの空の色にする(透けて見える)。 */
+     帯の色 1 はその高さの空の色にする(透けて見える)。
+   ★面の短冊を使っている間(読み込み中も)はページ 3 を塗らず、文字を滑り込ませずにその場に出す(ページ 3 の 160..183 行は
+     短冊の地面。デモの説明の帯がそこを塗り、以後に流れてくる 1 面の列の街路が空の色になって、Pawn の黒い余白が四角く
+     見えた)。 */
 #define BAN_LINE  172
 #define BAN_ROW   168              /* (BAN_LINE + 252) & 255 */
 #define BAN_IN    7                /* ここから見せる(3..6 は文字を書く) */
@@ -423,11 +426,12 @@ void stage_pump_nb(void) {
 #define BAN_END   (BAN_SUCK + 22)       /* 吸い込み: 帯の上端を 2 フレームに 1 行下げる(HUD の手前 6 行まで) */
 static u8 ban_regs[4];
 static u16 ban_x;
+static u8 ban_p3;                  /* 1 = ページ 3 を塗って文字を滑り込ませる(短冊を使っていないとき) */
 
 static void banner_vram(void) {
     if (banner_t <= 3 && vdp_cmd_busy()) return;            /* 塗りは VDP が空いてから(待つと遅れた。3 面の入り) */
-    if (banner_t == 1) vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x11);      /* 1 フレームに 1 つ(VDP を待たない) */
-    else if (banner_t == 2) vdp_hmmv(0, 768 + BAN_ROW - 8, 256, 24, 0x11);
+    if (banner_t == 1) { vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x11); ban_p3 = strip_off == 0xFFFF; }   /* 1 フレームに 1 つ(VDP を待たない) */
+    else if (banner_t == 2) { if (ban_p3) vdp_hmmv(0, 768 + BAN_ROW - 8, 256, 24, 0x11); }
     else if (banner_t >= 3 && banner_t < BAN_IN) {           /* 文字は 1 フレームに 2 行ずつ(一度に書くと 120 ライン。2 面の入りで遅れた) */
         u8 r = (u8)((banner_t - 3) << 1);
         extern u16 g_frame_t0;
@@ -436,7 +440,7 @@ static void banner_vram(void) {
         vdp_cmd_wait();
         font_text_row(2, 40, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, r);
         font_text_row(2, 40, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, (u8)(r + 1));
-        ban_x = 256;
+        ban_x = ban_p3 ? 256 : 0;
     } else if (banner_t == BAN_END) {
         vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x00);       /* 起動ロゴの黒い区間へ戻す */
         banner_t = 0;
