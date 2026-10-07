@@ -145,6 +145,7 @@ void boss_damage(u8 n);             /* LIMIT BREAK など: 次のフレームで
 enum { GRAV_NONE, GRAV_DIR, GRAV_CENTER };
 extern u8  g_grav;
 extern s16 g_gx, g_gy, g_gcx, g_gcy;
+extern u8  g_pl_boost;              /* 上下の速さに足す(1/16 ドット/フレーム。3 面の高速の区間) */
 extern u8  g_well_r;                /* GRAV_CENTER が引く範囲(ドット。ふつう 56) */
 extern s16 g_pl_ymin, g_pl_ymax;    /* ドット(自機の左上の y) */
 extern s16 g_pl_dy;

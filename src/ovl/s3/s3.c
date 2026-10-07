@@ -28,11 +28,12 @@ static const u8 inside[3] = { 1, 1, 2 };
 /* ---- 隔壁(M7 の後): スプライトの柱で、すき間が 1 ドットずつ滑らかに上下する。★前は地図の列を 1.5 秒ごとに
    書き換えて、すき間がいきなり別の高さへ跳び、予想できなかった。地図の隔壁の列は普通の通路にしてある ---- */
 #define PAT_PILLAR 60              /* 柱の絵(面ごとの絵の置き場) */
-#define GAP_H      50              /* すき間の高さ */
+#define GAP_H      60              /* すき間の高さ(★50 から広げた。高速の区間の指摘) */
 static const u8 pillar_pat[32] = {    /* 16x16 の中の 4..11 列: 縁と斜めの縞(色は行ごと) */
     0x0D, 0x0E, 0x0F, 0x0D, 0x0E, 0x0F, 0x0D, 0x0E, 0x0F, 0x0D, 0x0E, 0x0F, 0x0D, 0x0E, 0x0F, 0x0D,
     0xB0, 0x70, 0xF0, 0xB0, 0x70, 0xF0, 0xB0, 0x70, 0xF0, 0xB0, 0x70, 0xF0, 0xB0, 0x70, 0xF0, 0xB0 };
-static u8 bulk_ph;                 /* すき間の位相(4 フレームに 1 進む。1 周 256 フレーム) */
+static u8 bulk_ph;                 /* すき間の位相(16 フレームに 1 進む。★4 では動きが速く、見てから向かうと着く頃には
+                                      18 ドットずれた) */
 static u8 chase, lit;                   /* 流れる照明の位相(色 2..5 のどれが明るいか。1/8 単位) */
 
 /* ★流れる照明(パレットアニメ。M7 の後): 照明は列ごとに色 2..5 を順に使っているので、明るい色を 1 つずつ
@@ -50,7 +51,8 @@ static void lights(void) {
     }
 }
 
-static s16 gap_top(u8 i) { return (s16)(94 - GAP_H / 2 + ((g_sin64[(u8)(bulk_ph + i * 21) & 63] * 48) >> 7)); }   /* 通り道 16..171 */
+static s16 gap_top(u8 i) { return (s16)(94 - GAP_H / 2 + ((g_sin64[(u8)(bulk_ph + i * 8) & 63] * 48) >> 7)); }   /* 通り道 16..171。★隣の隔壁との位相の差は 8(21 では
+                                                                 すき間が 80 ドットも跳び、高速では追いつけなかった) */
 static s16 bulk_sx(u8 i) { return (s16)((g_w0 + s3_bulk[i]) * 8u - g_wx); }
 static u8 bulk_at(u16 c) { u8 i; for (i = 0; i < S3_NBULK; i++) if (s3_bulk[i] == c) return i; return 0xFF; }
 
@@ -87,7 +89,7 @@ void ovl_init(void) {
     g_maplen = S3_COLS;
     stage_load_strips(ASSET_S3_STRIPS_BANK, ASSET_S3_STRIPS_OFF);
     vdp_set_pal(6, 2, 2, 3);                                  /* 壁の影(暗い灰) */
-    g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0; lit = 0;
+    g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0; bulk_ph = 0; lit = 0;
     { u8 i; for (i = 0; i < S3_NBULK; i++) g_map[s3_bulk[i]] = 14; }   /* 隔壁の列は通路にして、柱はスプライトで */
     vdp_write_addr17(1, (u16)(0xF800u + PAT_PILLAR * 32u)); vdp_out_block(32, pillar_pat);
     if (g_calib) {                                            /* 7 面の試験 03: 白い空間から最高速の区間の終わりへ沈んで TACHOMETER */
@@ -133,13 +135,17 @@ static void terrain(void) {
 
 /* 隔壁: すき間の位相を進める */
 static void bulkheads(void) {
-    if (!(++bulk_t & 3)) bulk_ph++;
+    if (!(++bulk_t & 15)) bulk_ph++;
 }
 
 void ovl_update(void) {
     if (g_sec >= SEC3_ACCEL && g_sec <= SEC3_BOSS) { lights(); lit = 1; }
     else if (lit) { lit = 0; bg_mix(15); bg_mix(16); }      /* 色 2..5 は雲の色。bg_mix は値が替わったときだけ書くので 2 度呼ぶ */
     sec_t++;
+    /* ★高速の区間は自機の上下を速くする(スクロール 6 ドット/フレームで 1.5 → 4。隔壁は画面に入ってから 32〜36 フレームで
+       来るので、1.5 では反射神経が良くても間に合わなかった。指摘。反応 20 フレームで見てから向かって全部抜けられる
+       ことを、すき間の高さ・動きと合わせて計算で確かめた) */
+    { s8 sp = g_scroll_speed; g_pl_boost = (g_sec == SEC3_ACCEL || g_sec == SEC3_TOP) && sp >= 8 ? (u8)((sp - 4) << 1) : 0; }
     switch (g_sec) {
     case SEC3_AIR:
         if ((u16)(g_wx - sec_wx) >= (g_calib ? 128u : AIR_LEN)) enter(SEC3_SINK);

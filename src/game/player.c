@@ -18,6 +18,7 @@ s16 g_pl_ymin, g_pl_ymax = PLAY_H - 16;
 s16 g_pl_dy;
 static s16 gvx, gvy;               /* 重力でついた速さ(固定小数点) */
 static u8  grav_key, grav_t;        /* 重力の種類と向き(替わったら立ち上げ直す)、替わってからのフレーム */
+u8 g_pl_boost;                     /* 上下の速さに足す(1/16 ドット/フレーム)。3 面の高速の区間で面が書く */
 u8 g_well_r = 56;                  /* 渦(GRAV_CENTER)が引く範囲(ドット)。2 面の KILOGRAM は球が大きいので広げる */
 
 #define GV_MAX FX(1) + 8            /* 重力の速さの上限(1.5 ドット/フレーム) */
@@ -31,7 +32,7 @@ void player_init(void) {
     g_pl.x = START_X; g_pl.y = START_Y;
     g_pl.alive = 1; g_pl.invul = 120; g_pl.fire_cd = 0; g_pl.dead_t = 0;
     g_pl.lives = 3; g_pl.score = 0;
-    gvx = gvy = 0; g_grav = GRAV_NONE; g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; g_pl_dy = 0;
+    gvx = gvy = 0; g_grav = GRAV_NONE; g_pl_boost = 0; g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; g_pl_dy = 0;
     for (i = 0; i < MAX_PSHOT; i++) g_pshot[i].on = 0;
 }
 
@@ -78,8 +79,8 @@ void player_update(void) {
     }
     {
         s16 sp = FX(1) + 8 + (s16)g_gauge.thrust * 8;   /* 1.5 + 0.5 × THRUST */
-        if (g_in & IN_UP)    g_pl.y -= sp;
-        if (g_in & IN_DOWN)  g_pl.y += sp;
+        if (g_in & IN_UP)    g_pl.y -= sp + g_pl_boost;
+        if (g_in & IN_DOWN)  g_pl.y += sp + g_pl_boost;
         if (g_in & IN_LEFT)  g_pl.x -= sp;
         if (g_in & IN_RIGHT) g_pl.x += sp;
         /* 重力: 放っておくと流される。重力に逆らう向きに入れると、その向きの流れは止まる */
