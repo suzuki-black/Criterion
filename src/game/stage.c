@@ -75,6 +75,7 @@ static s16 pick_at;                /* 前に描き替えを探して何も無か
 static u8  hs_t;                   /* hs_cur を求めたときの sky_t */
 static u8  banner_t;               /* 面の開始表示の進み(0 = なし) */
 static char banner_text[32];
+static u8 banner_x;                /* 文字の左端(中央にそろえる。★40 に固定していて、長い面の名前の最後がはみ出した) */
 static u8 banner_fg = 15;          /* 文字の色(7 面の判定文は赤く崩れていく) */       /* ★写しを持つ(呼ぶのは古いオーバレイで、その文字列は次のオーバレイの読み込みで消える) */
 
 /* 画面の矩形 → 表示リング(ページ 0|1)。リングの 512 幅と 256 行の継ぎ目で分ける。
@@ -158,6 +159,7 @@ void stage_banner(const char *text) {
     banner_fg = 15;
     for (i = 0; i < sizeof banner_text - 1 && text[i]; i++) banner_text[i] = text[i];
     banner_text[i] = 0;
+    banner_x = (u8)(128 - (i << 2));
     banner_t = 1;
 }
 
@@ -438,8 +440,8 @@ static void banner_vram(void) {
         if ((u16)(sys_timer() - g_frame_t0) > 150u * 16u) return;   /* ★重いフレームは次へ(2 行で約 50 ライン。7 面の試験の
                                                                    切り替えで描き替えの仕事と重なって遅れた) */
         vdp_cmd_wait();
-        font_text_row(2, 40, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, r);
-        font_text_row(2, 40, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, (u8)(r + 1));
+        font_text_row(2, banner_x, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, r);
+        font_text_row(2, banner_x, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, (u8)(r + 1));
         ban_x = ban_p3 ? 256 : 0;
     } else if (banner_t == BAN_END) {
         vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x00);       /* 起動ロゴの黒い区間へ戻す */
