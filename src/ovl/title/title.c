@@ -34,7 +34,9 @@
 #define TDF_ROW    140            /* 紋章のページ 3 の行 */
 #define TDF_LINE   82             /* 紋章を出す画面の行 */
 #define TOP_SWITCH 244            /* 上の帯へ切り替える行 */
-#define YJK_H      56             /* 地平線の帯の最大行数。★64 にすると n 行の項目がロゴの 64 行の項目と重なる */
+#define YJK_H      64             /* 地平線の帯の最大行数(ロゴのすぐ上まで)。★n 行の項目はロゴの 64 行の項目と RAS_GAP 未満に
+                                     近づくので、n が 58 以上のときは 64 行の項目にまとめる(title_build)。56 で止めていた間は
+                                     56..63 行に暗い帯が残り、走査線の処理に失敗したように見えた */
 
 #define R0_G4   0x16              /* GRAPHIC4 + IE1 */
 #define R0_G7   0x1E              /* GRAPHIC7 + IE1 */
@@ -266,7 +268,7 @@ void title_build(void) {
     RasEntry *e = ras_back();
     u8 bi = ras_back_index(), k = 0, i;
     u8 *rt = regs_top[bi], *rn = regs_n[bi], *rr = regs_ring[bi], *rb = regs_b[bi];
-    u8 n = g_split_n;
+    u8 n = g_split_n, merge;
 
     if (g_phase == PH_LOGO) {
         /* 紋章: ページ 3 を見せる(横 256 = ページ 3 の左端、R#23 で紋章の行を TDF_LINE に) */
@@ -299,16 +301,20 @@ void title_build(void) {
         put_e(&e[k], TOP_SWITCH, RAS_REGS | RAS_SCROLL);
         e[k].haze = rt; e[k].haze_n = 7; e[k].r26 = (u8)(VDP_R26(yx) & 31); e[k].r27 = VDP_R27(yx); k++;   /* SP2 なし = 256 幅 */
     }
-    /* n 行: SCREEN5 へ。タイトル中はページ 3(黒)、出撃中は表示リング(描き戻した空) */
+    /* n 行: SCREEN5 へ。タイトル中はページ 3(黒)、出撃中は表示リング(描き戻した空)。
+       ★ロゴの 64 行に近い(RAS_GAP 未満)ときは、ロゴの最初の帯の項目にまとめる(merge) */
+    merge = n >= LOGO_Y - RAS_GAP;
     {
-        u8 ring = g_phase == PH_SORTIE;
+        u8 ring = g_phase == PH_SORTIE && !(merge && !ring_logo);
         rn[0] = 0; rn[1] = R0_G4; rn[2] = 25; rn[3] = R25_G4; rn[4] = 8; rn[5] = R8_SPR;
         rn[6] = 2; rn[7] = ring ? 0x3F : 0x7F; rn[8] = 23; rn[9] = g_vscroll;
         rn[10] = 5; rn[11] = spr_regs.r5a;
-        put_e(&e[k], n, RAS_REGS | RAS_SCROLL | RAS_PAL | RAS_MARK);
-        e[k].haze = rn; e[k].haze_n = 6;
-        e[k].r26 = ring ? 0 : VDP_R26(256u); e[k].r27 = 0;
-        sky_pal(&e[k], 0); k++;
+        if (!merge) {
+            put_e(&e[k], n, RAS_REGS | RAS_SCROLL | RAS_PAL | RAS_MARK);
+            e[k].haze = rn; e[k].haze_n = 6;
+            e[k].r26 = ring ? 0 : VDP_R26(256u); e[k].r27 = 0;
+            sky_pal(&e[k], 0); k++;
+        }
     }
     /* ロゴの 8 帯(ページ 2 の 64..127 行)。出撃の終わりには表示リングの空へ */
     for (i = 0; i < LOGO_BANDS; i++) {
@@ -323,7 +329,9 @@ void title_build(void) {
             b->r26 = VDP_R26(x); b->r27 = VDP_R27(x);
             sky_pal(b, (u8)(i < 4 ? 4 : i < 6 ? 5 : 6));           /* ロゴの地(色 1)= その高さの空の色 */
         }
-        if (i == 0 && !ring_logo) {                              /* ロゴの区間はページ 2|3 */
+        if (i == 0 && merge) {                                   /* n 行の項目をまとめた(SCREEN5 へ戻すのもここ) */
+            b->flags |= RAS_REGS | RAS_MARK; b->haze = rn; b->haze_n = 6;
+        } else if (i == 0 && !ring_logo) {                       /* ロゴの区間はページ 2|3 */
             rr[0] = 2; rr[1] = 0x7F;
             b->flags |= RAS_REGS; b->haze = rr; b->haze_n = 1;
         }

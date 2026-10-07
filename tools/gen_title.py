@@ -132,6 +132,8 @@ def main(d):
         if r + g + b < 12: img[y][x] = (24, 24, 28)
     img = [[tuple(clamp(c, 0, 31) for c in p) for p in row] for row in img]
     yjk = yjk_encode(img)
+    yjk[H - 1] = [0] * W                               # ★最終行は黒(0)。ロゴの 64 行で SCREEN5 へ戻す行は、行の途中で
+                                                       #   替わるのでこの行のバイトを 16 色の絵として読む(点々の 1 行が出た)
     even = bytes(v for row in yjk for v in row[0::2])
     odd = bytes(v for row in yjk for v in row[1::2])
     open(os.path.join(d, 'title_even.bin'), 'wb').write(even)
