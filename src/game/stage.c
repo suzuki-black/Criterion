@@ -636,7 +636,8 @@ tail:
             c->line = (u8)line; c->flags = RAS_REGS | RAS_SCROLL | RAS_PAL;
             c->haze = ban_regs; c->haze_n = 2;
             c->r26 = VDP_R26(ban_x); c->r27 = VDP_R27(ban_x);
-            c->pidx = 1; c->prb = (u8)((hs_cur[7][0] << 4) | hs_cur[7][2]); c->pg = hs_cur[7][1];
+            c->pidx = 1; c->prb = (u8)((hs_cur[7][0] << 4) | hs_cur[7][2]); c->pg = hs_cur[7][1];   /* 帯の地 = その高さの空の色 */
+            if (g_calib || g_ovl == OVL_S7) { c->prb = 0x13; c->pg = 0; }   /* ★7 面の白い部屋では白い文字が読めなかったので濃い紺 */
         }
     }
 
