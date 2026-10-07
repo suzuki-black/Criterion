@@ -77,6 +77,8 @@ void ovl_update(void) {
         if (sec_t == 250) {
             g_loop++;
             g_split_n = 0; g_blk_skip = 0; g_blk_base = 0;
+            bg_mix(15);                                       /* ★bg_mix は値が替わったときしか書かないので、一度ずらす(終幕で色 2..7 を
+                                                                 黒にしたまま戻らず、2 周目の雲が黒かった) */
             bg_init();                                        /* 雲の空を描き直す(色は bg_init が戻す) */
             g_phase = PH_AIR; g_pt = 0; g_scroll_speed = 4;
             stage_start();                                    /* 1 面の空中戦から(1 面のオーバレイを頼む) */
