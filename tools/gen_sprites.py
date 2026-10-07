@@ -609,7 +609,7 @@ SCHEME_NAMES = list(SCHEMES)
 SCHEME_OF_OVL = ['COOL', 'COOL', 'COOL', 'WARM', 'WARM', 'COOL', 'WARM', 'COOL', 'METAL', 'METAL', 'METAL', 'COOL']
 
 # 枠の割り振り(spr.c の layouts と同じ数): 組・1 枚の敵・敵弾の枠の数。0 = ふつう、1・2 = 部品の多いボスの間
-LAYOUTS = [(8, 6, 6), (4, 10, 6), (2, 11, 7), (6, 6, 8)]
+LAYOUTS = [(8, 6, 6), (4, 10, 6), (2, 11, 7), (6, 6, 8), (4, 4, 12), (2, 8, 10)]   # spr.c の layouts と同じ順
 
 def colors():
     """色表: 割り振り × 色の組(番号 = 割り振り * 3 + 色の組)"""

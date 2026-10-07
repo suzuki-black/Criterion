@@ -88,7 +88,7 @@ static u8  spread_t, aim_t;        /* 撃つ間隔(割り算・余りを毎フ�
 static s8  sway[5];                /* 帯ごとの横のずれ(頭 → 脚)。人型の行 j の帯は j / 4(16 行から先は 4) */
 
 /* ---- PLUMB ---- */
-#define CHAIN_N 12
+#define CHAIN_N 11                 /* ★12 だと他の 1 枚の敵と合わせて枠(11)からあふれ、鎖がちらついた */
 #define CHAIN_L 96                 /* 吊り元から下げ振りの中心まで */
 #define RING_D  25                 /* 中心から吊り輪まで */
 #define NFRAME  10
@@ -518,9 +518,9 @@ void boss_draw(void) {
     for (k = 0; k < npl; k++) {
     if (npl > 1) pl_load(k);
     pd_settle();
-    if (!broken && g_boss_state != BS_DYING && sh_fr != 0xFF) {   /* 吊り元から、写した絵の吊り輪まで 13 等分(1/13 ≒ 20/256) */
+    if (!broken && g_boss_state != BS_DYING && sh_fr != 0xFF) {   /* 吊り元から、写した絵の吊り輪まで 12 等分(1/12 ≒ 21/256) */
         s16 rx = rg_x(sh_x, sh_fr), ry = rg_y(sh_y, sh_fr);
-        s16 stx = (s16)((rx - pivot) * 20), sty = (s16)((ry - anchor_y) * 20), ax = stx, ay = sty;
+        s16 stx = (s16)((rx - pivot) * 21), sty = (s16)((ry - anchor_y) * 21), ax = stx, ay = sty;
         if (npl > 1) { stx <<= 1; sty <<= 1; ax = stx; ay = sty; }   /* 2 個のときは 1 つおきの節(スプライトの段が遅れた) */
         for (i = 0; i < (npl > 1 ? CHAIN_N / 2 : CHAIN_N); i++, ax += stx, ay += sty)
             spr_put((s16)(pivot + (ax >> 8)) - 8, (s16)(anchor_y + (ay >> 8)) - 8, PAT_CHAIN, G_ENEMY, 0);

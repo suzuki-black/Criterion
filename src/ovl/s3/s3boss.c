@@ -201,7 +201,8 @@ static void tacho_draw(void) {
         spr_put((s16)(cx + ((g_sin64[(u8)(a + 16) & 63] * 50) >> 7)) - 8, (s16)(cy - ((g_sin64[a & 63] * 50) >> 7)) - 8,
                 PAT_DIG, G_ENEMY, 0);
     }
-    if (nset != 0xFF) {                                       /* 針(ROTOR)と先の節 */
+    if (nset != 0xFF && g_boss_state != BS_DYING) {          /* 針(ROTOR)と先の節。★撃破中は出さない(その他の枠 4 つを
+                                                                 針が使い切り、撃破の爆発が入らずにちらついた) */
         u8 p = (u8)(44 + nset * 4);
         spr_put(cx - 16, cy - 16, p, G_MISC, CS_CURSOR);     spr_put(cx, cy - 16, (u8)(p + 1), G_MISC, CS_CURSOR);
         spr_put(cx - 16, cy, (u8)(p + 2), G_MISC, CS_CURSOR); spr_put(cx, cy, (u8)(p + 3), G_MISC, CS_CURSOR);

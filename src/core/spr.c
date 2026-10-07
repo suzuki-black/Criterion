@@ -46,12 +46,13 @@ u8 spr_misc_cs[8];                   /* 帯ごとの G_MISC 4 枠の色の組(0x
      1 = 組 4・1 枚の敵 10・敵弾 6(3 面 Metronome、4 面 VERNIER の光線)
      2 = 組 2・1 枚の敵 11・敵弾 7(1 面 PLUMB の鎖、2 面 CW)
      3 = 組 6・1 枚の敵 6・敵弾 8(6 面の砂時計の目)
+     4 = 組 4・1 枚の敵 4・敵弾 12(4 面 STRATUM、5 面 GAUGE BLOCK、8 面の二重の鐘・脱出の破片)
+     5 = 組 2・1 枚の敵 8・敵弾 10(8 面の絶対尺度: 砲台 12 基を上下の帯に分けて + 弾)
+   ★4〜6 は 1 周の通しで「枠に入りきらなかったグループ」を区間ごとに数えて足した(ボスの前後のちらつきの指摘。溢れると
+     グループの中で順番を回すので、毎フレーム違うものが消えてちらつく)。
    色表も割り振りごとに ROM にある(gen_sprites.py の LAYOUTS と同じ数)。asm は下の RAM の表を見る */
-static const u8 layouts[4][3][8] = {
-    { { 0, 1, 2, 8, 16, 22, 28, 0 }, { 1, 2, 8, 16, 22, 28, 32, 0 }, { 1, 1, 6, 8, 6, 6, 4, 0 } },
-    { { 0, 1, 2, 8, 12, 22, 28, 0 }, { 1, 2, 8, 12, 22, 28, 32, 0 }, { 1, 1, 6, 4, 10, 6, 4, 0 } },
-    { { 0, 1, 2, 8, 10, 21, 28, 0 }, { 1, 2, 8, 10, 21, 28, 32, 0 }, { 1, 1, 6, 2, 11, 7, 4, 0 } },
-    { { 0, 1, 2, 8, 14, 20, 28, 0 }, { 1, 2, 8, 14, 20, 28, 32, 0 }, { 1, 1, 6, 6, 6, 8, 4, 0 } },
+static const u8 layouts[6][3] = {     /* 組・1 枚の敵・敵弾の枠の数(自機 1+1・自機弾 6・その他 4 は共通。合わせて 32) */
+    { 8, 6, 6 }, { 4, 10, 6 }, { 2, 11, 7 }, { 6, 6, 8 }, { 4, 4, 12 }, { 2, 8, 10 },
 };
 u8 spr_gfirst[8], spr_gend[8], spr_gcount[8];
 u8 g_spr_layout;
@@ -78,11 +79,12 @@ static u8 hide_y(void) {
 }
 
 void spr_layout(u8 l) {
-    u8 i;
-    const u8 *s = layouts[l][0];
+    u8 i, at = 0;
+    const u8 *s = layouts[l];
     g_spr_layout = l;
-    for (i = 0; i < 8; i++) { spr_gfirst[i] = s[i]; spr_gend[i] = s[8 + i]; spr_gcount[i] = s[16 + i]; }
-    for (i = 0; i < G_COUNT; i++) rot_g[i] = 0;
+    spr_gcount[G_SHIP_A] = 1; spr_gcount[G_SHIP_B] = 1; spr_gcount[G_SHOT] = 6; spr_gcount[G_MISC] = 4;
+    spr_gcount[G_PAIR] = s[0]; spr_gcount[G_ENEMY] = s[1]; spr_gcount[G_EBUL] = s[2];
+    for (i = 0; i < G_COUNT; i++) { spr_gfirst[i] = at; at += spr_gcount[i]; spr_gend[i] = at; rot_g[i] = 0; }
 }
 
 void spr_init(void) {

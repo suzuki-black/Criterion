@@ -42,9 +42,15 @@ u8 rnd8(void) {
 void score_add(u16 v10) { g_pl.score += v10; }
 
 void fx_spawn(s16 x, s16 y) {
-    u8 i;
-    for (i = 0; i < MAX_FX; i++)
-        if (!g_fx[i].t) { g_fx[i].x = x; g_fx[i].y = y; g_fx[i].t = 12; return; }
+    u8 i, n = 0, f = 0xFF;
+    for (i = 0; i < MAX_FX; i++) {
+        if (g_fx[i].t) n++;
+        else if (f == 0xFF) f = i;
+    }
+    /* ★同時に 3 つまで(爆発はその他の枠 4 つを アイテム・∞ と取り合う。ボスの撃破で 4 フレームごとに出すと溢れて、
+       毎フレーム違うものが消えてちらついた。指摘) */
+    if (n >= 3 || f == 0xFF) return;
+    g_fx[f].x = x; g_fx[f].y = y; g_fx[f].t = 12;
 }
 
 void item_spawn(s16 x, s16 y, u8 kind) {
