@@ -94,12 +94,12 @@ static const u8 boss_sec[] = { 5, 13, 22, 31, 41, 50, 53, 60, 61 };   /* 1〜6 �
 #define SEC_LAST 62                                                   /* 8 面の第 3 形態(SEC8_BOSS3) */
 /* ★部品の多いボスの区間: 戦っている間はスプライトの枠をボスの割り振りに(spr_layout。1 つの帯に 1 枚の敵が 7〜10 枚並び、
    ふつうの 6 枠では消えて見えた)。1 面 PLUMB の鎖、2 面 CW、3 面 Metronome、4 面 VERNIER の光線、6 面の砂時計の目 */
-static const u8 big_sec[] = { 5, 11, 20, 29, 48, 31, 41, 60, 62 };
-static const u8 big_lay[] = { 2, 2, 1, 1, 3, 4, 4, 4, 5 };          /* 割り振り(spr.c の layouts) */
+static const u8 big_sec[] = { 5, 11, 20, 29, 48, 31, 41, 60, 62, 3 };
+static const u8 big_lay[] = { 2, 2, 7, 1, 3, 4, 4, 4, 5, 4 };       /* 割り振り(spr.c の layouts) */
 /* ボスがいなくても区間で替える: 3 面の最高速(隔壁の柱が 1 枚の敵の枠で、ふつうの 6 枠では柱が消えて見えない壁になった)、
    8 面の脱出と宇宙へ抜けるまで(降る破片が敵弾の枠) */
-static const u8 sec_sec[] = { 21, 63, 64 };
-static const u8 sec_lay[] = { 1, 4, 4 };
+static const u8 sec_sec[] = { 21, 63, 64, 0, 7, 15, 24, 33, 44, 52, 55 };
+static const u8 sec_lay[] = { 1, 4, 4, 6, 6, 6, 6, 6, 6, 6, 6 };    /* 0.. = 各面の空中戦(編隊の組を多く) */
 static u8 juice_t, juice_tier, juice_len, bs_last;
 static void juice(void) {
     u8 s = g_boss_state;

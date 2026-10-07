@@ -139,7 +139,7 @@ static void tacho_update(void) {
     if (g_boss_state == BS_ENTER) { if (dial_drawn >= 4) g_boss_state = BS_FIGHT; return; }
     if (g_boss_state == BS_DYING) {
         needle = (u8)(needle + 5);                            /* 針の暴走 */
-        if (!(t & 3)) fx_spawn(FX(cx - 48 + (rnd8() & 95)), FX(cy - 48 + (rnd8() & 95)));
+        if (!(t & 7)) fx_spawn(FX(cx - 48 + (rnd8() & 95)), FX(cy - 48 + (rnd8() & 95)));   /* ★8 フレームごと(その他の枠があふれた) */
         g_scroll_speed = 0;
         if (t >= 120) g_boss_state = BS_DONE;
         return;
@@ -268,7 +268,9 @@ void b3_vram(void) {
     }
     if (kind == B3_TACHO && dial_drawn && (g_boss_state == BS_DONE || g_boss_state == BS_NONE)) {
         /* 倒した: 盤の 16 列を描き直してチューブへ戻す(描き直しの頼みは 8 個まで。いっぱいなら次のフレーム。★s3.c は
-           BS_DONE を同じフレームで BS_NONE にするので、BS_DONE だけを見ると盤が残った) */
+           BS_DONE を同じフレームで BS_NONE にするので、BS_DONE だけを見ると盤が残った)。
+           ★描き直しは列の窓の中にしか効かず、窓の外へ流れた盤の左半分が空に残ったので、先に盤の矩形を地の色で塗る */
+        if (!dial_clean) { if (gq_free() < 8) return; ring_cmd(0, 0, (s16)(dial_cx() - 64), DIAL_Y, 128, 128, 1, 0x11); }
         while (dial_clean < 16 && stage_redraw_col((u16)(((dial_wx - 64) >> 3) + dial_clean))) dial_clean++;
         if (dial_clean >= 16) { dial_drawn = 0; dial_clean = 0; }
     }
