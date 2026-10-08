@@ -45,7 +45,7 @@ $(BUILD)/m0_pcm.rel $(BUILD)/m0_mode.rel: $(BUILD)/pcm_data.h
 
 $(BUILD)/sprite_data.h: tools/gen_sprites.py | $(BUILD)
 	python3 tools/gen_sprites.py $@
-$(BUILD)/spr_col.bin $(BUILD)/spr_pat.bin: $(BUILD)/sprite_data.h
+$(BUILD)/spr_col.bin $(BUILD)/spr_pat.bin $(BUILD)/spr_set.bin: $(BUILD)/sprite_data.h
 $(BUILD)/hud_data.h: tools/gen_hud.py | $(BUILD)
 	python3 tools/gen_hud.py $@
 
@@ -91,7 +91,7 @@ $(BUILD)/snd.stamp: tools/gen_sound.py tools/songs.py tools/snd_pcm.py $(wildcar
 	python3 tools/gen_sound.py $(BUILD)/snd.bin $(BUILD)/snd_data.h
 	touch $@
 $(BUILD)/snd_data.h $(BUILD)/snd.bin: $(BUILD)/snd.stamp ; @:
-$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/spr_col.bin $(BUILD)/spr_pat.bin $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp $(BUILD)/stage4.stamp $(BUILD)/stage5.stamp $(BUILD)/stage6.stamp $(BUILD)/stage8.stamp
+$(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/spr_col.bin $(BUILD)/spr_pat.bin $(BUILD)/spr_set.bin $(BUILD)/title.stamp $(BUILD)/city.stamp $(BUILD)/boss.stamp $(BUILD)/stage2.stamp $(BUILD)/stage3.stamp $(BUILD)/stage4.stamp $(BUILD)/stage5.stamp $(BUILD)/stage6.stamp $(BUILD)/stage8.stamp
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
 	    TDF=$(BUILD)/tdf.bin CITY_STRIPS=$(BUILD)/city_strips.bin CITY_MAP=$(BUILD)/city_map.bin \
@@ -103,7 +103,7 @@ $(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/spr_col.bin $(BUILD)/spr_pa
 	    S6_STRIPS=$(BUILD)/s6_strips.bin S6_MAP=$(BUILD)/s6_map.bin YJK_EVEN=$(BUILD)/yjk_even.bin YJK_ODD=$(BUILD)/yjk_odd.bin \
 	    GEAR=$(BUILD)/gear.bin HG96=$(BUILD)/hg96.bin S6_SPR=$(BUILD)/s6_spr.bin \
 	    S8_STRIPS=$(BUILD)/s8_strips.bin S8_MAP=$(BUILD)/s8_map.bin TBAR=$(BUILD)/tbar.bin BELL_I=$(BUILD)/bell_i.bin BELL96=$(BUILD)/bell96.bin \
-	    SPR_COL=$(BUILD)/spr_col.bin SPR_PAT=$(BUILD)/spr_pat.bin
+	    SPR_COL=$(BUILD)/spr_col.bin SPR_PAT=$(BUILD)/spr_pat.bin SPR_SET=$(BUILD)/spr_set.bin
 	touch $@
 $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp ; @:
 
@@ -124,7 +124,7 @@ $(BUILD)/g_raster.rel: src/core/raster.c $(HDRS) config.mk Makefile | $(BUILD)
 GAME_REST  := $(filter-out $(BUILD)/raster.rel $(GAME_FIRST) $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel,$(CORE))   # pcmb(方式 B の試作)・pcmc(方式 A/C の制御)は M0 の検証用
 # ★第 2 バンク(src/bank、ページ 2 のセグメント 6)から呼べるのはページ 1 のものだけなので、下回り(GAME_REST)と
 #   敵・自機をページ 1 へ寄せる(Makefile の検査と、第 2 バンクのリンクが 0x8000 以上の記号を見ないことで守る)
-GAME_P1    := $(BUILD)/g_enemy.rel $(BUILD)/g_player.rel
+GAME_P1    := $(BUILD)/g_enemy.rel
 GAME_MID   := $(filter-out $(GAME_FIRST) $(GAME_P1),$(GAME_RELS))
 # ★ページ 0 のコード(CODE0、0x0100-OVL_BASE): 共通のエンジン(ROTOR / GHOST)。起動時に ROM の bank4-5 から
 #   RAM へ複製する(main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前には呼ばないこと。
@@ -228,9 +228,9 @@ $(BUILD)/ovl_%.bin: $(BUILD)/ovl_%.ihx tools/gen_ovl.py
 #   本体の後に、ページ 2 の記号を除いた本体の記号(resident_bk.rel)でリンクする。ライブラリ(z80.lib)は自分で持つ。
 #   本体からは呼び口(bkstubs.rel、ページ 1)を通して呼ぶ。入口は BK_EXPORTS の順の JP 表。
 BK_BASE  := 0x8000
-BK_DATA  := 0xB000
+BK_DATA  := 0xBC00
 BK_DEND  := 0xC000
-BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw
+BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw zako_script zako_update zako_draw zako_killed pl_fire_from gauge_steal
 BK_SIZE_FIRST := infx
 BK_RELS  := $(patsubst src/bank/%.c,$(BUILD)/bk_%.rel,$(wildcard src/bank/*.c))
 $(BUILD)/bk_%.rel: src/bank/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)

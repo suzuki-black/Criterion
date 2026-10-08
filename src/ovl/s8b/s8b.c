@@ -12,6 +12,7 @@
 #include "../s8/s8.h"
 #include "ovl.h"
 #include "vdp.h"
+#include "sys.h"
 #include "rom.h"
 #include "ghost.h"
 #include "rotor.h"
@@ -367,10 +368,13 @@ void ovl_logic(void) {
 }
 void ovl_draw(void) { if (g_sec == SEC8_BOSS3 && g_boss_state == BS_FIGHT) ring_draw(); }
 void ovl_vram(void) {
-    rot_vram();
+    extern u16 g_frame_t0;
+    u8 late = (u16)(sys_timer() - g_frame_t0) > 150u * 16u;   /* ★重いフレームは絵の転送・文字を次へ回す(形態の替わり目に
+                                                                 重なって 1 周の遅れが増えた) */
+    if (!late) rot_vram();
     if (g_sec == SEC8_BOSS1 && g_boss_state == BS_FIGHT) bell_vram();
     if (g_sec == SEC8_BOSS2) rod_vram();
-    if (g_sec == SEC8_BOSS3) { ring_vram(); msg_vram(); }
+    if (g_sec == SEC8_BOSS3) { ring_vram(); if (!late) msg_vram(); }
     gq_pump(0);
 }
 void ovl_bands(s16 sc, u16 nx) {

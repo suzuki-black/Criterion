@@ -49,7 +49,9 @@ typedef struct {
 extern Player g_pl;
 
 /* ---- 敵・弾・アイテム・爆発(固定数のプール) ---- */
-enum { E_NONE, E_TICK, E_TOCK, E_NOTCH, E_SPIRIT };
+enum { E_NONE, E_TICK, E_TOCK, E_NOTCH, E_SPIRIT,
+       E_BK = 8,                  /* ここから先は第 2 バンクの zako.c が動かして描く(指示書 3 章) */
+       E_CALIPER = E_BK, E_HATCH, E_CRAFT, E_DIAL, E_PLUMMET, E_PROTR, E_COMPASS, E_ABACUS, E_SEXTANT, E_SMITE, E_SCANNER };
 typedef struct {
     u8  type;
     u8  t;              /* 出現からのフレーム */
@@ -62,6 +64,19 @@ typedef struct {
 } Enemy;
 #define MAX_ENEMY 16
 extern Enemy g_enemy[MAX_ENEMY];
+/* 第 2 バンクの雑魚(zako.c)が使う enemy.c の口 */
+Enemy *enemy_alloc(void);
+void enemy_kill(Enemy *e, u8 by_player);
+void enemy_wave(u8 type, s16 y0, s8 dir);  /* Tick / Tock / Notch の編隊 */
+u8   enemy_new_form(void);
+extern u8 g_form_left[];
+extern u16 g_wave_t;               /* 台本の時刻(0..1199) */
+extern u8 g_wave_set, g_wave_mirror;   /* 今の台本(WAVES_*)・逆走(左から入る) */
+extern u8 g_zako_n;                /* 生きている第 2 バンクの雑魚の数(0 なら zako_update / zako_draw を呼ばない) */
+u8   zako_script(void);            /* 第 2 バンク: 面ごとの台本(1 = 引き受けた) */
+void zako_update(void);
+void zako_draw(void);
+void zako_killed(Enemy *e);        /* 自機に倒された(砂時計の砂など) */
 
 typedef struct { s16 x, y, vx, vy; u8 on; u8 pierce; } Bullet;
 #define MAX_PSHOT 16                /* ふつうの弾 12 + DROP の爆雷 4。★20 にするとボスの当たり判定(部品ごとに全部の弾を見る)が
@@ -147,11 +162,12 @@ void weap_update(void);            /* player_update の終わり(分身・防壁
 void weap_draw(void);              /* player_draw の中 */
 extern u8 g_fired;                 /* このフレームに自機が撃った(分身も撃つ) */
 extern u8 g_drops;                 /* 生きている DROP の爆雷の数 */
-void pl_fire_from(s16 x, s16 y);   /* (x, y)(固定小数点、自機の左上)から今の主砲を撃つ */
+extern u8 g_shot_at;               /* pl_fire_from が次に空きを探す弾の枠 */
+void pl_fire_from(s16 x, s16 y);   /* (x, y)(固定小数点、自機の左上)から今の主砲を撃つ(第 2 バンク) */
 /* DROP の爆雷が這う地形: 面が今の区間の床・天井の表を置く(列の種類 g_map[c] → 世界の行)。lo = 0 なら地形なし */
 typedef struct { const u8 *lo, *hi; u8 lo_add; u8 flat; u16 ncol; } Terrain;
 extern Terrain g_ter;              /* flat: 0 以外なら表の代わりに平らな床(世界の行。1 面の街路) */
-void gauge_steal(void);             /* 強化を 1 段奪われる(3 面の Scanner) */
+void gauge_steal(void);             /* 強化を 1 段奪われる(3・7 面の Scanner。第 2 バンク) */
 void player_init(void);
 void player_update(void);
 void player_draw(void);

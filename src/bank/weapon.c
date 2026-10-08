@@ -13,6 +13,7 @@
 #include "snd.h"
 #include "ovl.h"
 #include "sprite_data.h"
+#include "bank_int.h"
 
 #define TRAIL     64               /* 軌跡の長さ(2 のべき乗) */
 #define ECHO_GAP  12               /* 分身どうしの間隔(軌跡の個数) */
@@ -20,12 +21,45 @@
 #define BLINK     180              /* 吸ったあと吸わない間(3 秒) */
 #define RING_R    22               /* AEGIS 2 の輪の半径 */
 #define DROP_CD   36               /* 爆雷を落とす間隔(フレーム) */
-#define TER_NONE  0x7FFF
 
 static u8 tr_x[TRAIL], tr_y[TRAIL], tr_h, last_x, last_y;
 static u8 blink[ECHO_MAX];
 static u8 aeg_lv, aeg_dur, rot, drop_cd, moved, echo_prev;
 #define drops g_drops                /* 生きている爆雷の数(本体の変数: 強化も爆雷も無ければ本体は weap_* を呼ばない) */
+
+/* ---- 主砲(自機と分身。player.c は呼び口から) ---- */
+static s16 sx0, sy0;                                          /* 撃つ位置 */
+static void shoot(s16 vy, u8 pierce, s16 dy) {
+    /* ★空きは前の続きから探し、満杯ならそのフレームはもう探さない(ECHO の分身 4 機 × 5WAY が弾の枠を毎回
+       頭から探して、撃つフレームが遅れた) */
+    Bullet *b = &g_pshot[g_shot_at];
+    for (; g_shot_at < PS_SHOTS; g_shot_at++, b++) {
+        if (b->on) continue;
+        b->on = 1; b->pierce = pierce;
+        b->x = sx0 + FX(12); b->y = sy0 + FX(8) + dy;         /* 弾の座標は中心 */
+        b->vx = FX(8); b->vy = vy;
+        return;
+    }
+}
+
+void pl_fire_from(s16 x, s16 y) {
+    sx0 = x; sy0 = y;
+    if (g_gauge.ray) {
+        shoot(0, 1, 0);
+        if (g_gauge.ray >= 2) { shoot(0, 1, FX(-4)); shoot(0, 1, FX(4)); }   /* 太さ倍(3 本を束ねる) */
+    } else {
+        shoot(0, 0, 0);
+        if (g_gauge.split >= 1) { shoot(FX(-1) - 8, 0, 0); shoot(FX(1) + 8, 0, 0); }
+        if (g_gauge.split >= 2) { shoot(FX(-3), 0, 0); shoot(FX(3), 0, 0); }
+    }
+}
+
+/* Scanner の測定線(3・7 面): いちばん高い強化を 1 段奪う */
+void gauge_steal(void) {
+    u8 *v = &g_gauge.thrust, *m = v, i;
+    for (i = 1; i < 6; i++) if (v[i] > *m) m = v + i;
+    if (*m) { (*m)--; g_gauge.flash = 16; sfx(SFX_DENY); }
+}
 
 void weap_init(void) {
     u8 i, x = (u8)PX(g_pl.x), y = (u8)PX(g_pl.y);
@@ -66,20 +100,6 @@ static void absorb_all(void) {
             break;
         }
     }
-}
-
-/* 画面の x の床(up = 0)・天井(up = 1)の画面の y。地形が無ければ TER_NONE */
-static s16 ter_y(s16 sx, u8 up) {
-    u16 c;
-    u8 k;
-    if (g_ter.flat) return up ? TER_NONE : (s16)(g_ter.flat - g_scam);
-    if (!g_ter.lo || sx < 0 || sx > 255) return TER_NONE;
-    c = (u16)(((u16)(g_wx + (u16)sx) >> 3) - g_w0);
-    if (c >= g_ter.ncol) return TER_NONE;
-    k = g_map[c];
-    k = up ? (g_ter.hi ? g_ter.hi[k] : 0) : g_ter.lo[k];
-    if (!k) return TER_NONE;                                  /* 表の 0 = その列に床(天井)が無い(5 面の空の列など) */
-    return (s16)(k + (up ? 0 : g_ter.lo_add) - g_scam);
 }
 
 static void drop_spawn(u8 kind) {

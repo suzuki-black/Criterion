@@ -38,36 +38,10 @@ void player_init(void) {
 }
 
 u8 g_fired;
+u8 g_shot_at;                      /* 次に空きを探す弾の枠(撃つフレームの初めに 0。weapon.c の pl_fire_from) */
 u8 g_drops;                        /* 生きている DROP の爆雷の数(weapon.c) */
 #define WEAP_ON() (g_gauge.thrust | g_gauge.echo | g_gauge.aegis | g_gauge.drop | g_drops)   /* 第 2 バンクの仕事があるか */
 Terrain g_ter;
-static s16 sx0, sy0;               /* 撃つ位置(pl_fire_from) */
-
-static u8 shot_at;                 /* 次に空きを探す枠(PS_SHOTS = 満杯。撃つフレームの初めに 0 へ) */
-static void shoot(s16 vy, u8 pierce, s16 dy) {
-    /* ★空きは前の続きから探し、満杯ならそのフレームはもう探さない(ECHO の分身 4 機 × 5WAY が 20 枠を毎回
-       頭から探して、撃つフレームが遅れた) */
-    Bullet *b = &g_pshot[shot_at];
-    for (; shot_at < PS_SHOTS; shot_at++, b++) {
-        if (b->on) continue;
-        b->on = 1; b->pierce = pierce;
-        b->x = sx0 + FX(12); b->y = sy0 + FX(8) + dy;         /* 弾の座標は中心 */
-        b->vx = FX(8); b->vy = vy;
-        return;
-    }
-}
-
-void pl_fire_from(s16 x, s16 y) {
-    sx0 = x; sy0 = y;
-    if (g_gauge.ray) {
-        shoot(0, 1, 0);
-        if (g_gauge.ray >= 2) { shoot(0, 1, FX(-4)); shoot(0, 1, FX(4)); }
-    } else {
-        shoot(0, 0, 0);
-        if (g_gauge.split >= 1) { shoot(FX(-1) - 8, 0, 0); shoot(FX(1) + 8, 0, 0); }
-        if (g_gauge.split >= 2) { shoot(FX(-3), 0, 0); shoot(FX(3), 0, 0); }
-    }
-}
 
 void player_update(void) {
     u8 i;
@@ -133,7 +107,7 @@ void player_update(void) {
     }
     if (!g_slow) {
         if (g_pl.fire_cd) g_pl.fire_cd--;
-        g_fired = 0; shot_at = 0;
+        g_fired = 0; g_shot_at = 0;
         if ((g_in & IN_A) && !g_pl.fire_cd) { pl_fire_from(g_pl.x, g_pl.y); g_fired = 1; sfx(SFX_SHOT); g_pl.fire_cd = FIRE_CD; }
     }
     if (g_in_edge & IN_B) gauge_confirm();

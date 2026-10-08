@@ -27,7 +27,8 @@ const s8 g_sin64[64] = {
 
 /* ---- 編隊 ---- */
 #define MAX_FORM 4
-static u8 form_left[MAX_FORM];      /* 残り(生きている)機数 */
+u8 g_form_left[MAX_FORM];           /* 残り(生きている)機数 */
+#define form_left g_form_left
 static u8 form_lost[MAX_FORM];      /* 1 機でも逃した */
 static u8 form_next;
 
@@ -73,17 +74,17 @@ void enemy_init(void) {
     for (i = 0; i < MAX_ITEM; i++) g_item[i].on = 0;
     for (i = 0; i < MAX_FX; i++) g_fx[i].t = 0;
     for (i = 0; i < MAX_FORM; i++) form_left[i] = 0;
-    g_frame = 0;
+    g_frame = 0; g_zako_n = 0;
     enemy_waves(WAVES_AIR);
 }
 
-static Enemy *alloc_enemy(void) {
+Enemy *enemy_alloc(void) {
     u8 i;
     for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type == E_NONE) return &g_enemy[i];
     return 0;
 }
 
-static u8 new_form(void) {
+u8 enemy_new_form(void) {
     u8 f = form_next;
     form_next = (u8)((form_next + 1) % MAX_FORM);
     form_left[f] = 0;
@@ -91,11 +92,11 @@ static u8 new_form(void) {
     return f;
 }
 
-static void spawn_wave(u8 type, s16 y0, s8 dir) {
+void enemy_wave(u8 type, s16 y0, s8 dir) {
     u8 i, n = type == E_NOTCH ? 4 : 5;
-    u8 f = new_form();
+    u8 f = enemy_new_form();
     for (i = 0; i < n; i++) {
-        Enemy *e = alloc_enemy();
+        Enemy *e = enemy_alloc();
         if (!e) break;
         e->type = type; e->t = 0; e->hp = 1; e->turned = 0; e->form = f;
         if (type == E_NOTCH) {
@@ -142,7 +143,9 @@ static const Wave script_city[] = {               /* 都市: 砲台が主役。�
 #define LOOP  1200
 u8 g_wave_set;
 u8 g_wave_mirror;
-static u16 wave_t;
+u16 g_wave_t;
+#define wave_t g_wave_t
+u8 g_zako_n;
 
 void enemy_waves(u8 set) { g_wave_set = set; wave_t = 0; }
 
@@ -154,13 +157,15 @@ static void run_script(void) {
     else if (g_wave_set == WAVES_SKY) { w = script_sky; n = sizeof(script_sky) / sizeof(script_sky[0]); }
     else return;
     if (++wave_t >= LOOP) wave_t = 0;
+    if (!g_calib && !g_wave_mirror && g_ovl >= OVL_S1 && g_ovl <= OVL_S8 && g_wave_set != WAVES_SKY && zako_script()) return;   /* 面ごとの台本
+                                                        (第 2 バンク)。★呼ぶのは引き受けうる場面だけ(毎フレームの呼び出しで 8 面の中枢が遅れた) */
     for (i = 0; i < n; i++)
-        if (w[i].t == wave_t) spawn_wave(w[i].type, FX(w[i].y0), w[i].dir);
+        if (w[i].t == wave_t) enemy_wave(w[i].type, FX(w[i].y0), w[i].dir);
 }
 
 /* 屋上の砲台: wx = 世界の横位置(近い層のドット)、roof = 屋上の行(都市の s) */
 void enemy_spawn_spirit(u16 wx, u8 roof) {
-    Enemy *e = alloc_enemy();
+    Enemy *e = enemy_alloc();
     if (!e) return;
     e->type = E_SPIRIT; e->t = rnd8(); e->hp = 3; e->form = 0xFF; e->turned = 0;
     e->y0 = (s16)wx; e->phase = roof;
@@ -170,7 +175,7 @@ void enemy_spawn_spirit(u16 wx, u8 roof) {
 
 /* 1 機だけの Notch(5 面の格納庫から上へ飛び出す): 自機の高さで急旋回する */
 void enemy_spawn_notch(s16 x, s16 y) {
-    Enemy *e = alloc_enemy();
+    Enemy *e = enemy_alloc();
     if (!e) return;
     e->type = E_NOTCH; e->t = 0; e->hp = 1; e->turned = 0; e->form = 0xFF;
     e->x = x; e->y = y; e->vx = FX(-1) + 8; e->vy = FX(-2) - 8;
@@ -205,8 +210,9 @@ void enemy_shoot(s16 x, s16 y) {
 
 static void enemy_fire(const Enemy *e) { enemy_shoot(e->x, e->y); }
 
-static void kill_enemy(Enemy *e, u8 by_player) {
+void enemy_kill(Enemy *e, u8 by_player) {
     u8 f = e->form;
+    if (e->type >= E_BK && by_player) zako_killed(e);
     if (by_player) { fx_spawn(e->x, e->y); score_add(10); sfx(SFX_KILL); }   /* 画面外へ逃げた敵は爆発も得点もなし */
     if (f < MAX_FORM && form_left[f]) {
         form_left[f]--;
@@ -225,7 +231,7 @@ static void move_enemy(Enemy *e) {
         e->x = FX((s16)((u16)e->y0 - g_wx));
         e->y = FX((s16)e->phase - g_scam - 6);
         if (e->x < FX(232) && e->x > FX(24) && !(e->t & (g_loop ? 31 : 63))) enemy_fire(e);   /* 2 周目は倍 */
-        if (e->x < FX(-16) || e->y > FX(PLAY_H + 16)) kill_enemy(e, 0);
+        if (e->x < FX(-16) || e->y > FX(PLAY_H + 16)) enemy_kill(e, 0);
         return;
     }
     if (e->type == E_NOTCH) {
@@ -247,16 +253,18 @@ static void move_enemy(Enemy *e) {
         /* 2 周目と、3 面から先の空中戦は倍撃つ(M7 の後) */
         if (e->x < FX(240) && e->x > FX(72) && (rnd8() < (u8)(g_loop || (g_wave_set == WAVES_SKY && g_ovl >= OVL_S3) ? 4 : 2))) enemy_fire(e);
     }
-    if (e->x < FX(-16) && e->turned != 2) kill_enemy(e, 0);
-    else if (e->x > FX(280) || e->y < FX(-80) || e->y > FX(PLAY_H + 80)) kill_enemy(e, 0);
-    else if (e->turned == 2 && e->x < FX(-200)) kill_enemy(e, 0);
+    if (e->x < FX(-16) && e->turned != 2) enemy_kill(e, 0);
+    else if (e->x > FX(280) || e->y < FX(-80) || e->y > FX(PLAY_H + 80)) enemy_kill(e, 0);
+    else if (e->turned == 2 && e->x < FX(-200)) enemy_kill(e, 0);
 }
 
 void enemy_update(void) {
     u8 i, j;
+    s16 plx = PX(g_pl.x) + 8, ply = PX(g_pl.y) + 8;      /* ★自機の中心はループの外で 1 回(弾 16 発 × 毎回のシフトが重かった) */
     g_frame++;
     run_script();
-    for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type) { move_enemy(&g_enemy[i]); pcmx_service(); }   /* PCM の送出口(敵 1 体ごと) */
+    for (i = 0; i < MAX_ENEMY; i++) if ((u8)(g_enemy[i].type - 1) < E_BK - 1) { move_enemy(&g_enemy[i]); pcmx_service(); }   /* PCM の送出口(敵 1 体ごと) */
+    if (g_zako_n) zako_update();                     /* 第 2 バンクの雑魚 */
 
     for (i = 0; i < MAX_ESHOT; i++) {
         Bullet *b = &g_eshot[i];
@@ -269,15 +277,16 @@ void enemy_update(void) {
         if (!(i & 3)) pcmx_service();                    /* PCM の送出口(弾 4 発ごと) */
         if (b->x < FX(-8) || b->x > FX(264) || b->y < FX(-8) || b->y > FX(PLAY_H)) { b->on = 0; continue; }
         if (g_pl.alive) {
-            s16 dx = PX(b->x) - (PX(g_pl.x) + 8), dy = PX(b->y) - (PX(g_pl.y) + 8);
+            s16 dx = PX(b->x) - plx, dy = PX(b->y) - ply;
             if (dx > -4 && dx < 4 && dy > -3 && dy < 3) { b->on = 0; player_hit(); }
         }
     }
 
     /* 自機のショット × 敵: 画面座標を先に 8 ビットの配列へ変換し、内側は 8 ビットの比較だけにする
-       (構造体の固定小数点を毎回変換する二重ループは 1 フレームの 1/3 を使っていた。M1) */
+       (構造体の固定小数点を毎回変換する二重ループは 1 フレームの 1/3 を使っていた。M1)。体当たりも同じ配列で見る */
     {
-        u8 ex[MAX_ENEMY], ey[MAX_ENEMY], eidx[MAX_ENEMY], ne = 0;
+        u8 ex[MAX_ENEMY], ey[MAX_ENEMY], eidx[MAX_ENEMY], ne = 0, k;
+        u8 nps = g_drops ? MAX_PSHOT : PS_SHOTS;              /* 爆雷の枠は爆雷があるときだけ見る */
         for (j = 0; j < MAX_ENEMY; j++) {
             const Enemy *e = &g_enemy[j];
             s16 x, y;
@@ -286,10 +295,9 @@ void enemy_update(void) {
             if (x < 0 || x > 255 || y < 0 || y > PLAY_H) continue;
             ex[ne] = (u8)x; ey[ne] = (u8)y; eidx[ne] = j; ne++;
         }
-        u8 nps = g_drops ? MAX_PSHOT : PS_SHOTS;              /* 爆雷の枠は爆雷があるときだけ見る */
         if (ne) for (i = 0; i < nps; i++) {
             Bullet *b = &g_pshot[i];
-            u8 bx, by, k;
+            u8 bx, by;
             if (!b->on) continue;
             bx = (u8)PX(b->x); by = (u8)PX(b->y);
             for (k = 0; k < ne; k++) {
@@ -298,19 +306,18 @@ void enemy_update(void) {
                 e = &g_enemy[eidx[k]];
                 if (!e->type) continue;
                 if (!b->pierce) b->on = 0;
-                if (--e->hp == 0) kill_enemy(e, 1); else sfx(SFX_HIT);
+                if (--e->hp == 0) enemy_kill(e, 1); else sfx(SFX_HIT);
                 if (!b->on) break;
             }
         }
-    }
-    /* 敵 × 自機(体当たり) */
-    if (g_pl.alive) {
-        for (j = 0; j < MAX_ENEMY; j++) {
-            Enemy *e = &g_enemy[j];
-            s16 dx, dy;
-            if (!e->type) continue;
-            dx = PX(e->x) - (PX(g_pl.x) + 8); dy = PX(e->y) - (PX(g_pl.y) + 8);
-            if (dx > -8 && dx < 8 && dy > -6 && dy < 6) { kill_enemy(e, 1); player_hit(); break; }
+        /* 敵 × 自機(体当たり)。画面の外の敵は当たらないので同じ配列で */
+        if (g_pl.alive && plx >= 0 && plx < 256) {
+            u8 px = (u8)plx, py = (u8)ply;
+            for (k = 0; k < ne; k++) {
+                Enemy *e = &g_enemy[eidx[k]];
+                if (!e->type || (u8)(ex[k] - px + 7) >= 15 || (u8)(ey[k] - py + 5) >= 11) continue;
+                enemy_kill(e, 1); player_hit(); break;
+            }
         }
     }
     /* アイテム */
@@ -327,7 +334,7 @@ void enemy_update(void) {
         }
         if (it->x < FX(-16) || it->y < FX(-8) || it->y > FX(PLAY_H)) { it->on = 0; continue; }
         if (g_pl.alive) {
-            s16 dx = PX(it->x) - (PX(g_pl.x) + 8), dy = PX(it->y) - (PX(g_pl.y) + 8);
+            s16 dx = PX(it->x) - plx, dy = PX(it->y) - ply;
             if (dx > -12 && dx < 12 && dy > -12 && dy < 12) {
                 it->on = 0;
                 if (it->kind) gauge_shard(); else gauge_quanta();
@@ -343,7 +350,7 @@ void limit_break(void) {
     u8 i;
     boss_damage(10);
     g_lb = 24;
-    for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type) kill_enemy(&g_enemy[i], 1);
+    for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type) enemy_kill(&g_enemy[i], 1);
     for (i = 0; i < MAX_ESHOT; i++) if (g_eshot[i].on) { g_eshot[i].on = 0; }
 }
 
@@ -363,7 +370,7 @@ void enemy_draw(void) {
     for (i = 0; i < MAX_ENEMY; i++) {
         const Enemy *e = &g_enemy[i];
         u8 pat;
-        if (!e->type) continue;
+        if ((u8)(e->type - 1) >= E_BK - 1) continue;    /* なし・第 2 バンクの雑魚 */
         if (e->type == E_TICK) pat = (e->t & 16) ? PAT_TICK2 : PAT_TICK1;
         else if (e->type == E_TOCK) pat = (e->t & 16) ? PAT_TOCK2 : PAT_TOCK1;
         else if (e->type == E_NOTCH) pat = PAT_NOTCH;
@@ -371,6 +378,7 @@ void enemy_draw(void) {
         spr_put(PX(e->x) - 8, PX(e->y) - 8, pat, pat == PAT_SPIRIT ? G_ENEMY : G_PAIR, 0);   /* ★編隊の敵は 2 枚重ね(3 色) */
         pcmx_service();
     }
+    if (g_zako_n) zako_draw();
     for (i = 0; i < MAX_FX; i++) {
         const Fx *f = &g_fx[i];
         if (f->t) spr_put(PX(f->x) - 8, PX(f->y) - 8,

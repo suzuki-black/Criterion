@@ -222,7 +222,7 @@ void main(void) {
 
     for (;;) {
         static u8 demo_end;
-        static u8 col_now, col_done;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
+        static u8 col_now, col_done, pat_now;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
         u16 late0 = g_frame_late, idle;
         u8 ph;
         idle = frame_sync(1);
@@ -307,6 +307,10 @@ void main(void) {
         {   /* ★7 面の試験(過去の面のオーバレイを読み直す)の間は 7 面の色の組のまま(試験ごとに写すと PCM と重なって遅れた) */
             u8 want = (u8)(spr_scheme[g_calib ? OVL_S7 : g_ovl] + g_spr_layout * 3);   /* 割り振りごとに 3 つ(gen_sprites.py) */
             if (g_ovl_ready && want != col_now) { col_now = want; col_done = 0; }
+        }
+        if (g_ovl_ready && g_ovl != pat_now) {                 /* 面ごとの絵の組(gen_sprites.py の STAGE_GROUPS。約 1ms) */
+            pat_now = g_ovl;
+            rom_to_vram(ASSET_SPR_SET_BANK, (u16)(ASSET_SPR_SET_OFF + (u16)pat_now * SPR_SET_LEN), 1, (u16)(0xF800u + SPR_SET_BASE * 32u), SPR_SET_LEN);
         }
         if (col_done < 16 && (u16)(sys_timer() - g_frame_t0) < COL_DEADLINE) {
             u16 o = (u16)(col_done & 3) * 112u;
