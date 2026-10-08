@@ -64,9 +64,14 @@ typedef struct {
 extern Enemy g_enemy[MAX_ENEMY];
 
 typedef struct { s16 x, y, vx, vy; u8 on; u8 pierce; } Bullet;
-#define MAX_PSHOT 12
+#define MAX_PSHOT 16                /* ふつうの弾 12 + DROP の爆雷 4。★20 にするとボスの当たり判定(部品ごとに全部の弾を見る)が
+                                               重くなり、1 周の処理落ちが 2 → 4 になった。分身の弾は枠が空いたときだけ出る */
 #define MAX_ESHOT 16
 extern Bullet g_pshot[MAX_PSHOT], g_eshot[MAX_ESHOT];
+/* 自機の弾の on: 1 = ふつうの弾(player.c が進める)、2 / 3 = DROP の爆雷の下向き / 上向き(weapon.c が進める) */
+#define PS_DROP_DN 2
+#define PS_DROP_UP 3
+#define PS_SHOTS   (MAX_PSHOT - 4)  /* ふつうの弾が使う枠(最後の 4 つは爆雷専用。分身の弾で埋まって爆雷が出せなかった) */
 
 typedef struct { s16 x, y, vx, vy; u8 on; u8 kind; u8 t; } Item;   /* kind 0 = Quanta, 1 = Infinity Shard */
 #define MAX_ITEM 8
@@ -117,6 +122,36 @@ void gauge_quanta(void);            /* Quanta を取った */
 void gauge_shard(void);             /* Infinity Shard を取った(カーソルを ∞ へ) */
 void gauge_confirm(void);           /* B: 確定 */
 void gauge_lose(void);              /* 被弾: 強化を全部失う */
+/* ---- 面の開始表示(指示書 4.2): HUD 帯の上に 16 行の帯を出し、「STAGE 2 / GRAVITY WELL」を左から滑り込ませ、
+   2 秒で HUD 帯へ吸い込ませる(帯が上から縮み、文字が上から消える)。stage_banner が文字を写し、VRAM の仕事は
+   第 2 バンクの banner.c、ラスターの帯は stage.c。 */
+typedef struct {
+    u8 t;              /* 進み(0 = なし) */
+    u8 x, fg;          /* 文字の左端・色(7 面の判定文は赤く崩れていく) */
+    u8 p3;             /* 1 = ページ 3 を塗って横スクロールで滑り込ませる(短冊を使っていないとき) */
+    u16 bx;            /* 横の位置(256 → 0) */
+    u16 cp;            /* 短冊を使っているとき: 帯へ写した幅 */
+    char text[32];     /* ★写しを持つ(呼ぶのは古いオーバレイで、その文字列は次のオーバレイの読み込みで消える) */
+} Banner;
+extern Banner g_ban;
+#define BAN_LINE  172
+#define BAN_ROW   168              /* (BAN_LINE + 252) & 255 */
+#define BAN_IN    7                /* ここから見せる(3..6 は文字を書く) */
+#define BAN_SUCK  96               /* ここから吸い込む */
+#define BAN_END   (BAN_SUCK + 22)  /* 吸い込み: 帯の上端を 2 フレームに 1 行下げる(HUD の手前 6 行まで) */
+#define BAN_STG   186              /* 短冊を使っているときの文字の置き場(ページ 2。帯には見えない起動ロゴの黒い区間) */
+void banner_vram(void);            /* 第 2 バンク */
+/* ---- 強化の ECHO / AEGIS / DROP(第 2 バンクの weapon.c。指示書 2.3) ---- */
+void weap_init(void);              /* 出撃・復活: 分身の軌跡を自機の位置で埋める */
+void weap_update(void);            /* player_update の終わり(分身・防壁・爆雷) */
+void weap_draw(void);              /* player_draw の中 */
+extern u8 g_fired;                 /* このフレームに自機が撃った(分身も撃つ) */
+extern u8 g_drops;                 /* 生きている DROP の爆雷の数 */
+void pl_fire_from(s16 x, s16 y);   /* (x, y)(固定小数点、自機の左上)から今の主砲を撃つ */
+/* DROP の爆雷が這う地形: 面が今の区間の床・天井の表を置く(列の種類 g_map[c] → 世界の行)。lo = 0 なら地形なし */
+typedef struct { const u8 *lo, *hi; u8 lo_add; u8 flat; u16 ncol; } Terrain;
+extern Terrain g_ter;              /* flat: 0 以外なら表の代わりに平らな床(世界の行。1 面の街路) */
+void gauge_steal(void);             /* 強化を 1 段奪われる(3 面の Scanner) */
 void player_init(void);
 void player_update(void);
 void player_draw(void);
@@ -142,6 +177,8 @@ extern u8  g_boss_dmg;              /* 受け取っていない傷(boss_damage �
 extern u16 g_lg_on[26];             /* LEGION の積んであるマス(検証も読む) */
 extern s16 g_lg_x0;
 void boss_damage(u8 n);             /* LIMIT BREAK など: 次のフレームで面が受け取る */
+extern u8 g_lb;                     /* LIMIT BREAK からの残りフレーム(0 = なし)。面の小物(Pawn など)はこの間に消える */
+#define LB_NOW (g_lb > 18)          /* 面の砲台など: 画面の中のものはこの間に壊れる(処理落ちで飛ぶフレームがあっても届くよう数フレーム) */
 
 /* ---- 重力(2 面。指示書 5.2)。自機・敵弾・アイテムに効く ----
    g_grav: GRAV_NONE / GRAV_DIR(一様: g_gx, g_gy。1/16 ドット/フレーム² 単位)/ GRAV_CENTER(画面の (g_gcx, g_gcy)
@@ -164,6 +201,7 @@ void infx_reset(void);
 void infx_update(void);             /* 論理の段 */
 void infx_vram(void);               /* VRAM の窓 */
 void infx_draw(void);               /* スプライトの段 */
+extern u8 g_infx_mode;              /* 0 なら上の 3 つは呼ばない(第 2 バンク) */
 /* ---- 面の進行と縦に長い世界(stage.c) ----
    縦の座標 s: 地面の区間の画面の行と同じ(1 面の都市: 0 = 雲の底、158 = 歩道)。空中戦の空と雲は s = -188..-1。
    表示リングの行 = (188 + s) & 255、R#23 = (188 + g_scam) & 255。g_scam = 画面の上端の s。 */

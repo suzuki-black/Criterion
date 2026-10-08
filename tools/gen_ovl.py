@@ -5,6 +5,10 @@
   gen_ovl.py entries <out.s> <base> <名前...>      本体側: 名前 == base + 3 × 番号(名前は 'a,b,c' で同じ番号に複数)
   gen_ovl.py resident <game.noi> <out.s> <除く名前...>
                                                    本体の大域シンボルを絶対番地で定義する(オーバレイから呼ぶため)
+  gen_ovl.py resident_bk <game.noi> <out.s> <除く名前...>
+                                                   第 2 バンク用: 同じく、ただしページ 2(0x8000-0xBFFF)の記号と _bk_ で始まる
+                                                   記号を除く(第 2 バンクを出している間、本体のページ 2 は見えない)
+  gen_ovl.py bkstubs <out.s> <名前...>             本体側: 第 2 バンクの関数の呼び口(call _bk_call / .db 番号 × 3)
   gen_ovl.py bin <in.ihx> <in.map> <out.bin> <base> <end> <data_base> <data_end>
                                                    .ihx の base..end をバイナリに。範囲外・初期値つき変数・データの
                                                    はみ出しを検査する
@@ -25,16 +29,26 @@ def entries(out, base, groups):
             for n in g.split(','):
                 f.write(f'_{n} == 0x{base + 3 * i:04X}\n')
 
-def resident(noi, out, exclude):
+def resident(noi, out, exclude, bank=False):
     ex = set('_' + e for e in exclude)
     syms = []
     for l in open(noi):
         p = l.split()
         if len(p) >= 3 and p[0] == 'DEF' and p[1].startswith('_') and p[1] not in ex:
-            syms.append((p[1], int(p[2], 16)))
+            v = int(p[2], 16)
+            if bank and (0x8000 <= v < 0xC000 or p[1].startswith('_bk_')): continue
+            syms.append((p[1], v))
     with open(out, 'w') as f:
         f.write('; gen_ovl.py が生成(本体の大域シンボル。オーバレイのリンクで使う)\n\t.module resident\n')
         for n, v in syms: f.write(f'{n} == 0x{v:04X}\n')
+
+def bkstubs(out, names):
+    with open(out, 'w') as f:
+        f.write('; gen_ovl.py が生成(第 2 バンクの関数の呼び口。rom.c の bk_call が番号の JP 表へ飛ぶ)\n'
+                '\t.module bkstubs\n\t.area _CODE\n\t.globl _bk_call\n')
+        if len(names) > 85: sys.exit('ERROR: 第 2 バンクの入口が多すぎる(85 まで)')
+        for i, n in enumerate(names):
+            f.write(f'_{n}::\n\tcall _bk_call\n\t.db {3 * i}\n')
 
 def binary(ihx, mapf, out, base, end, dbase, dend):
     base, end, dbase, dend = (int(x, 0) for x in (base, end, dbase, dend))
@@ -69,5 +83,7 @@ if __name__ == '__main__':
     if cmd == 'hdr': hdr(sys.argv[2], sys.argv[3:])
     elif cmd == 'entries': entries(sys.argv[2], sys.argv[3], sys.argv[4:])
     elif cmd == 'resident': resident(sys.argv[2], sys.argv[3], sys.argv[4:])
+    elif cmd == 'resident_bk': resident(sys.argv[2], sys.argv[3], sys.argv[4:], True)
+    elif cmd == 'bkstubs': bkstubs(sys.argv[2], sys.argv[3:])
     elif cmd == 'bin': binary(*sys.argv[2:9])
-    else: sys.exit('usage: gen_ovl.py hdr|entries|resident|bin ...')
+    else: sys.exit('usage: gen_ovl.py hdr|entries|resident|resident_bk|bkstubs|bin ...')

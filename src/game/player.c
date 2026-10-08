@@ -3,7 +3,7 @@
    ・A 押しっぱなしで連射。SPLIT 1 = 前方 3WAY、2 = 5WAY 扇。RAY 1 = 貫通弾、2 = 太さ倍(上下 2 本)。
    ・当たり判定は中心 4x2 ドット(見た目より小さく)。
    ・被弾: 残機 -1、強化はすべて失い、その場に Quanta を 3 個散らす。復活後 2 秒は無敵(点滅)。
-   ★ECHO / AEGIS / DROP の効果は以降の段階(段階の数だけはゲージで増える)。 */
+   ・ECHO / AEGIS / DROP は第 2 バンクの weapon.c(ここからは weap_* を呼ぶだけ)。 */
 #include "game.h"
 #include "snd.h"
 #include "input.h"
@@ -34,21 +34,31 @@ void player_init(void) {
     g_pl.lives = 3; g_pl.score = 0;
     gvx = gvy = 0; g_grav = GRAV_NONE; g_pl_boost = 0; g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; g_pl_dy = 0;
     for (i = 0; i < MAX_PSHOT; i++) g_pshot[i].on = 0;
+    weap_init();
 }
 
+u8 g_fired;
+u8 g_drops;                        /* 生きている DROP の爆雷の数(weapon.c) */
+#define WEAP_ON() (g_gauge.thrust | g_gauge.echo | g_gauge.aegis | g_gauge.drop | g_drops)   /* 第 2 バンクの仕事があるか */
+Terrain g_ter;
+static s16 sx0, sy0;               /* 撃つ位置(pl_fire_from) */
+
+static u8 shot_at;                 /* 次に空きを探す枠(PS_SHOTS = 満杯。撃つフレームの初めに 0 へ) */
 static void shoot(s16 vy, u8 pierce, s16 dy) {
-    u8 i;
-    for (i = 0; i < MAX_PSHOT; i++) {
-        Bullet *b = &g_pshot[i];
+    /* ★空きは前の続きから探し、満杯ならそのフレームはもう探さない(ECHO の分身 4 機 × 5WAY が 20 枠を毎回
+       頭から探して、撃つフレームが遅れた) */
+    Bullet *b = &g_pshot[shot_at];
+    for (; shot_at < PS_SHOTS; shot_at++, b++) {
         if (b->on) continue;
         b->on = 1; b->pierce = pierce;
-        b->x = g_pl.x + FX(12); b->y = g_pl.y + FX(8) + dy;   /* 弾の座標は中心 */
+        b->x = sx0 + FX(12); b->y = sy0 + FX(8) + dy;         /* 弾の座標は中心 */
         b->vx = FX(8); b->vy = vy;
         return;
     }
 }
 
-static void fire(void) {
+void pl_fire_from(s16 x, s16 y) {
+    sx0 = x; sy0 = y;
     if (g_gauge.ray) {
         shoot(0, 1, 0);
         if (g_gauge.ray >= 2) { shoot(0, 1, FX(-4)); shoot(0, 1, FX(4)); }
@@ -63,7 +73,7 @@ void player_update(void) {
     u8 i;
     /* ショット(画面外で消える)。★処理落ちのフレームは弾も止める: 当たり判定(敵・ボス)は処理落ちのフレームに
        走らないので、動かすと 2 フレームぶん進んで小さな的をすり抜けた(M7。音で処理落ちが増えて目立った) */
-    for (i = 0; i < MAX_PSHOT; i++) {
+    for (i = 0; i < PS_SHOTS; i++) {                          /* 爆雷(PS_SHOTS から)は weapon.c が進める */
         if (g_slow) break;
         Bullet *b = &g_pshot[i];
         if (!b->on) continue;
@@ -74,7 +84,9 @@ void player_update(void) {
         if (g_pl.dead_t && --g_pl.dead_t == 0 && g_pl.lives) {
             g_pl.alive = 1; g_pl.invul = 120;
             g_pl.x = START_X; g_pl.y = START_Y;
+            weap_init();
         }
+        if (g_drops) weap_update();                           /* やられている間も爆雷は進める */
         return;
     }
     {
@@ -121,10 +133,12 @@ void player_update(void) {
     }
     if (!g_slow) {
         if (g_pl.fire_cd) g_pl.fire_cd--;
-        if ((g_in & IN_A) && !g_pl.fire_cd) { fire(); sfx(SFX_SHOT); g_pl.fire_cd = FIRE_CD; }
+        g_fired = 0; shot_at = 0;
+        if ((g_in & IN_A) && !g_pl.fire_cd) { pl_fire_from(g_pl.x, g_pl.y); g_fired = 1; sfx(SFX_SHOT); g_pl.fire_cd = FIRE_CD; }
     }
     if (g_in_edge & IN_B) gauge_confirm();
     if (g_pl.invul) g_pl.invul--;
+    if (WEAP_ON()) weap_update();                             /* ★第 2 バンクは仕事のあるときだけ */
 }
 
 void player_hit(void) {
@@ -146,8 +160,13 @@ void player_draw(void) {
         spr_put(PX(g_pl.x), y, PAT_SHIP_A, G_SHIP_A, 0);
         spr_put(PX(g_pl.x), y, PAT_SHIP_B, G_SHIP_B, 0);           /* OR 合成(CC)= 直前の枠と重ねる */
     }
-    for (i = 0; i < MAX_PSHOT; i++) {
+    if (g_drops) for (i = PS_SHOTS; i < MAX_PSHOT; i++) {     /* ★爆雷を先に(弾が G_SHOT の 6 枠を超えると、後から置いた爆雷が毎回溢れた) */
+        const Bullet *b = &g_pshot[i];
+        if (b->on) spr_put(PX(b->x) - 8, PX(b->y) - 8, PAT_DROP, G_SHOT, 0);
+    }
+    for (i = 0; i < PS_SHOTS; i++) {
         const Bullet *b = &g_pshot[i];
         if (b->on) spr_put(PX(b->x) - 2, PX(b->y) - 8, b->pierce ? PAT_RAY : PAT_SHOT, G_SHOT, 0);
     }
+    if (WEAP_ON()) weap_draw();
 }

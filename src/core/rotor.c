@@ -90,7 +90,28 @@ static void rotor_row(void) __naked {
 }
 
 /* 符号つき 8 ビット × 16 ビット → >> 7(倍率つきの三角関数) */
-static s16 mul7(s8 a, u16 step) { return (s16)(((s32)a * (s32)step) >> 7); }
+/* ★C で (s32)a × step と書くと __mullong(ライブラリの _HOME = 本体のページ 2 に置かれる)になり、第 2 バンクから
+   ROTOR を呼ぶと見えなかった。16 × 16 → 32 の __mulsint2slong(_CODE。Makefile がページ 1 に置く)を呼ぶ。
+   A = a、DE = step(< 32768)、戻り DE。積 HL:DE の >> 7 の下位 16 ビット = (L, D, E の bit7) */
+static s16 mul7(s8 a, u16 step) __naked {
+    (void)a; (void)step;
+    __asm
+        ld   l, a
+        rla
+        sbc  a, a
+        ld   h, a                  ; HL = a(符号拡張)
+        call ___mulsint2slong      ; HL:DE = HL × DE
+        ld   a, e
+        rla
+        ld   a, d
+        rla
+        ld   e, a
+        ld   a, l
+        rla
+        ld   d, a
+        ret
+    __endasm;
+}
 
 static s16 cur_u, cur_v, duy, dvy;
 static u8 cur_n;

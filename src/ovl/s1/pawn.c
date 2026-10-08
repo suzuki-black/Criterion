@@ -108,6 +108,14 @@ void pawn_update(u8 active) {
     if ((half ^= 1)) return;
     tick++;
     if (active && ++group_t >= 45) { group_t = 0; spawn_group(); }   /* 2 フレームに 1 回なので 1.5 秒ごと */
+    if (g_lb) {                                               /* LIMIT BREAK: 画面の中の Pawn を 1 回に 3 体ずつ(消すのは VDP の
+                                                                 コマンドなので、一度に全員だと重い) */
+        u8 n = 3;
+        for (i = 0; i < NPW && n; i++) {
+            Pw *p = &pw[i];
+            if (p->on && (u16)(p->wx - g_wx) <= 251) { kill(p); n--; }
+        }
+    }
     for (k = 0; k < MAX_PSHOT; k++) {                          /* 街路の高さのショット */
         const Bullet *b = &g_pshot[k];
         s16 x, y;
@@ -138,7 +146,7 @@ void pawn_update(u8 active) {
             for (m = 0; m < ln[l]; m++) {
                 Pw *p = &pw[li[l][m]];
                 if (!p->on || (u8)(sx[k] - lx[l][m] + 6) >= 28) continue;   /* 前の判定から 16 ドット進んだ分も */
-                if (!g_pshot[si[k]].pierce) g_pshot[si[k]].on = 0;
+                { Bullet *b = &g_pshot[si[k]]; if (!(b->pierce | (b->on & 2))) b->on = 0; }   /* DROP の爆雷(on 2 / 3)は消えずに列ごと吹き飛ばす */
                 kill(p);
                 break;
             }

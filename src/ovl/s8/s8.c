@@ -48,6 +48,7 @@ static void enter(u8 sec) {
 }
 
 void ovl_init(void) {
+    g_ter.lo = s8_floor; g_ter.hi = s8_ceil; g_ter.lo_add = 0; g_ter.ncol = S8_COLS;   /* DROP の爆雷が這う床・天井 */
     stage_reset_ground();
     g_w0 = (u16)((g_wx + 1024) >> 3);                         /* 縦穴の底は空中戦の終わりに決め直す */
     rom_to_ram(ASSET_S8_MAP_BANK, ASSET_S8_MAP_OFF, g_map, S8_COLS);
@@ -93,8 +94,9 @@ static u8 shot_rect(s16 x, s16 y, u8 w, u8 h) {
 }
 
 static void mid_update(void) {
-    u8 i, left = 0;
+    u8 i, left = 0, lb = 0;
     mid_t++;
+    if (g_boss_dmg) { g_boss_dmg = 0; lb = 3; }               /* LIMIT BREAK: 砲台を 3 つ壊す(前は受け取らずに素通りしていた) */
     g_boss_aim = -1;
     if (g_boss_state == BS_DYING) {                           /* バーが引く */
         if (top_e > TOP0) top_e--;
@@ -112,8 +114,9 @@ static void mid_update(void) {
         if (!tu_hp[i]) continue;
         left++;
         if (g_boss_aim < 0) g_boss_aim = (s16)(y + 6);
-        if (shot_rect(x - 20, y - 4, 28, 16) && --tu_hp[i] == 0) {   /* 押し戻す。★左へ広げる: 処理落ちのフレームは判定しないので、
-                                                                     速い弾が 2 フレームで砲台をすり抜けた(M7) */
+        if ((lb && lb--) || (shot_rect(x - 20, y - 4, 28, 16) && --tu_hp[i] == 0)) {   /* 押し戻す。★左へ広げる: 処理落ちのフレームは判定
+                                                                     しないので、速い弾が 2 フレームで砲台をすり抜けた(M7) */
+            tu_hp[i] = 0;
             fx_spawn(FX(x), FX(y + 6)); score_add(200);
             if (i < 4) top_e = top_e - 16 < TOP0 ? TOP0 : top_e - 16; else bot_e = bot_e + 16 > BOT0 ? BOT0 : bot_e + 16;
             if (g_boss_hp >= 3) g_boss_hp -= 3;

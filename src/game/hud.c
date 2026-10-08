@@ -188,6 +188,13 @@ void gauge_confirm(void) {
     infx_start(128, 172);                       /* ∞ が回りながら画面の中央へ飛び出す(ROTOR) */
 }
 
+/* Scanner の測定線(3 面): いちばん高い強化を 1 段奪う */
+void gauge_steal(void) {
+    u8 *v = &g_gauge.thrust, *m = v, i;
+    for (i = 1; i < 6; i++) if (v[i] > *m) m = v + i;
+    if (*m) { (*m)--; g_gauge.flash = 16; sfx(SFX_DENY); }
+}
+
 void gauge_lose(void) {
     u8 f = g_gauge.flash;
     g_gauge.thrust = g_gauge.echo = g_gauge.aegis = g_gauge.drop = g_gauge.split = g_gauge.ray = 0;

@@ -80,7 +80,7 @@ static void aa_update(void) {
         s16 x = s5_sx(s5_aa[i]) + 4, y = s5_sy(S5_DECK - 4) - 8;
         if (!aa_hp[i] || x < -8 || x > 264) continue;
         if (!((t + i) & 7)) aa_dir[i] = best_dir(plx() - x, ply() - y, aa_ux, aa_uy, 8);
-        if (shot_rect(x - 7, y - 7, 14, 14) && --aa_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(30); continue; }
+        if ((LB_NOW ? (aa_hp[i] = 1) : shot_rect(x - 7, y - 7, 14, 14)) && --aa_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(30); continue; }
         if (((t + i * 29) & 127) == 0 && x > 16 && x < 240)
             enemy_bullet(FX(x), FX(y), (s16)(aa_ux[aa_dir[i]] << 1), (s16)(aa_uy[aa_dir[i]] << 1));
     }
@@ -104,7 +104,7 @@ static void tur_update(void) {
         if (!tu_hp[i] || x < -32 || x > 256) continue;
         if (!((t + i * 3) & 7)) tu_want[i] = best_dir(plx() - cx, ply() - cy, tu_ux, tu_uy, 16);
         if (!((t + i) & 7) && tu_dir[i] != tu_want[i]) tu_dir[i] += tu_dir[i] < tu_want[i] ? 1 : -1;   /* ゆっくり旋回 */
-        if (shot_rect(x + 4, cy - 14, 24, 22) && --tu_hp[i] == 0) {
+        if ((LB_NOW ? (tu_hp[i] = 1) : shot_rect(x + 4, cy - 14, 24, 22)) && --tu_hp[i] == 0) {
             fx_spawn(FX(cx), FX(cy)); fx_spawn(FX(cx - 10), FX(cy - 8)); fx_spawn(FX(cx + 10), FX(cy - 12));
             score_add(500);
             tu_shown[i] = 0xFE;                               /* 砲身を吹き飛ばす(空で塗る) */
@@ -147,7 +147,7 @@ static void hang_update(void) {
         if (!hg_hp[i] || x < -8 || x > 264) continue;
         dx = plx() - x;
         hg_dir[i] = dx < -24 ? 0 : dx > 24 ? 2 : 1;
-        if (shot_rect(x - 7, y - 7, 14, 14) && --hg_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(50); continue; }
+        if ((LB_NOW ? (hg_hp[i] = 1) : shot_rect(x - 7, y - 7, 14, 14)) && --hg_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(50); continue; }
         if (((t + i * 23) & 63) == 0 && x > 16 && x < 240)
             enemy_bullet(FX(x), FX(y + 4), (s16)((hg_dir[i] - 1) * 24), 36);
     }

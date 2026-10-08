@@ -136,3 +136,59 @@ void rom_to_ram(u8 bank, u16 off, u8 *dst, u16 len) {
         len -= chunk; off += chunk; dst += chunk;
     }
 }
+
+/* ---- 第 2 バンク(bank.h) ---- */
+#include "bank.h"
+
+/* 呼び口から: call _bk_call / .db 番号 × 3。戻り番地(呼び口の .db)から番号を読み、セグメントを 6 にして JP 表へ。
+   A・HL・DE・BC は呼び出し元の値のまま渡し、戻り値(A / DE / HL)もそのまま返す。 */
+void bk_call(void) __naked {
+    __asm
+        ex   (sp), hl              ; HL = 番号の番地、(sp) = 元の HL
+        push af
+        ld   a, (hl)
+        ld   (00002$ + 1), a       ; JP 表の下位(RAM なので書き換えてよい)
+        pop  af
+        pop  hl                    ; 元の HL。スタックの先頭は呼び出し元への戻り番地
+        push af
+        ld   a, #BK_SEG
+        out  (0xFE), a
+        pop  af
+        call 00002$
+        push af
+        ld   a, #BK_SEG_A
+        out  (0xFE), a
+        pop  af
+        ret
+    00002$:
+        jp   0x8000
+    __endasm;
+}
+
+/* 0xD800 の 2KB をセグメント 6 の 0x8000 + off へ(HL = off)。★起動時だけ(0xD800 は ROTOR の元の置き場) */
+static void bk_put(u16 off) __naked {
+    (void)off;
+    __asm
+        ld   de, #0x8000
+        add  hl, de
+        ex   de, hl
+        ld   hl, #0xD800
+        ld   bc, #0x0800
+        di
+        ld   a, #BK_SEG
+        out  (0xFE), a
+        ldir
+        ld   a, #BK_SEG_A
+        out  (0xFE), a
+        ei
+        ret
+    __endasm;
+}
+
+void bk_load(void) {
+    u16 off;
+    for (off = 0; off < BK_LEN; off += 0x800) {
+        rom_to_ram(BK_ROM, off, (u8 *)0xD800, 0x800);
+        bk_put(off);
+    }
+}

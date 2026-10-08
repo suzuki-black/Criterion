@@ -20,7 +20,7 @@ extern u16 g_frame_t0;            /* main.c: このフレームの始まり */
 #define PAT_A   52                 /* パターン 52..55 と 56..59 を交互に */
 #define FX_LEN  48
 
-u8 g_infx_mode;                   /* 0 = なし、1 = 確定の演出、2 = タイトル */
+extern u8 g_infx_mode;            /* 0 = なし、1 = 確定の演出、2 = タイトル(本体の変数: 本体は 0 なら呼ばない) */
 #define mode g_infx_mode
 static u8  t, row, angle, ready, shown_set, set_next;
 static u16 step;

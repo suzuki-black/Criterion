@@ -11,6 +11,7 @@
 #include "input.h"
 #include "font.h"
 #include "game.h"
+#include "bank.h"
 #include "rom.h"
 #include "assets.h"
 #include "ghost.h"
@@ -100,6 +101,7 @@ static const u8 big_lay[] = { 2, 2, 7, 1, 3, 4, 4, 4, 5, 4 };       /* 割り振
    8 面の脱出と宇宙へ抜けるまで(降る破片が敵弾の枠) */
 static const u8 sec_sec[] = { 21, 63, 64, 0, 7, 15, 24, 33, 44, 52, 55 };
 static const u8 sec_lay[] = { 1, 4, 4, 6, 6, 6, 6, 6, 6, 6, 6 };    /* 0.. = 各面の空中戦(編隊の組を多く) */
+u8 g_infx_mode;                    /* ∞ の表示(第 2 バンクの infx.c)。0 = なし */
 static u8 juice_t, juice_tier, juice_len, bs_last;
 static void juice(void) {
     u8 s = g_boss_state;
@@ -111,6 +113,8 @@ static void juice(void) {
             else for (i = 0; i < sizeof boss_sec; i++) if (boss_sec[i] == g_sec) juice_tier = 2;
         }
         juice_len = juice_t = juice_tier == 1 ? 45 : juice_tier == 2 ? 120 : 255;
+        if (juice_tier == 2 || g_calib)                       /* 面のボス・試験のボス: Infinity Shard(指示書 2.3「ボス撃破時のみ出現」) */
+            item_spawn(FX(160), FX(g_boss_aim > 16 && g_boss_aim < PLAY_H - 16 ? g_boss_aim : 80), 1);
     }
     bs_last = s;
     g_mag = 0;
@@ -142,7 +146,7 @@ void game_start(void) {
     g_gauge.cursor = N_INF; g_gauge.armed = 0; g_gauge.anim = 0; g_gauge.flash = 0;
     gauge_lose();
     g_vscroll = 0;
-    g_boss_state = BS_NONE; g_boss_dmg = 0; g_calib = 0; g_hall = 0;
+    g_boss_state = BS_NONE; g_boss_dmg = 0; g_calib = 0; g_loop = 0; g_hall = 0;   /* 新しいゲームは 1 周目から */
     infx_reset();
     state = ST_PLAY;
 }
@@ -203,6 +207,7 @@ void main(void) {
     ras_init();
     ras_set_isr(RAS_ISR_DIRECT);
     code0_load();                    /* ここから先でページ 0 のコード(ROTOR / GHOST / 選曲と効果音)を呼べる */
+    bk_load();                       /* ここから先で第 2 バンク(bank.h)を呼べる */
     rom_to_vram(ASSET_SPR_PAT_BANK, ASSET_SPR_PAT_OFF, 1, 0xF800, ASSET_SPR_PAT_LEN);   /* スプライトの絵(64 パターン。63 番 = 空白)。
                                                                          ★ROM に置く(常駐に置くと 1.3KB。M7 の後) */
     snd_init();
@@ -234,10 +239,12 @@ void main(void) {
         /* 音: 選曲と演出 → ドライバ。★毎フレーム必ず回す(先送りすると音が固まって出て、リズムがもたついた。M7 の測定で
            16 分音符の半分が 1 フレームより大きくずれた) */
         juice();
+        if (g_lb) g_lb--;
         {
             u8 s = g_boss_state, l = 0, i;
             if (s != BS_NONE && s != BS_DONE) for (i = 0; i < sizeof big_sec; i++) if (big_sec[i] == g_sec) l = big_lay[i];
             for (i = 0; i < sizeof sec_sec; i++) if (sec_sec[i] == g_sec) l = sec_lay[i];
+            if (g_gauge.echo || g_gauge.aegis) l += 8;         /* 強化の分身・防壁: G_OPT の 4 枠がある割り振り */
             if (l != g_spr_layout) spr_layout(l);
         }
         music_frame(state == ST_OVER); pcmx_service(); snd_frame(); pcmx_service();   /* ★間にも PCM の送出口(合わせて約 0.7ms。M7) */
@@ -252,7 +259,7 @@ void main(void) {
         if (ph <= PH_SORTIE) title_update();
         bg_scroll();
         if (g_phase >= PH_AIR) stage_update();   /* 敵(砲台)が世界の位置を使うので、敵より先に */
-        infx_update();
+        if (g_infx_mode) infx_update();                       /* ★第 2 バンクは仕事のあるときだけ呼ぶ(毎フレームの呼び出しで重い場面が遅れた) */
         if (ph >= PH_SORTIE && state == ST_PLAY) {
             if (g_dbg_invul || g_demo) g_pl.invul = 2;
             player_update();
@@ -285,15 +292,15 @@ void main(void) {
             spr_voff = (u8)(g_vscroll + g_roll);   /* スプライトの Y はプレイエリアの R#23 を足して表へ(ロールは画面だけ) */
             spr_begin();
             if (g_phase <= PH_TITLE) title_draw();
-            else { player_draw(); infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
-            if (g_phase <= PH_TITLE) infx_draw();
+            else { player_draw(); if (g_infx_mode) infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
+            if (g_phase <= PH_TITLE && g_infx_mode) infx_draw();
         }
         wait_vram_window();              /* ここから先は VRAM を書く */
         /* ★CPU で VRAM を書く仕事(属性表・HUD の文字)を先に、VDP のコマンドを出す仕事(stage_vram)を後に。
            VDP がコマンドを実行している間は CPU の VRAM の書き込みも遅くなる(Pawn を足したら 1 フレームが
            90 ライン延びた)。コマンドはフレームの頭とここで出し、次のフレームの論理の間に VDP が進める */
         if (!g_slow) spr_end();
-        infx_vram();
+        if (g_infx_mode) infx_vram();
         /* スプライトの色の組: オーバレイ(面)が替わったら、帯の色表 4 つ(各 448 バイト。G_MISC の 4 枠は使うときに書くので
            写さない)を 112 バイトずつ 16 フレームで写す(1 回 ≒ 1ms)。★1 つを 1 フレームで写すと(4ms)、7 面の試験で
            オーバレイを読み直すたびに遅れた。面ごとに体の色を背景と反対の色相にする(M7 の後) */

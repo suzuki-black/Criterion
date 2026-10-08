@@ -39,6 +39,8 @@ static void enter(u8 sec) {
 }
 
 void ovl_init(void) {
+    g_ter.flat = 176;                                         /* DROP の爆雷が這う床: 中心が下の車線の Pawn の高さ(★街路(184)は
+                                                                 スプライトの出せない HUD の手前で、爆雷が見えなかった) */
     if (g_calib) {                                            /* 7 面の試験 01: 白い空間から都市の広場へ降りて PLUMB(2 個) */
         stage_reset_ground();
         g_w0 = (u16)((g_wx >> 3) - (CITY_COL_ARENA2 - 8 - 80));   /* 通路 16 列 + 降下 32 列 + 都市 32 列で広場 */

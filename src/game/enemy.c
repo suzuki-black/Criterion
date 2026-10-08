@@ -286,7 +286,8 @@ void enemy_update(void) {
             if (x < 0 || x > 255 || y < 0 || y > PLAY_H) continue;
             ex[ne] = (u8)x; ey[ne] = (u8)y; eidx[ne] = j; ne++;
         }
-        if (ne) for (i = 0; i < MAX_PSHOT; i++) {
+        u8 nps = g_drops ? MAX_PSHOT : PS_SHOTS;              /* 爆雷の枠は爆雷があるときだけ見る */
+        if (ne) for (i = 0; i < nps; i++) {
             Bullet *b = &g_pshot[i];
             u8 bx, by, k;
             if (!b->on) continue;
@@ -337,9 +338,11 @@ void enemy_update(void) {
     for (i = 0; i < MAX_FX; i++) if (g_fx[i].t) g_fx[i].t--;
 }
 
+u8 g_lb;                           /* LIMIT BREAK からのフレーム(面の小物 = Pawn などが見て消える。main.c が減らす) */
 void limit_break(void) {
     u8 i;
     boss_damage(10);
+    g_lb = 24;
     for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type) kill_enemy(&g_enemy[i], 1);
     for (i = 0; i < MAX_ESHOT; i++) if (g_eshot[i].on) { g_eshot[i].on = 0; }
 }

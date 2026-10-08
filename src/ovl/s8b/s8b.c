@@ -298,6 +298,7 @@ static void boss_form(u8 sec) {
 }
 
 void ovl_init(void) {
+    g_ter.lo = s8_floor; g_ter.hi = s8_ceil; g_ter.lo_add = 0; g_ter.ncol = S8_COLS;   /* DROP の爆雷が這う床・天井 */
     g_boss_state = BS_NONE; t = 0; rj = 0; rph = 0; rrow = 0; fo = fi = 0; ln = 0; ang = 0;
     g_sec = SEC8_CORE; sec_t = 0; sec_wx = g_wx;
     enemy_waves(WAVES_AIR);

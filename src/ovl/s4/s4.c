@@ -13,6 +13,7 @@
 #include "rom.h"
 #include "assets.h"
 #include "s4_data.h"
+#include "sprite_data.h"
 #include "ghost.h"
 
 #define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
@@ -63,6 +64,7 @@ static void palette(void);
 void ovl_init(void) {
     u8 i;
     stage_reset_ground();
+    vdp_write_addr17(1, (u16)(0xF800u + PAT_SCAN * 32u)); for (i = 0; i < 32; i++) VDP_DAT = i < 16 ? 0x01 : 0x80;   /* VERNIER の予告線(縦 2 ドット) */
     g_w0 = (u16)((g_wx + AIR_LEN) >> 3);
     rom_to_ram(ASSET_S4_MAP_BANK, ASSET_S4_MAP_OFF, g_map, S4_COLS);
     g_maplen = S4_COLS;

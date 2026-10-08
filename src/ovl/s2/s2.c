@@ -85,6 +85,7 @@ static void enter(u8 sec) {
 
 void ovl_init(void) {
     u8 i;
+    g_ter.lo = s2_bot; g_ter.hi = s2_top; g_ter.lo_add = 0; g_ter.ncol = S2_COLS;   /* DROP の爆雷が這う床・天井 */
     for (i = 0; i < 4; i++) { vdp_write_addr17(1, (u16)(0xF800u + (PAT_WELL + i) * 32u)); vdp_out_block(32, well_pat[i]); }
     stage_reset_ground();
     g_w0 = (u16)((g_wx + AIR_LEN) >> 3);

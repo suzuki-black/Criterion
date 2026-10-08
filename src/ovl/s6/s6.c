@@ -57,6 +57,7 @@ static void enter(u8 sec) {
 }
 
 void ovl_init(void) {
+    g_ter.lo = s6_top; g_ter.hi = 0; g_ter.lo_add = 0; g_ter.ncol = S6_COLS;   /* DROP の爆雷が這う床・天井 */
     stage_reset_ground();
     g_w0 = (u16)((g_wx + AIR_LEN) >> 3);
     rom_to_ram(ASSET_S6_MAP_BANK, ASSET_S6_MAP_OFF, g_map, S6_COLS);

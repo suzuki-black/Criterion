@@ -129,7 +129,7 @@ static void mite_update(void) {
     for (i = 0; i < S6_NMITE; i++) {
         s16 x = s6_sx(s6_mite[i]), y = s6_sy(34) - 16;
         if (!mt_hp[i] || x < -16 || x > 256) continue;
-        if (shot_rect(x - 4, y, 16, 16) && --mt_hp[i] == 0) { fx_spawn(FX(x + 4), FX(y + 8)); score_add(50); continue; }
+        if ((LB_NOW ? (mt_hp[i] = 1) : shot_rect(x - 4, y, 16, 16)) && --mt_hp[i] == 0) { fx_spawn(FX(x + 4), FX(y + 8)); score_add(50); continue; }
         if (((t + i * 21) & 63) == 0 && x > 8 && x < 240) enemy_bullet(FX(x + 4), FX(y + 12), -6, 22);   /* 砂粒 */
     }
 }
@@ -169,7 +169,7 @@ static void num_update(void) {
         s16 x = num_x(i), y = s6_sy(NUM_S);
         u8 w = (u8)(num_len[i] * 8);
         if (!nm_hp[i] || x < -32 || x > 256) continue;
-        if (shot_rect(x, y - 2, w, 12) && --nm_hp[i] == 0) {
+        if ((LB_NOW ? (nm_hp[i] = 1) : shot_rect(x, y - 2, w, 12)) && --nm_hp[i] == 0) {
             fx_spawn(FX(x + (w >> 1)), FX(y + 4)); score_add(120);
             nm_drawn[i] = 2;                                  /* 空で塗る */
             continue;

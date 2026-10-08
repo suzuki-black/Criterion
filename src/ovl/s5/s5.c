@@ -57,6 +57,7 @@ static void palette(void) {
 }
 
 void ovl_init(void) {
+    g_ter.lo = s5_bot; g_ter.hi = s5_top; g_ter.lo_add = 0; g_ter.ncol = S5_COLS;   /* DROP の爆雷が這う床・天井 */
     stage_reset_ground();
     g_w0 = (u16)((g_wx + AIR_LEN) >> 3);
     rom_to_ram(ASSET_S5_MAP_BANK, ASSET_S5_MAP_OFF, g_map, S5_COLS);

@@ -22,6 +22,7 @@
 
 static u16 sec_wx, sec_t;
 static u8  bulk_t;
+static u8 scan_got;
 static s16 scan_x;                 /* Scanner の測定線(停止の間) */
 static const u8 inside[3] = { 1, 1, 2 };
 
@@ -83,6 +84,7 @@ static void enter(u8 sec) {
 }
 
 void ovl_init(void) {
+    g_ter.lo = s3_ymax; g_ter.hi = s3_ymin; g_ter.lo_add = 16; g_ter.ncol = S3_COLS;   /* DROP の爆雷が這う床・天井 */
     stage_reset_ground();
     g_w0 = (u16)((g_wx + AIR_LEN) >> 3);
     rom_to_ram(ASSET_S3_MAP_BANK, ASSET_S3_MAP_OFF, g_map, S3_COLS);
@@ -92,6 +94,7 @@ void ovl_init(void) {
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0; bulk_ph = 0; lit = 0;
     { u8 i; for (i = 0; i < S3_NBULK; i++) g_map[s3_bulk[i]] = 14; }   /* 隔壁の列は通路にして、柱はスプライトで */
     vdp_write_addr17(1, (u16)(0xF800u + PAT_PILLAR * 32u)); vdp_out_block(32, pillar_pat);
+    { u8 i; vdp_write_addr17(1, (u16)(0xF800u + PAT_SCAN * 32u)); for (i = 0; i < 32; i++) VDP_DAT = i < 16 ? 0x01 : 0x80; }   /* 測定線(縦 2 ドット) */
     if (g_calib) {                                            /* 7 面の試験 03: 白い空間から最高速の区間の終わりへ沈んで TACHOMETER */
         g_w0 = (u16)((g_wx >> 3) - (S3_COL_ARENA - 8 - 64));
         b3_load_dial();
@@ -168,10 +171,11 @@ void ovl_update(void) {
     case SEC3_STOP:
         /* 1/2 秒で 0 に。静寂の中、Scanner の測定線が左から右へ縦断する */
         if (g_scroll_speed > 0) { g_scroll_speed -= 2; if (g_scroll_speed < 0) g_scroll_speed = 0; set_streak(0); }
-        if (sec_t == 40) scan_x = 0;
+        if (sec_t == 40) { scan_x = 0; scan_got = 0; }
         if (sec_t > 40) {
             scan_x += 3;
-            if (g_pl.alive && PX(g_pl.x) + 8 > scan_x - 3 && PX(g_pl.x) + 8 < scan_x + 3) player_hit();
+            /* 当たると強化を 1 段奪う(指示書 3 章。被弾ではない) */
+            if (!scan_got && g_pl.alive && PX(g_pl.x) + 8 > scan_x - 3 && PX(g_pl.x) + 8 < scan_x + 3) { scan_got = 1; gauge_steal(); }
         }
         if (sec_t > 40 + 90) enter(SEC3_REV);
         break;

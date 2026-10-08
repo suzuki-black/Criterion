@@ -20,7 +20,7 @@ static const u8 sec_song[NSEC] = {
     A_, S_, S_, S_, MI, S_, BO, OU,                          /* 2 面  7..14 */
     A_, S_, S_, S_, S_, MI, S_, BO, OU,                      /* 3 面 15..23 */
     A_, S_, S_, S_, S_, MI, S_, BO, OU,                      /* 4 面 24..32 */
-    A_, S_, S_, S_, S_, S_, S_, S_, BO, ST, OU,              /* 5 面 33..43 */
+    A_, S_, S_, S_, S_, MI, S_, S_, BO, ST, OU,              /* 5 面 33..43(38 = 中ボス HANGAR) */
     A_, S_, S_, S_, MI, S_, BO, OU,                          /* 6 面 44..51 */
     S_, BO, OU,                                              /* 7 面 52..54 */
     A_, S_, S_, MI, S_, SONG_M14A, SONG_M14B, SONG_M14C, SONG_M15, SONG_M15,   /* 8 面 55..64 */
@@ -116,6 +116,7 @@ void music_frame(u8 over) {
     }
     if (w == want) return;
     want = w;
+    if (w == SONG_M17) pcm_req(PCM_V05);                         /* ゲームオーバー: 声「GAME OVER」 */
     if (w == SONG_M03 && g_bgm == SONG_M02) return;              /* 出撃のファンファーレが続けて鳴らす */
     if (w == SONG_M13 && g_bgm == SONG_J02) return;
     snd_trans_next = (w == SONG_M03) ? air_trans[st] : 0;   /* 移調は次の曲の頭から(フェード中の曲の音程を変えない) */

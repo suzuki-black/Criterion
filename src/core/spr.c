@@ -14,6 +14,7 @@
      スプライトだけで 1 フレームの半分を使った(M1)。 */
 #include "spr.h"
 #include "vdp.h"
+#define G_MISC_N 7                  /* asm 用(spr.h の G_MISC) */
 
 #define SLOTS   32
 #define BLANK_PAT (63 * 4)          /* 空白のパターン(使わない枠を隠す) */
@@ -52,9 +53,11 @@ u8 spr_misc_cs[8];                   /* 帯ごとの G_MISC 4 枠の色の組(0x
      7 = 組 6・1 枚の敵 10・敵弾 4(3 面 METRONOME: 前の区間から残った編隊が横切る)
    ★4〜6 は 1 周の通しで「枠に入りきらなかったグループ」を区間ごとに数えて足した(ボスの前後のちらつきの指摘。溢れると
      グループの中で順番を回すので、毎フレーム違うものが消えてちらつく)。
-   色表も割り振りごとに ROM にある(gen_sprites.py の LAYOUTS と同じ数)。asm は下の RAM の表を見る */
-static const u8 layouts[8][3] = {     /* 組・1 枚の敵・敵弾の枠の数(自機 1+1・自機弾 6・その他 4 は共通。合わせて 32) */
+   色表も割り振りごとに ROM にある(gen_sprites.py の LAYOUTS と同じ数)。asm は下の RAM の表を見る
+   8..15 = 強化(ECHO / AEGIS / DROP。分身・防壁)を持っている間: 上の同じ番号から G_OPT の 4 枠を回したもの(main.c が 8 を足す)。 */
+static const u8 layouts[16][3] = {    /* 組・1 枚の敵・敵弾の枠の数(自機 1+1・自機弾 6・その他 4 は共通。G_OPT を足して 32) */
     { 8, 6, 6 }, { 4, 10, 6 }, { 2, 11, 7 }, { 6, 6, 8 }, { 4, 4, 12 }, { 2, 8, 10 }, { 10, 4, 6 }, { 6, 10, 4 },
+    { 6, 5, 5 }, { 4, 7, 5 }, { 2, 9, 5 }, { 4, 6, 6 }, { 2, 4, 10 }, { 2, 6, 8 }, { 8, 3, 5 }, { 4, 8, 4 },
 };
 u8 spr_gfirst[8], spr_gend[8], spr_gcount[8];
 u8 g_spr_layout;
@@ -85,7 +88,7 @@ void spr_layout(u8 l) {
     const u8 *s = layouts[l];
     g_spr_layout = l;
     spr_gcount[G_SHIP_A] = 1; spr_gcount[G_SHIP_B] = 1; spr_gcount[G_SHOT] = 6; spr_gcount[G_MISC] = 4;
-    spr_gcount[G_PAIR] = s[0]; spr_gcount[G_ENEMY] = s[1]; spr_gcount[G_EBUL] = s[2];
+    spr_gcount[G_PAIR] = s[0]; spr_gcount[G_ENEMY] = s[1]; spr_gcount[G_EBUL] = s[2]; spr_gcount[G_OPT] = l >= 8 ? 4 : 0;
     for (i = 0; i < G_COUNT; i++) { spr_gfirst[i] = at; at += spr_gcount[i]; spr_gend[i] = at; rot_g[i] = 0; }
 }
 
@@ -242,7 +245,7 @@ void spr_add(u8 yy) __naked {
         ld   (hl), a               ; 使っている枠の最大 + 1
     00015$:
         ld   a, (_spr_bg)
-        cp   #6                    ; G_MISC
+        cp   #G_MISC_N             ; G_MISC
         jr   nz, 00016$
         ld   a, b
         add  a, a

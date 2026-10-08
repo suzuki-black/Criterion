@@ -18,7 +18,7 @@
 
 /* グループ(枠の範囲は spr.c)。★単色のものは置かない(コナミの MSX2 の作法。M7 の後): どのグループも行ごとに色を変え、
    G_PAIR は 2 枚の OR 合成(CC)で 3 色にする */
-enum { G_SHIP_A, G_SHIP_B, G_SHOT, G_PAIR, G_ENEMY, G_EBUL, G_MISC, G_COUNT };
+enum { G_SHIP_A, G_SHIP_B, G_SHOT, G_PAIR, G_ENEMY, G_EBUL, G_OPT, G_MISC, G_COUNT };   /* G_OPT: 強化(割り振り 8..15 の間だけ 4 枠) */
 
 /* G_MISC の色の組 */
 enum { CS_QUANTA, CS_EXPL, CS_CURSOR, CS_SHARD, CS_DIM, CS_COUNT };

@@ -1,5 +1,6 @@
 /* ovl.c — オーバレイの読み込み(ovl.h 参照)。 */
 #include "ovl.h"
+#include "game.h"
 #include "rom.h"
 
 u8 g_ovl, g_ovl_ready;
@@ -14,7 +15,7 @@ void ovl_load_sync(u8 id) {
     g_ovl = id; g_ovl_ready = 1;
 }
 
-void ovl_request(u8 id) { g_ovl_ready = 0; g_ovl = OVL_NONE; load_id = id; load_off = 0; init_pending = 0; }
+void ovl_request(u8 id) { g_ovl_ready = 0; g_ovl = OVL_NONE; load_id = id; load_off = 0; init_pending = 0; g_ter.lo = 0; g_ter.flat = 0; }   /* 地形の表は古いオーバレイの中 */
 
 /* 1 フレームに 512 バイト(ROM から RAM へ)。読み終えた次のフレームで面の ovl_init。
    ★1KB ずつ読んで同じフレームで ovl_init まで済ませると、空中戦の入りのフレームが遅れた */

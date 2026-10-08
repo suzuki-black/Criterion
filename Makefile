@@ -111,12 +111,21 @@ $(BUILD)/assets.bin $(BUILD)/assets.h: $(BUILD)/assets.stamp ; @:
 # ★割込み処理(raster)と ROM 読み出し(rom)はページ 1(0x8000 未満)に置く。ROM を読む間はページ 2 が
 #   カートリッジの別のバンクになるため(rom.c)。リンクの先頭に並べ、リンク後に番地を検査する。
 #   音のドライバ(snd)も曲を読む間はページ 2 が曲のバンクになるので、同じくページ 1 に置く(snd.c)。
-GAME_FIRST := $(BUILD)/g_raster.rel $(BUILD)/rom.rel $(BUILD)/g_snd.rel
+GAME_FIRST := $(BUILD)/g_raster.rel $(BUILD)/rom.rel $(BUILD)/bkstubs.rel $(BUILD)/g_snd.rel
+# ★ライブラリ(z80.lib の掛け算・割り算など)も明示してページ 1 へ(暗黙だとリンクの最後 = ページ 2 に置かれ、ページ 0・1 の
+#   関数から呼ばれるので、第 2 バンクを出している間に見えなくなる。tools/check_bank.py が検査する)
+SDCC_LIB := $(dir $(shell which sdcc))../share/sdcc/lib/z80/z80.lib
+GAME_LIB := $(patsubst %,$(BUILD)/lib/%.rel,divunsigned divsigned modunsigned modsigned mul __sdcc_call_hl crtenter __mulsint2slong __muluint2ulong)
+$(BUILD)/lib/%.rel: | $(BUILD)
+	mkdir -p $(BUILD)/lib && cd $(BUILD)/lib && sdar x $(SDCC_LIB) $*.rel
 # 本体の割込み処理は直接方式・PCM 方式 B だけ(RAS_GAME。BIOS 方式と刻み方式は M0 の検証 ROM だけが持つ。常駐の空き)
 $(BUILD)/g_raster.rel: src/core/raster.c $(HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -DRAS_GAME $(INC) $< -o $@
 GAME_REST  := $(filter-out $(BUILD)/raster.rel $(GAME_FIRST) $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel,$(CORE))   # pcmb(方式 B の試作)・pcmc(方式 A/C の制御)は M0 の検証用
-GAME_MID   := $(filter-out $(GAME_FIRST),$(GAME_RELS))
+# ★第 2 バンク(src/bank、ページ 2 のセグメント 6)から呼べるのはページ 1 のものだけなので、下回り(GAME_REST)と
+#   敵・自機をページ 1 へ寄せる(Makefile の検査と、第 2 バンクのリンクが 0x8000 以上の記号を見ないことで守る)
+GAME_P1    := $(BUILD)/g_enemy.rel $(BUILD)/g_player.rel
+GAME_MID   := $(filter-out $(GAME_FIRST) $(GAME_P1),$(GAME_RELS))
 # ★ページ 0 のコード(CODE0、0x0100-OVL_BASE): 共通のエンジン(ROTOR / GHOST)。起動時に ROM の bank4-5 から
 #   RAM へ複製する(main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前には呼ばないこと。
 CODE0_CORE := rotor ghost
@@ -125,7 +134,7 @@ GAME_CODE0_CORE := $(CODE0_CORE:%=$(BUILD)/%.rel)
 $(BUILD)/g_music.rel: src/game/music.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) --opt-code-size $(DEFS) --codeseg CODE0 --constseg CODE0 -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 # 毎フレームの重い経路を自分では持たないファイルは大きさを優先する(常駐の空き。M7 の後。hud.c は逆に太ったので外した)
-SIZE_FIRST := main bg infx
+SIZE_FIRST := main bg
 $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(SIZE_FIRST),$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
@@ -215,9 +224,35 @@ $(BUILD)/ovl_%.ihx: $(BUILD)/ovlhdr_$$(OVL_$$*_HDR).rel $$(OVL_$$*_RELS) $(BUILD
 $(BUILD)/ovl_%.bin: $(BUILD)/ovl_%.ihx tools/gen_ovl.py
 	python3 tools/gen_ovl.py bin $< $(<:.ihx=.map) $@ $(OVL_BASE) $(OVL_END) $(OVL_DBEG) $(OVL_DEND)
 
-$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/rom.rel $(GAME_RELS) $(GAME_CODE0_CORE) $(BUILD)/ovl_entries.rel
+# ---- 第 2 バンク(src/include/bank.h): マッパーのセグメント 6 をページ 2 へ出して実行するコード ----
+#   本体の後に、ページ 2 の記号を除いた本体の記号(resident_bk.rel)でリンクする。ライブラリ(z80.lib)は自分で持つ。
+#   本体からは呼び口(bkstubs.rel、ページ 1)を通して呼ぶ。入口は BK_EXPORTS の順の JP 表。
+BK_BASE  := 0x8000
+BK_DATA  := 0xB000
+BK_DEND  := 0xC000
+BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw
+BK_SIZE_FIRST := infx
+BK_RELS  := $(patsubst src/bank/%.c,$(BUILD)/bk_%.rel,$(wildcard src/bank/*.c))
+$(BUILD)/bk_%.rel: src/bank/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(BK_SIZE_FIRST),$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+$(BUILD)/bkhdr.s: tools/gen_ovl.py Makefile | $(BUILD)
+	python3 tools/gen_ovl.py hdr $@ $(BK_EXPORTS)
+$(BUILD)/bkstubs.s: tools/gen_ovl.py Makefile | $(BUILD)
+	python3 tools/gen_ovl.py bkstubs $@ $(BK_EXPORTS)
+$(BUILD)/resident_bk.s: $(BUILD)/game.ihx tools/gen_ovl.py
+	python3 tools/gen_ovl.py resident_bk $(BUILD)/game.noi $@ $(BK_EXPORTS)
+$(BUILD)/bank.ihx: $(BUILD)/bkhdr.rel $(BK_RELS) $(BUILD)/resident_bk.rel tools/check_bank.py
+	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(BK_BASE) --data-loc $(BK_DATA) \
+	    $(BUILD)/bkhdr.rel $(BK_RELS) $(BUILD)/resident_bk.rel -o $@
+	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
+	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 第 2 バンクの未定義シンボル(本体のページ 2 のものは呼べない。bank.h)"; rm -f $@; exit 1; fi
+	@python3 tools/check_bank.py $(BUILD)/game.map $(BUILD)/game.noi $(BK_RELS:.rel=.lst) || { rm -f $@; exit 1; }
+$(BUILD)/bank.bin: $(BUILD)/bank.ihx tools/gen_ovl.py
+	python3 tools/gen_ovl.py bin $< $(<:.ihx=.map) $@ $(BK_BASE) $(BK_DATA) $(BK_DATA) $(BK_DEND)
+
+$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/rom.rel $(BUILD)/bkstubs.rel $(GAME_LIB) $(GAME_RELS) $(GAME_CODE0_CORE) $(BUILD)/ovl_entries.rel
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
-	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_MID) $(GAME_REST) $(GAME_CODE0_CORE) \
+	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_LIB) $(GAME_REST) $(GAME_P1) $(GAME_MID) $(GAME_CODE0_CORE) \
 	    $(BUILD)/ovl_entries.rel -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
@@ -226,15 +261,15 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/r
 	@E=$$(awk '$$2=="s__DATA"{s=$$3} $$2=="l__DATA"{l=$$3} $$2=="s__INITIALIZED"{si=$$3} $$2=="l__INITIALIZED"{li=$$3} \
 	    END{e=s+l; if (si+li>e) e=si+li; printf "%d", e}' $(@:.ihx=.noi)); \
 	    if [ $$E -gt $$(($(OVL_DBEG))) ]; then echo "ERROR: _DATA/_INITIALIZED の末尾 $$E がオーバレイの変数 $(OVL_DBEG) に入った(ovl.h)"; rm -f $@; exit 1; fi
-	@for S in _ras_isr_direct _ras_apply_next _ras_vblank _rom_copy _snd_frame _snd_end; do \
+	@for S in _ras_isr_direct _ras_apply_next _ras_vblank _rom_copy _snd_frame _snd_end _bk_call _infx_draw; do \
 	    A=$$(awk -v n=$$S '$$2==n{print $$3}' $(@:.ihx=.noi)); \
 	    if [ -z "$$A" ] || [ $$(printf '%d' $$A) -ge 32768 ]; then \
 	        echo "ERROR: $$S=$$A がページ 1(0x8000 未満)に無い。ROM を読む間に壊れる(rom.c)"; rm -f $@; exit 1; fi; \
 	done
 
-GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/snd.bin $(OVL_BINS) tools/rompack.mjs
-	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 48 $(BUILD)/snd.bin \
-	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin
+GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/snd.bin $(OVL_BINS) $(BUILD)/bank.bin tools/rompack.mjs
+	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 64 $(BUILD)/snd.bin \
+	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin --asset 126 $(BUILD)/bank.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

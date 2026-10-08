@@ -73,10 +73,7 @@ static u8  jb0, jn, jstep;         /* 描き替え中のブロック(先頭・�
 static s16 js;
 static s16 pick_at;                /* 前に描き替えを探して何も無かったときの g_scam(8 行単位) */
 static u8  hs_t;                   /* hs_cur を求めたときの sky_t */
-static u8  banner_t;               /* 面の開始表示の進み(0 = なし) */
-static char banner_text[32];
-static u8 banner_x;                /* 文字の左端(中央にそろえる。★40 に固定していて、長い面の名前の最後がはみ出した) */
-static u8 banner_fg = 15;          /* 文字の色(7 面の判定文は赤く崩れていく) */       /* ★写しを持つ(呼ぶのは古いオーバレイで、その文字列は次のオーバレイの読み込みで消える) */
+Banner g_ban;                      /* 面の開始表示(game.h)。VRAM の仕事は第 2 バンクの banner.c */       /* ★写しを持つ(呼ぶのは古いオーバレイで、その文字列は次のオーバレイの読み込みで消える) */
 
 /* 画面の矩形 → 表示リング(ページ 0|1)。リングの 512 幅と 256 行の継ぎ目で分ける。
    fill = 0 なら (sx, sy) から HMMM、それ以外は byte で HMMV */
@@ -153,14 +150,15 @@ u8 calib_out(u16 t) {
     return 0;
 }
 
-void stage_banner_c(const char *text, u8 fg) { stage_banner(text); banner_fg = fg; }
+void stage_banner_c(const char *text, u8 fg) { stage_banner(text); g_ban.fg = fg; }
 void stage_banner(const char *text) {
     u8 i;
-    banner_fg = 15;
-    for (i = 0; i < sizeof banner_text - 1 && text[i]; i++) banner_text[i] = text[i];
-    banner_text[i] = 0;
-    banner_x = (u8)(128 - (i << 2));
-    banner_t = 1;
+    g_ban.fg = 15;
+    for (i = 0; i < sizeof g_ban.text - 1 && text[i]; i++) g_ban.text[i] = text[i];
+    g_ban.text[i] = 0;
+    g_ban.x = (u8)(128 - (i << 2));                           /* 中央にそろえる(★40 に固定していて、長い面の名前の最後がはみ出した) */
+    g_ban.p3 = strip_off == 0xFFFF;
+    g_ban.t = 1;
 }
 
 /* 1 面の空中戦から(出撃の終わりに title.c が呼ぶ)。面の中身は 1 面のオーバレイを読み込んでから */
@@ -171,7 +169,7 @@ void stage_start(void) {
     upper_sky = UP_AIR; g_sky_t = 0; g_sec = 0; g_maplen = 0; g_roll = 0; g_boss_state = BS_NONE; g_boss_dmg = 0; g_boss_aim = -1;
     for (b = 0; b < NBLK; b++) tag[b] = b < BLK_CONST ? (s16)(b * 8 - 188) : TAG_NONE;
     tag[BLK_CONST] = -4;
-    strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; banner_t = 0;
+    strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; g_ban.t = 0;
     g_col_rev = 0; redraw_n = 0; g_bands_all = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
     enemy_waves(WAVES_AIR);
@@ -411,49 +409,10 @@ void stage_pump_nb(void) {
     if (gq_free() < GQ_N) gq_pump(0);
 }
 
-/* ---- 面の開始表示(指示書 4.2): HUD 帯の上に 16 行の帯を出し、「STAGE 2 / GRAVITY WELL」を左から滑り込ませ、
-   2 秒で HUD 帯へ吸い込ませる(帯が上から縮み、文字が上から消える)。
-   ★帯はページ 2|3 の (行 + R#23) の行を見せる。R#23 はプレイエリアと同じ値のまま(変えるとその帯のスプライトの
-     Y がずれる)なので、2 面の空中戦(g_scam = -192、R#23 = 252)では画面の 172..187 行 = 168..183 行。
-     ページ 2 のそこは起動ロゴの黒い区間、ページ 3 は都市の短冊(もう使わない)なので、色 1 で塗って使い、
-     終わったらページ 2 を黒へ戻す。横は 256(ページ 3 = 何もない)から 0 へ寄せて、文字を左から入れる。
-     帯の色 1 はその高さの空の色にする(透けて見える)。
-   ★面の短冊を使っている間(読み込み中も)はページ 3 を塗らず、文字を滑り込ませずにその場に出す(ページ 3 の 160..183 行は
-     短冊の地面。デモの説明の帯がそこを塗り、以後に流れてくる 1 面の列の街路が空の色になって、Pawn の黒い余白が四角く
-     見えた)。 */
-#define BAN_LINE  172
-#define BAN_ROW   168              /* (BAN_LINE + 252) & 255 */
-#define BAN_IN    7                /* ここから見せる(3..6 は文字を書く) */
-#define BAN_SUCK  96               /* ここから吸い込む */
-#define BAN_END   (BAN_SUCK + 22)       /* 吸い込み: 帯の上端を 2 フレームに 1 行下げる(HUD の手前 6 行まで) */
 static u8 ban_regs[4];
-static u16 ban_x;
-static u8 ban_p3;                  /* 1 = ページ 3 を塗って文字を滑り込ませる(短冊を使っていないとき) */
-
-static void banner_vram(void) {
-    if (banner_t <= 3 && vdp_cmd_busy()) return;            /* 塗りは VDP が空いてから(待つと遅れた。3 面の入り) */
-    if (banner_t == 1) { vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x11); ban_p3 = strip_off == 0xFFFF; }   /* 1 フレームに 1 つ(VDP を待たない) */
-    else if (banner_t == 2) { if (ban_p3) vdp_hmmv(0, 768 + BAN_ROW - 8, 256, 24, 0x11); }
-    else if (banner_t >= 3 && banner_t < BAN_IN) {           /* 文字は 1 フレームに 2 行ずつ(一度に書くと 120 ライン。2 面の入りで遅れた) */
-        u8 r = (u8)((banner_t - 3) << 1);
-        extern u16 g_frame_t0;
-        if ((u16)(sys_timer() - g_frame_t0) > 150u * 16u) return;   /* ★重いフレームは次へ(2 行で約 50 ライン。7 面の試験の
-                                                                   切り替えで描き替えの仕事と重なって遅れた) */
-        vdp_cmd_wait();
-        font_text_row(2, banner_x, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, r);
-        font_text_row(2, banner_x, (u8)(BAN_ROW + 4), banner_fg, 1, banner_text, (u8)(r + 1));
-        ban_x = ban_p3 ? 256 : 0;
-    } else if (banner_t == BAN_END) {
-        vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x00);       /* 起動ロゴの黒い区間へ戻す */
-        banner_t = 0;
-        return;
-    }
-    if (banner_t >= BAN_IN && ban_x) ban_x -= (ban_x + 7) >> 3;   /* 左から寄ってきて止まる */
-    banner_t++;
-}
 
 void stage_vram(void) {
-    if (banner_t) banner_vram();
+    if (g_ban.t) banner_vram();
     pcmx_service();
     if (ovl_step()) return;                                   /* オーバレイの読み込み(512 バイト/フレーム)。★ovl_init のフレームは
                                                                  ほかの仕事をしない(地図の読み込み + 短冊 + 面の素材で遅れた) */
@@ -575,6 +534,25 @@ static u8 regs_top[2][16], regs_b[2][8];
 /* R#1 の組(RG1SAV に MAG を足す)。★stage_build に直に書くと SDCC の割り当てが崩れて 150 バイト太った */
 void mag_pair(u8 *p, u8 m) { p[0] = 1; p[1] = (u8)(*(volatile u8 *)0xF3E0 | m); }
 
+/* 面の開始表示の帯(★stage_build に直に書くと SDCC の割り当てが崩れて 1KB 太った。小さな関数に出す) */
+static void ban_entry(void) {
+    s16 line = (s16)(BAN_LINE + (g_ban.t > BAN_SUCK ? (g_ban.t - BAN_SUCK) >> 1 : 0));
+    RasEntry *c = &E[K - 1];
+    if (line < (s16)c->line + RAS_GAP) line = (s16)(c->line + RAS_GAP);
+    if (line < ITEM_END && K < RAS_MAX - 1) {
+        u16 bx = g_ban.p3 ? g_ban.bx : 0;
+        c = &E[K++];
+        /* ページ 2|3。★R#23 も 252(s = -192 のときの値)にする: プレイエリアの R#23 のままだと、カメラが宇宙の
+           高さにいない面の途中(7 面の判定文など)で帯がページ 2 の別の行(ボスの絵)を見せた */
+        ban_regs[0] = 2; ban_regs[1] = 0x7F; ban_regs[2] = 23; ban_regs[3] = (u8)(BAN_ROW - BAN_LINE);
+        c->line = (u8)line; c->flags = RAS_REGS | RAS_SCROLL | RAS_PAL;
+        c->haze = ban_regs; c->haze_n = 2;
+        c->r26 = VDP_R26(bx); c->r27 = VDP_R27(bx);
+        c->pidx = 1; c->prb = (u8)((hs_cur[7][0] << 4) | hs_cur[7][2]); c->pg = hs_cur[7][1];   /* 帯の地 = その高さの空の色 */
+        if (g_calib || g_ovl == OVL_S7) { c->prb = 0x13; c->pg = 0; }   /* ★7 面の白い部屋では白い文字が読めなかったので濃い紺 */
+    }
+}
+
 void stage_build(void) {
     u8 bi = ras_back_index(), i;
     u8 *rt = regs_top[bi];
@@ -624,22 +602,7 @@ void stage_build(void) {
     if (g_ovl_ready && g_ovl >= OVL_S1) ovl_bands(sc, nx);
 tail:
     if (!sat_done) sat_entry();
-    if (banner_t >= BAN_IN && banner_t < BAN_END) {
-        s16 line = (s16)(BAN_LINE + (banner_t > BAN_SUCK ? (banner_t - BAN_SUCK) >> 1 : 0));
-        RasEntry *c = &E[K - 1];
-        if (line < (s16)c->line + RAS_GAP) line = (s16)(c->line + RAS_GAP);
-        if (line < ITEM_END && K < RAS_MAX - 1) {
-            c = &E[K++];
-            /* ページ 2|3。★R#23 も 252(s = -192 のときの値)にする: プレイエリアの R#23 のままだと、カメラが宇宙の
-               高さにいない面の途中(7 面の判定文など)で帯がページ 2 の別の行(ボスの絵)を見せた */
-            ban_regs[0] = 2; ban_regs[1] = 0x7F; ban_regs[2] = 23; ban_regs[3] = (u8)(BAN_ROW - BAN_LINE);
-            c->line = (u8)line; c->flags = RAS_REGS | RAS_SCROLL | RAS_PAL;
-            c->haze = ban_regs; c->haze_n = 2;
-            c->r26 = VDP_R26(ban_x); c->r27 = VDP_R27(ban_x);
-            c->pidx = 1; c->prb = (u8)((hs_cur[7][0] << 4) | hs_cur[7][2]); c->pg = hs_cur[7][1];   /* 帯の地 = その高さの空の色 */
-            if (g_calib || g_ovl == OVL_S7) { c->prb = 0x13; c->pg = 0; }   /* ★7 面の白い部屋では白い文字が読めなかったので濃い紺 */
-        }
-    }
+    if (g_ban.t >= BAN_IN && g_ban.t < BAN_END) ban_entry();
 
     bg_fill_hud(&E[K], bi); K++;
     ras_commit(K);
