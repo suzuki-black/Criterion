@@ -272,16 +272,17 @@ static void ring_draw(void) {
     u8 k;
     for (k = 0; k < NT; k++) if (tt_hp[k]) spr_put(tpx[k] - 8, tpy[k] - 8, PAT_DIG, G_ENEMY, 0);
 }
-/* リングの 6 角形(1 つおきの砲台を結ぶ)。8 フレームに 1 回、消す(1 フレーム目)と描く(2 フレーム目)を分ける
-   ★12 角形を 4 フレームごとに消して描くと、LINE の命令 1 つ 0.3ms × 28 本で毎フレーム遅れた */
+/* リングの 12 角形(砲台を順に結ぶ。指示書 5.8 の目盛りの環)。16 フレームに 1 回、消す(1 フレーム目)と描く(2..4 フレーム目に
+   4 辺ずつ)を分ける。★12 角形を 4 フレームごとに消して描くと LINE の命令 1 つ 0.3ms × 28 本で毎フレーム遅れたので、
+   周期を延ばして 1 フレームあたりの本数を 6 角形のときと同じにした */
 static void ring_vram(void) {
     u8 k;
-    u8 ph = (u8)(t & 7), k0;
+    u8 ph = (u8)(t & 15), k0;
     if (ph == 0) { line_erase(); return; }
-    if (ph > 2 || gq_free() < 8 || g_boss_state != BS_FIGHT) return;
-    k0 = ph == 1 ? 0 : 6;                                     /* 2 フレームに分けて 3 辺ずつ */
-    for (k = k0; k < k0 + 6; k += 2) {
-        u8 j = k == NT - 2 ? 0 : (u8)(k + 2);
+    if (ph > 3 || gq_free() < 10 || g_boss_state != BS_FIGHT) return;
+    k0 = (u8)((ph - 1) * 4);
+    for (k = k0; k < k0 + 4; k++) {
+        u8 j = k == NT - 1 ? 0 : (u8)(k + 1);
         line_add(tpx[k], tpy[k], tpx[j], tpy[j], 15);
     }
 }

@@ -246,9 +246,9 @@ static void hg_vram(void) {        /* コマが替わったら 16 行ずつ 6 �
 }
 
 /* ======== GNOMON ======== */
-#define GN_CX 150                  /* 軸の画面の位置 */
-#define GN_CY 108
-#define GN_R  120
+#define GN_CX 128                  /* 軸の画面の位置(プレイエリアの中央。指示書 5.6「中心を軸に」) */
+#define GN_CY 112
+#define GN_R  220                  /* 長針(200 ドット超。画面の端で切って描く。当たりの計算は 16 ビットに収まる) */
 #define GN_Y0 (SPLIT_H + 2)        /* 針を描く上下の限り(SCREEN12 の帯と床を避ける) */
 #define GN_Y1 175
 static u16 gn_a[2];                /* 角度(8.8、上位 = 64 で一周)。[1] は再校正版の短針 */
