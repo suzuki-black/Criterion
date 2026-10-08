@@ -307,13 +307,14 @@ static u8 gn_inside(s16 r, s8 cs, s8 sn) {
     s16 x = (s16)(GN_CX + ((r * cs) >> 7)), y = (s16)(GN_CY + ((r * sn) >> 7));
     return (u8)(x >= 0 && x <= 255 && y >= GN_Y0 && y <= GN_Y1);
 }
-static void gn_hand(u8 h) {        /* 針 h を 3 本の平行線で(画面の中で切る) */
+static void gn_hand(u8 h) {        /* 針 h を平行線で(長針 2 本・短針 3 本。画面の中で切る)。★長針を 220 ドットにして 3 本のままだと、
+                                      試験 6(長針と短針)で LINE の命令が増えて 1 周の遅れが上限を超えた */
     u8 k;
     s8 cs = gn_cs[h], sn = gn_sn[h];
     s16 lo = 0, hi = gn_len[h], ex, ey;
     while (hi - lo > 1) { s16 m = (s16)((lo + hi) >> 1); if (gn_inside(m, cs, sn)) lo = m; else hi = m; }
     ex = (s16)((lo * cs) >> 7); ey = (s16)((lo * sn) >> 7);
-    for (k = 0; k < 3; k++) {
+    for (k = h ? 0 : 1; k < 3; k++) {
         s8 o = (s8)(k - 1);
         s16 x0 = GN_CX, y0 = GN_CY;
         if ((cs < 0 ? -cs : cs) > (sn < 0 ? -sn : sn)) y0 += o; else x0 += o;

@@ -14,6 +14,7 @@
 #include "assets.h"
 #include "s4_data.h"
 #include "sprite_data.h"
+#include "spr.h"
 #include "ghost.h"
 
 #define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
@@ -244,7 +245,12 @@ void ovl_update(void) {
 }
 
 void ovl_logic(void) { b4_update(); }
-void ovl_draw(void) { b4_draw(); }
+void ovl_draw(void) {
+    if (g_sec == SEC4_OUT && !g_calib && sec_t >= 40 && sec_t < 300) {   /* 雲海の向こうを巨大戦艦が横切る(5 面の予告) */
+        s16 x = (s16)(272 - ((sec_t - 40) >> 1)), y = (s16)(70 - (g_scam_q >> 4));   /* 世界に置く: 宇宙へ上がると下へ流れる */
+        u8 k;
+        for (k = 0; k < 4; k++) spr_put((s16)(x + k * 16), y, (u8)(PAT_SIL0 + k), G_MISC, CS_DIM);
+    } b4_draw(); }
 void ovl_vram(void) { b4_vram(); }
 
 void ovl_bands(s16 sc, u16 nx) {

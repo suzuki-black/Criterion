@@ -4,6 +4,8 @@
    ★読み込まれるのは 1 面の空中戦が始まってから(stage_start が読み込みを頼む)。ovl_init で地図を読み、
      短冊の読み込みを始める。 */
 #include "s1.h"
+#include "spr.h"
+#include "sprite_data.h"
 #include "ovl.h"
 #include "rom.h"
 #include "assets.h"
@@ -117,7 +119,13 @@ void ovl_update(void) {
 }
 
 void ovl_logic(void) { boss_update(); }
-void ovl_draw(void) { boss_draw(); }
+void ovl_draw(void) {
+    boss_draw();
+    if (g_sec == SEC_ASCENT && !g_calib && sec_t > 16 && sec_t < 100) {   /* 雲海を抜ける: 雲が下へ流れ過ぎる */
+        u8 i;
+        for (i = 0; i < 4; i++) spr_put((s16)((u8)(i * 67 + 17)), (s16)((u8)(sec_t * 5 + i * 61)) - 32, PAT_CLOUD, G_MISC, CS_CURSOR);   /* 白い雲 */
+    }
+}
 void ovl_vram(void) { boss_vram(); }
 
 /* 都市の空の帯と、LEGION の揺れの帯(横のずれ)を行の順に混ぜる */

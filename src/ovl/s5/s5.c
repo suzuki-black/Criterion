@@ -14,6 +14,8 @@
 #include "assets.h"
 #include "s5_data.h"
 #include "ghost.h"
+#include "spr.h"
+#include "sprite_data.h"
 
 #define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
 #define SINK_LEN 256
@@ -250,7 +252,14 @@ void ovl_update(void) {
 }
 
 void ovl_logic(void) { b5_update(); }
-void ovl_draw(void) { b5_draw(); }
+void ovl_draw(void) {
+    if (g_sec == SEC5_OUT && !g_calib && sec_t >= 30) {      /* 雲海の向こうに日時計の要塞が見えてくる(6 面の予告) */
+        s16 x = (s16)(250 - (sec_t >> 2)), y = (s16)(118 - (g_scam_q >> 4) + S_TOP);
+        spr_put(x, y, PAT_FORT_TL, G_MISC, CS_DIM); spr_put((s16)(x + 16), y, PAT_FORT_TR, G_MISC, CS_DIM);
+        spr_put(x, (s16)(y + 16), PAT_FORT_BL, G_MISC, CS_DIM); spr_put((s16)(x + 16), (s16)(y + 16), PAT_FORT_BR, G_MISC, CS_DIM);
+    }
+    b5_draw();
+}
 void ovl_vram(void) {
     if (g_sec == SEC5_APPROACH && !flash_t) far_draw();
     b5_vram();

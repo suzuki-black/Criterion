@@ -215,6 +215,11 @@ void ovl_logic(void) { b3_update(); }
 
 void ovl_draw(void) {
     b3_draw();
+    if (g_sec == SEC3_OUT && !g_calib && sec_t >= 60) {      /* 宇宙へ出るとガス惑星が見える(4 面の予告) */
+        s16 x = (s16)(208 - (sec_t >> 3)), y = (s16)(36 - (g_scam_q >> 4) + S_TOP);
+        spr_put(x, y, PAT_GAS_TL, G_MISC, CS_QUANTA); spr_put((s16)(x + 16), y, PAT_GAS_TR, G_MISC, CS_QUANTA);
+        spr_put(x, (s16)(y + 16), PAT_GAS_BL, G_MISC, CS_QUANTA); spr_put((s16)(x + 16), (s16)(y + 16), PAT_GAS_BR, G_MISC, CS_QUANTA);
+    }
     if (g_sec == SEC3_ACCEL || g_sec == SEC3_TOP) {           /* 隔壁の柱(すき間の上と下にスプライトを積む) */
         u8 i;
         for (i = 0; i < S3_NBULK; i++) {

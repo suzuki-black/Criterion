@@ -194,7 +194,21 @@ void ovl_draw(void) {
     }
     b2_draw();
 }
-void ovl_vram(void) { b2_vram(); }
+/* 接続(指示書 5.2): 月面からマスドライバーの光の線が伸び、そこへ加速する。表示リングの 2 行を左右 512 ドットとも光の色で
+   塗る(横スクロールしても切れない)。3 面へ移る前に空の色へ戻す */
+static u8 beam_row;
+static void beam_vram(void) {
+    if (g_sec != SEC2_OUT || g_calib) return;
+    if (sec_t == 118) beam_row = (u8)(100 + g_vscroll);      /* 自機の少し下の高さ */
+    if ((sec_t >= 118 && sec_t < 124) || sec_t == 196) vdp_cmd_wait();
+    if (sec_t >= 118 && sec_t < 124) {                        /* 左から伸びる(1 フレームに 1/4 ずつ。ページ 0 → 1) */
+        u8 k = (u8)(sec_t - 118);
+        if (k < 4) vdp_hmmv((u16)((k & 1) * 128u), (u16)(beam_row + ((k & 2) ? 256u : 0u)), 128, 2, 0xBB);
+        else vdp_hmmv(0, (u16)(beam_row - 1 + ((k & 1) ? 256u : 0u)), 256, 1, 0xFF);   /* 芯を白く */
+    }
+    if (sec_t == 196) { vdp_hmmv(0, (u16)(beam_row - 1), 256, 3, 0x11); vdp_cmd_wait(); vdp_hmmv(0, (u16)(beam_row - 1 + 256u), 256, 3, 0x11); }
+}
+void ovl_vram(void) { b2_vram(); beam_vram(); }
 
 /* 地面の帯: 宇宙の色(色 1)と、KILOGRAM の重力レンズ(球の上と下の HR ポーリング帯) */
 void ovl_bands(s16 sc, u16 nx) {

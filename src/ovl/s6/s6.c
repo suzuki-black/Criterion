@@ -16,6 +16,7 @@
 #include "assets.h"
 #include "s6_data.h"
 #include "spr.h"
+#include "sprite_data.h"
 #include "sys.h"
 
 #define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
@@ -151,7 +152,17 @@ void ovl_update(void) {
 }
 
 void ovl_logic(void) { b6_update(); }
-void ovl_draw(void) { b6_draw(); }
+void ovl_draw(void) {
+    if (g_sec == SEC6_OUT && !g_calib && sec_t > 100) {      /* 空が裂けて母艦の入口が開く(7 面の予告) */
+        u8 i, o = (u8)(sec_t - 100 > 64 ? 16 : (sec_t - 100) >> 2);
+        for (i = 0; i < 6; i++) {
+            s16 y = (s16)(16 + i * 16);
+            spr_put((s16)(196 - o), y, (u8)(PAT_RIFT0 + (i & 1)), G_ENEMY, 0);
+            spr_put((s16)(196 + o), y, (u8)(PAT_RIFT1 - (i & 1)), G_ENEMY, 0);
+        }
+    }
+    b6_draw();
+}
 
 void ovl_vram(void) {
     /* YJK の惑星: 偶数バイト → ページ 0、奇数バイト → ページ 2 の 0..47 行(リングの 0..47 行は見えていない) */
@@ -170,7 +181,10 @@ void ovl_vram(void) {
 void ovl_bands(s16 sc, u16 nx) {
     u8 bi = ras_back_index(), n = g_split_n;
     RasEntry *e;
-    stage_ev_pal(0, sky);
+    {
+        static const u8 tear[3] = { 7, 7, 7 };               /* 裂ける瞬間、空が白く光る */
+        stage_ev_pal(0, (g_sec == SEC6_OUT && sec_t > 100 && sec_t < 106) ? tear : sky);
+    }
     stage_ev_scroll(0, nx);
     if (n) {
         /* 帰線の 244 行: SCREEN 12(YJK)、ページ 0(インターリーブ)、R#23 = 0、スプライトなし */
