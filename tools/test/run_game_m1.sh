@@ -5,7 +5,8 @@
 #      (撃ち落とした敵の Quanta を拾えるかは時間割しだいなので、最後に 1 個を自機の位置へ置いて拾わせる)
 #   2. ゲージ: SPLIT を確定 → split=1 / RAY を確定 → ray=1 かつ split=0(排他)/ ∞ で LIMIT BREAK →
 #      敵が消え、ray が 1 段下がる
-#   3. 被弾: 残機 1 で敵弾を自機に当てる → 残機 0 → GAME OVER → A で起動ロゴから(残機 3・得点 0)。
+#   3. 被弾: 残機 1 で敵弾を自機に当てる → 残機 0 → GAME OVER(1 字ずつ押し終えてから A)→ ネームエントリー(残機 3・得点 0)
+#      → SPACE で 3 字と決定 → 巻き戻し → タイトル(ランキングに得点が入る)。
 #      ★再開は表示リングの雲とタイトルの素材を描き直すので約 1 秒かかる(表示を止めて)
 # 画面も 2 枚撮る(game_play.png / game_over.png)。
 #   usage: tools/test/run_game_m1.sh <作業ディレクトリ>
@@ -16,7 +17,7 @@ NOI=build/game.noi
 MACHINE=${MACHINE:-My_FS-A1ST_512K}
 mkdir -p "$OUT"
 sym() { awk -v s="$1" '$2==s{print $3}' "$NOI"; }
-ST=$(sym _g_stat); GA=$(sym _g_gauge); PL=$(sym _g_pl); EN=$(sym _g_enemy); ES=$(sym _g_eshot); INV=$(sym _g_dbg_invul); IT=$(sym _g_item)
+ST=$(sym _g_stat); TMODE=$(sym _g_title_mode); RSC=$(sym _g_rank_sc); GA=$(sym _g_gauge); PL=$(sym _g_pl); EN=$(sym _g_enemy); ES=$(sym _g_eshot); INV=$(sym _g_dbg_invul); IT=$(sym _g_item)
 PCMOFF=$(awk '$2=="_g_pcm_off"{print $3}' "$NOI")   # ★PCM は切る(エンジンの時間を見る。PCM は run_game_m7.sh)
 T="$OUT/game_m1.tcl"
 cat > "$T" <<TCL
@@ -79,11 +80,19 @@ after time 38.2 {
   debug write_block memory $ES [binary format sususus \$bx \$by 0 0]
   wr [expr {$ES+8}] 1
 }
+after time 38.1 { debug write_block memory [expr {$PL+9}] [binary format s 6000] }   ;# ランキングに入る得点(60000)にしてからやられる
 after time 38.4 { check hit [expr {[rd [expr {$PL+8}]] == 0 && [rd [expr {$PL+4}]] == 0}] "lives=[rd [expr {$PL+8}]] alive=[rd [expr {$PL+4}]]" }
-after time 40.5 { check game_over [expr {[rd [expr {$ST+12}]] == 1}] "state=[rd [expr {$ST+12}]]"; screenshot -raw "$OUT/game_over.png" }
-after time 40.6 { key 8 0x01 0.1 }
-after time 42.2 { check restart [expr {[rd [expr {$ST+12}]] == 0 && [rd [expr {$ST+14}]] == 0 && [rd [expr {$PL+8}]] == 3 && [rd16 [expr {$PL+9}]] == 0}] "state=[rd [expr {$ST+12}]] phase=[rd [expr {$ST+14}]] lives=[rd [expr {$PL+8}]] score=[rd16 [expr {$PL+9}]]" }
-after time 42.3 { if {\$fails} { puts \$f "判定: NG (\$fails)" } else { puts \$f "判定: OK" }; close \$f; exit }
+after time 40.5 { check game_over [expr {[rd [expr {$ST+12}]] == 1}] "state=[rd [expr {$ST+12}]]"; set ::last [rd16 [expr {$PL+9}]] }
+after time 41.8 { screenshot -raw "$OUT/game_over.png" }
+after time 42.6 { key 8 0x01 0.1 }
+after time 44.6 { check restart [expr {[rd [expr {$ST+12}]] == 0 && [rd [expr {$ST+14}]] == 1 && [rd [expr {$PL+8}]] == 3 && [rd16 [expr {$PL+9}]] == 0 && [rd $TMODE] == 1}] "state=[rd [expr {$ST+12}]] phase=[rd [expr {$ST+14}]] lives=[rd [expr {$PL+8}]] score=[rd16 [expr {$PL+9}]] 場面=[rd $TMODE](1 = ネームエントリー)"; screenshot -raw "$OUT/name_entry.png" }
+foreach t {45.0 45.4 45.8 46.4} { after time \$t { key 8 0x01 0.1 } }
+after time 46.8 { check rewind [expr {[rd $TMODE] == 2}] "場面=[rd $TMODE](2 = 巻き戻し)" }
+after time 50.0 { if {[catch {
+  set got 0; for {set i 0} {\$i < 10} {incr i} { if {[rd16 [expr {$RSC + \$i*2}]] == \$::last} { set got 1 } }
+  check rank [expr {[rd $TMODE] == 0 && [rd [expr {$ST+14}]] == 1 && \$got}] "場面=[rd $TMODE] phase=[rd [expr {$ST+14}]] 表に得点=\${got} 得点=\${::last}0"
+} err]} { check rank 0 "Tcl のエラー: \$err" } }
+after time 50.2 { if {\$fails} { puts \$f "判定: NG (\$fails)" } else { puts \$f "判定: OK" }; close \$f; exit }
 TCL
 timeout 240 openmsx -machine "$MACHINE" -carta "$ROM" -romtype ASCII8 -script "$T" >/dev/null 2>&1 || true
 cat "$OUT/game_m1.log"

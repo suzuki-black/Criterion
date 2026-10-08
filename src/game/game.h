@@ -218,6 +218,15 @@ void infx_update(void);             /* 論理の段 */
 void infx_vram(void);               /* VRAM の窓 */
 void infx_draw(void);               /* スプライトの段 */
 extern u8 g_infx_mode;              /* 0 なら上の 3 つは呼ばない(第 2 バンク) */
+/* ---- タイトルへ戻る理由とランキング(指示書 4.3 / 4.4)。タイトルのオーバレイが読む ---- */
+enum { AO_BOOT, AO_OVER, AO_DEMO };
+extern u8 g_after_over;             /* AO_OVER: ゲームオーバー(ネームエントリー → 巻き戻し)、AO_DEMO: デモの終わり(ランキング) */
+extern u16 g_last_score;            /* ゲームオーバーの得点(10 点単位) */
+#define RANK_N 10
+extern u8 g_rank_nm[RANK_N][3];
+extern u16 g_rank_sc[RANK_N];       /* 10 点単位 */
+extern u8 g_rank_ok;                /* 0x5A = 表を作った */
+extern u8 g_title_mode;             /* タイトルの中の場面(選曲が見る。1 = ネームエントリー) */
 /* ---- 面の進行と縦に長い世界(stage.c) ----
    縦の座標 s: 地面の区間の画面の行と同じ(1 面の都市: 0 = 雲の底、158 = 歩道)。空中戦の空と雲は s = -188..-1。
    表示リングの行 = (188 + s) & 255、R#23 = (188 + g_scam) & 255。g_scam = 画面の上端の s。 */

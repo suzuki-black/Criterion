@@ -102,6 +102,10 @@ static const u8 big_lay[] = { 2, 2, 7, 1, 3, 4, 4, 4, 5, 4 };       /* 割り振
 static const u8 sec_sec[] = { 21, 63, 64, 0, 7, 15, 24, 33, 44, 52, 55 };
 static const u8 sec_lay[] = { 1, 4, 4, 6, 6, 6, 6, 6, 6, 6, 6 };    /* 0.. = 各面の空中戦(編隊の組を多く) */
 u8 g_infx_mode;                    /* ∞ の表示(第 2 バンクの infx.c)。0 = なし */
+u8 g_after_over, g_title_mode, g_rank_ok;
+u16 g_last_score;
+u8 g_rank_nm[RANK_N][3];
+u16 g_rank_sc[RANK_N];
 static u8 juice_t, juice_tier, juice_len, bs_last;
 static void juice(void) {
     u8 s = g_boss_state;
@@ -222,7 +226,9 @@ void main(void) {
 
     for (;;) {
         static u8 demo_end;
-        static u8 col_now, col_done, pat_now;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
+        static u8 col_now, col_done, pat_now;
+        static u16 over_t;
+        static s8 over_spd;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
         u16 late0 = g_frame_late, idle;
         u8 ph;
         idle = frame_sync(1);
@@ -252,11 +258,12 @@ void main(void) {
         if (g_phase >= PH_AIR) stage_pump_nb();   /* 列の描き込みと GHOST: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
         input_read();
         if (g_demo) {                                          /* デモ: 何か押すか 50 秒でタイトルへ */
-            if (g_in || demo_t >= 3000) { g_demo = 0; demo_end = 1; }
+            if (g_in || demo_t >= 3000) { g_demo = 0; demo_end = 1; g_after_over = AO_DEMO; }   /* デモの後はランキング */
             else demo_input();
         }
         ph = g_phase;
         if (ph <= PH_SORTIE) title_update();
+        if (state == ST_OVER) g_scroll_speed = over_spd;          /* ゲームオーバー: 面の進行に関わらず慣性で止まる */
         bg_scroll();
         if (g_phase >= PH_AIR) stage_update();   /* 敵(砲台)が世界の位置を使うので、敵より先に */
         if (g_infx_mode) infx_update();                       /* ★第 2 バンクは仕事のあるときだけ呼ぶ(毎フレームの呼び出しで重い場面が遅れた) */
@@ -264,14 +271,24 @@ void main(void) {
             if (g_dbg_invul || g_demo) g_pl.invul = 2;
             player_update();
             if (ph >= PH_AIR) { stage_pump_nb(); if (!g_slow) { enemy_update(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_logic(); } }
-            if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) {
-                state = ST_OVER;
-                font_text(HUD_PAGE, 136, HUD_ROW1, 13, 0, "GAME OVER");
+            if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) { state = ST_OVER; over_t = 0; over_spd = g_scroll_speed; }
+        } else if (state == ST_OVER) {
+            /* ゲームオーバー(指示書 4.3): スクロールが慣性で止まり、文字を 1 字ずつ押す。押し終えたら A か 5 秒でネームエントリーへ */
+            over_t++;
+            if (!(over_t & 3)) over_spd = over_spd > 0 ? (s8)(over_spd - 1) : over_spd < 0 ? (s8)(over_spd + 1) : 0;
+            if (over_t >= 30 && !(over_t & 7) && over_t < 30 + 8 * 9) {
+                static char ov[10];
+                u8 k = (u8)((over_t - 30) >> 3), i;
+                for (i = 0; i < 9; i++) ov[i] = i <= k ? "GAME OVER"[i] : ' ';
+                ov[9] = 0;
+                font_text(HUD_PAGE, 136, HUD_ROW1, 13, 0, ov);
+                if (ov[k] != ' ') sfx(SFX_TICK);
             }
-        } else if (state == ST_OVER && (g_in_edge & IN_A)) demo_end = 1;
+            if ((over_t > 110 && (g_in_edge & IN_A)) || over_t > 400) { demo_end = 1; g_after_over = AO_OVER; g_last_score = g_pl.score; }
+        }
         if (demo_end) {
-            /* ★ネームエントリーと巻き戻しは M8。今はタイトルの素材を読み直して起動ロゴから(読む間は表示を止める)。
-               デモの終わりも同じ */
+            /* ゲームオーバー・デモの終わり: タイトルの素材を読み直して(読む間は表示を止める)、タイトルのオーバレイの場面へ
+               (g_after_over: ゲームオーバー → ネームエントリー → 巻き戻し → タイトル、デモ → ランキング → タイトル) */
             *(volatile u8 *)0xF3E0 &= 0xBF;
             vdp_wreg(1, *(volatile u8 *)0xF3E0);
             bg_init();                   /* 表示リングは都市や空に描き替わっている */

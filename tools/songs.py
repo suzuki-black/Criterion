@@ -411,3 +411,16 @@ SONGS.append(Song('J02', 120, {
     'PSGB': '@0 v9 q1 ' + rep('o4a8 e8', 6) + ' r4 r4',
     'FM3': '@13 v12 o2a1 a2 r2',
 }, next='M13', loop=False, user=BRASS, free=True))
+
+# ---- M18 Record of the Unmeasured(ネームエントリー): F 長調 116、オルゴール風(PSG の分散和音 + ビブラフォン)。
+#      少し切ないが前向き。文字盤のスナップ(8 分 = 約 0.26 秒)と拍がそろう ----
+m18 = ['F', 'Dm', 'Bb', 'C', 'F', 'Am', 'Bb', 'C']
+SONGS.append(Song('M18', 116, {
+    'FM0': 'L @0 v12 o5c4 f4 a4 g8 f8 | f2 d4 e4 | f4 g4 a4 a+8 a8 | g2. r4 | '
+           'a4 o6c4 o5a4 g8 f8 | e2 c4 e4 | d4 f4 a+4 a8 g8 | f2 r4 c4',
+    'FM1': 'L @1 v8 ' + pad(m18, 1, 60),
+    'FM2': 'L @1 v8 ' + pad(m18, 2, 62),
+    'FM3': 'L @14 v10 ' + pad(m18, 0, 41),
+    'PSGA': 'L @7 v8 ' + arp(m18, 72, 12, (0, 1, 2, 3, 2, 1, 2, 1)),
+    'PSGB': 'L @7 v5 ' + rot(arp(m18, 72, 12, (0, 1, 2, 3, 2, 1, 2, 1)), 1),
+}, user=VIBE))

@@ -63,7 +63,7 @@ static u8 cf_on, cf_k, cf_item, cf_bgm, cf_dirty, cf_keys, cf_row, cf_cur;   /* 
 static const u8 cf_seq[10] = { IN_UP, IN_UP, IN_DOWN, IN_DOWN, IN_LEFT, IN_RIGHT, IN_LEFT, IN_RIGHT, 0x80, 0x40 };   /* 0x80 = B、0x40 = A */
 static const char *const cf_song[SND_NSONG + 1] = {
     "M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10", "M11", "M12", "M13", "M14A", "M14B", "M14C",
-    "M15", "M16", "M17", "J01", "J02", "STOP" };
+    "M15", "M16", "M17", "J01", "J02", "M18", "STOP" };
 static char cf_line[20];
 #define CF_COPY "@ 2026 SUZUKI-BLACK"   /* 著作権表示(@ は ©。font.c)。19 文字 = x 52..203 */
 
@@ -175,6 +175,12 @@ static s16 ease(s16 v, s16 target) {
     return (s16)(v + step);
 }
 
+static void scene_update(void);
+static void scene_draw(void);
+static void scene_vram(void);
+static void scene_build(void);
+static u8 tm;
+
 void title_update(void) {
     u8 i;
     if (g_phase == PH_LOGO) {
@@ -184,6 +190,7 @@ void title_update(void) {
         return;
     }
     if (g_phase == PH_TITLE) {
+        if (tm) { scene_update(); return; }                   /* ランキング・ネームエントリー・巻き戻し */
         if (g_split_n < YJK_H && g_pt >= 4) g_split_n = (u8)(g_split_n < 8 ? 8 : g_split_n + 2);   /* 地平線の帯が上から伸びる */
         for (i = 0; i < LOGO_BANDS; i++)
             if (g_pt >= 24 + i * 6) band_x[i] = ease(band_x[i], 0);
@@ -210,6 +217,7 @@ void title_update(void) {
 }
 
 void title_draw(void) {
+    if (tm) { scene_draw(); return; }
     if (g_phase == PH_TITLE) {
         s16 y = (s16)(150 + (g_sin64[(u8)(g_pt >> 1) & 63] >> 4));
         spr_put(40, y, PAT_SHIP_A, G_SHIP_A, 0);
@@ -219,6 +227,7 @@ void title_draw(void) {
 
 /* 下の区間でする VRAM の仕事(main.c が RAS_MARK を待ってから呼ぶ) */
 void title_vram(void) {
+    if (tm) { scene_vram(); return; }
     /* タイトルの文字(この時点ではまだ分割していない)。1 フレームに 1 行(まとめるとフレームが落ちた) */
     if (g_phase == PH_TITLE && g_pt == 1) font_text(HUD_PAGE, 72, HUD_ROW1, 11, 0, "PUSH SPACE KEY");
     if (g_phase == PH_TITLE && g_pt == 2) font_text(HUD_PAGE, 52, HUD_ROW2, 14, 0, CF_COPY);
@@ -275,12 +284,219 @@ static void title_logo_pal(void) {
     else vdp_set_pal(13, c[0], c[1], c[2]);
 }
 
+
+/* ======== ランキング・ネームエントリー・巻き戻し(指示書 4.3 / 4.4)。PH_TITLE の中の場面 ========
+   画面の 32..111 行にページ 2|3 の 128..207 行を見せ(R#23 = 96)、上下は夜の雲海。表・文字はページ 2 に書く。
+   ・ネームエントリー: 32 字の文字盤をページ 2|3 の 128..135 行に 16 ドットおきに並べ、帯の横スクロールで回す
+     (512 ドットで一周するので継ぎ目がない)。左右で回し、SPACE で決め、B で 1 字戻す。3 字で決めるか 30 秒で終わる。
+     下の雲海では測定線が自機の残骸をなぞる。
+   ・巻き戻し: 雲海を速く逆に流し、走査線のノイズ(帯ごとに横位置と色 0 を乱す)を重ねて、タイトルの地平線へ戻る。
+   ・ランキング: 上位 10 件を 1 行ずつの帯で右から滑り込ませ、1 位の色(9)を虹色に回す。終わったらロゴが組み上がる。 */
+enum { TM_TITLE, TM_NAME, TM_REWIND, TM_RANK };
+#define SC_LINE 32
+#define SC_R23  96                /* 画面の 32 行 = ページ 2|3 の 128 行(★40 から始めると 10 位の行が雲海の切り替えに掛かった) */
+#define SC_END  120
+static u8 sel, nm[3], nm_pos, nm_drawn, vjob, rep;
+static u16 tm_t, dial_x;
+static s16 rk_x[RANK_N];
+static u8 regs_s0[2][12], regs_s1[2][4], regs_s2[2][4], regs_se[2][4];
+static char sc_buf[20];
+static const char dial_ch[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.- 012";
+static const u8 rainbow[8][3] = { { 7, 0, 0 }, { 7, 4, 0 }, { 7, 7, 0 }, { 0, 7, 0 }, { 0, 7, 7 }, { 0, 2, 7 }, { 5, 0, 7 }, { 7, 0, 5 } };
+
+static void rank_init(void) {
+    static const char dn[] = "TDFINFCRIMSXOPLPSGYJKSCCVDPRAM";
+    u8 i;
+    if (g_rank_ok == 0x5A) return;
+    for (i = 0; i < RANK_N; i++) {
+        g_rank_nm[i][0] = dn[i * 3]; g_rank_nm[i][1] = dn[i * 3 + 1]; g_rank_nm[i][2] = dn[i * 3 + 2];
+        g_rank_sc[i] = (u16)(5000 - i * 450);
+    }
+    g_rank_ok = 0x5A;
+}
+
+/* 得点(10 点単位)を 6 桁に */
+static void score6(char *d, u16 v) {
+    u8 i;
+    for (i = 5; i > 0; i--) { d[i - 1] = (char)('0' + v % 10); v /= 10; }
+    d[5] = '0';
+}
+
+static u16 dial_target(void) { return (u16)((sel * 16u - 124u) & 511u); }
+
+static void scene(u8 m) {
+    u8 i;
+    g_phase = PH_TITLE; g_pt = 0; tm = m; tm_t = 0; vjob = 1; rep = 0;
+    g_title_mode = m == TM_NAME ? 1 : m == TM_REWIND ? 2 : 0;
+    g_hud_on = 0; g_split_n = 0; g_split_shown = 0; ring_logo = 0;
+    infx_reset(); bg_mix(0); vdp_set_pal(15, 7, 7, 7);
+    g_scroll_speed = m == TM_REWIND ? -24 : 1;
+    sel = 0; dial_x = dial_target(); nm_pos = 0; nm[0] = nm[1] = nm[2] = ' '; nm_drawn = 0xFF;
+    for (i = 0; i < RANK_N; i++) rk_x[i] = (s16)(256 + i * 24);
+    vdp_write_addr17(1, (u16)(0xF800u + PAT_SCAN * 32u)); for (i = 0; i < 32; i++) VDP_DAT = i < 16 ? 0x01 : 0x80;   /* 測定線 */
+}
+
+static void to_title(void) { tm = TM_TITLE; g_title_mode = 0; enter(PH_TITLE); }
+
+static void name_finish(void) {
+    u8 p = 0, i;
+    while (p < RANK_N && g_last_score <= g_rank_sc[p]) p++;
+    if (p < RANK_N) {
+        for (i = RANK_N - 1; i > p; i--) { g_rank_sc[i] = g_rank_sc[i - 1]; g_rank_nm[i][0] = g_rank_nm[i - 1][0]; g_rank_nm[i][1] = g_rank_nm[i - 1][1]; g_rank_nm[i][2] = g_rank_nm[i - 1][2]; }
+        g_rank_sc[p] = g_last_score;
+        for (i = 0; i < 3; i++) g_rank_nm[p][i] = nm[i] == ' ' ? '.' : nm[i];
+    }
+    sfx(SFX_CONFIRM);
+    scene(TM_REWIND);
+}
+
+static void name_update(void) {
+    u8 e = g_in_edge, mv = 0;
+    s16 d;
+    if (g_in & (IN_LEFT | IN_RIGHT)) {                        /* 押しっぱなしは 16 フレーム後から 6 フレームおき */
+        if (e & (IN_LEFT | IN_RIGHT)) { rep = 16; mv = 1; }
+        else if (!--rep) { rep = 6; mv = 1; }
+    }
+    if (mv) { sel = (u8)((sel + ((g_in & IN_RIGHT) ? 1 : 31)) & 31); sfx(SFX_TICK); }
+    if (e & IN_A) {
+        if (nm_pos < 3) { nm[nm_pos++] = dial_ch[sel]; sfx(SFX_ITEM); }
+        else { name_finish(); return; }
+    }
+    if ((e & IN_B) && nm_pos) { nm[--nm_pos] = ' '; sfx(SFX_DENY); }
+    d = (s16)((dial_target() - dial_x) & 511u);
+    if (d >= 256) d -= 512;
+    if (d) dial_x = (u16)((dial_x + (d / 3 ? d / 3 : (d > 0 ? 1 : -1))) & 511u);   /* 文字盤が回って止まる */
+    if (tm_t >= 1800) { while (nm_pos < 3) nm[nm_pos++] = '.'; name_finish(); }
+}
+
+static void scene_update(void) {
+    u8 i;
+    tm_t++;
+    if (tm_t == 2) { *(volatile u8 *)0xF3E0 |= 0x40; vdp_wreg(1, *(volatile u8 *)0xF3E0); }   /* 読み込みの間止めていた表示を戻す
+                                                                 (ラスターリストが効いてから。起動ロゴは main.c が戻す) */
+    if (tm == TM_NAME) name_update();
+    else if (tm == TM_REWIND) { if (tm_t >= 150) to_title(); }
+    else {
+        for (i = 0; i < RANK_N; i++) if (tm_t >= 8 + i * 4) rk_x[i] = ease(rk_x[i], 0);
+        if (tm_t >= 480 || (tm_t > 60 && (g_in_edge & IN_A))) to_title();
+    }
+}
+
+static void scene_draw(void) {
+    if (tm == TM_NAME) {
+        u8 bx = (u8)(100 + ((tm_t >> 1) & 127));
+        spr_put(150, 156, PAT_SHIP_A, G_MISC, CS_DIM);                          /* 残骸 */
+        if (bx < 216) { spr_put(bx, 136, PAT_SCAN, G_EBUL, 0); spr_put(bx, 152, PAT_SCAN, G_EBUL, 0); spr_put(bx, 168, PAT_SCAN, G_EBUL, 0); }   /* 測定線 */
+    } else if (tm == TM_RANK && tm_t < 90) {                  /* 自機が遠ざかる */
+        spr_put((s16)(40 + tm_t * 3), (s16)(150 - (tm_t >> 1)), PAT_SHIP_A, G_SHIP_A, 0);
+        spr_put((s16)(40 + tm_t * 3), (s16)(150 - (tm_t >> 1)), PAT_SHIP_B, G_SHIP_B, 0);
+    }
+}
+
+/* 1 フレームに 1 つの仕事(文字は 1 行ずつ) */
+static void scene_vram(void) {
+    u8 j = vjob, i;
+    if (!j) {
+        if (tm == TM_NAME && nm_drawn != nm_pos) {           /* 名前の 3 字 */
+            sc_buf[0] = nm[0]; sc_buf[1] = ' '; sc_buf[2] = nm[1]; sc_buf[3] = ' '; sc_buf[4] = nm[2]; sc_buf[5] = 0;
+            vdp_cmd_wait(); font_text(2, 108, 176, 15, 0, sc_buf); nm_drawn = nm_pos;
+        }
+        return;
+    }
+    vjob++;
+    if (j == 1) { vdp_hmmv(0, 512 + 128, 256, 84, 0x00); return; }           /* ページ 2 の 128..211 行 */
+    if (j == 2) { vdp_hmmv(0, 768 + 128, 256, 60, 0x00); return; }           /* ページ 3 の 128..187 行(紋章を消す。起動ロゴは次の読み込みで戻る) */
+    vdp_cmd_wait();
+    if (tm == TM_NAME) {
+        if (j <= 4) {                                         /* 文字盤: ページ 2 に 0..15、ページ 3 に 16..31(字と空白を交互に 32 字 = 256 ドット) */
+            u8 b = (u8)((j - 3) * 16);
+            {
+                static char dl[33];
+                for (i = 0; i < 16; i++) { dl[i * 2] = dial_ch[b + i]; dl[i * 2 + 1] = ' '; }
+                dl[32] = 0;
+                font_text((u8)(j - 1), 0, 128, 11, 0, dl);
+            }
+            return;
+        }
+        if (j == 5) { font_text(2, 120, 136, 13, 0, "--"); return; }   /* 選んでいる字の下線(文字盤の中央。★スプライトは文字盤の帯と
+                                                                 雲海で R#23 が違い、雲海のほうに出た) */
+        if (j == 8) { font_text(2, 68, 144, 15, 0, "ENTER YOUR NAME"); return; }
+        if (j == 6) {
+            sc_buf[0] = 'S'; sc_buf[1] = 'C'; sc_buf[2] = 'O'; sc_buf[3] = 'R'; sc_buf[4] = 'E'; sc_buf[5] = ' '; sc_buf[6] = ' ';
+            score6(sc_buf + 7, g_last_score); sc_buf[13] = 0;
+            font_text(2, 76, 160, 14, 0, sc_buf); return;
+        }
+        if (j == 7) { font_text(HUD_PAGE, 60, HUD_ROW1, 11, 0, "SPACE SET  B BACK"); return; }
+    } else if (tm == TM_RANK) {
+        if (j <= 12) {
+            u8 k = (u8)(j - 3);
+            sc_buf[0] = k == 9 ? '1' : ' '; sc_buf[1] = (char)('0' + (k == 9 ? 0 : k + 1)); sc_buf[2] = ' '; sc_buf[3] = ' ';
+            sc_buf[4] = g_rank_nm[k][0]; sc_buf[5] = g_rank_nm[k][1]; sc_buf[6] = g_rank_nm[k][2];
+            sc_buf[7] = ' '; sc_buf[8] = ' ';
+            score6(sc_buf + 9, g_rank_sc[k]); sc_buf[15] = 0;
+            font_text(2, 68, (u8)(128 + k * 8), k ? (k < 3 ? 11 : 15) : 9, 0, sc_buf);
+            return;
+        }
+        if (j == 13) { font_text(HUD_PAGE, 52, HUD_ROW1, 11, 0, "TOP 10 MEASUREMENTS"); return; }
+    } else {
+        if (j == 3) { font_text(HUD_PAGE, 104, HUD_ROW1, 13, 0, "REWIND"); return; }
+    }
+    vjob = 0;
+}
+
+/* ラスターリスト */
+static void scene_build(void) {
+    RasEntry *e = ras_back();
+    u8 bi = ras_back_index(), k = 0, i;
+    u8 *r0 = regs_s0[bi], *r1 = regs_s1[bi], *r2 = regs_s2[bi], *re = regs_se[bi];
+    u16 bx = bg_layer_x(1);
+    r0[0] = 0; r0[1] = R0_G4; r0[2] = 25; r0[3] = R25_G4; r0[4] = 8; r0[5] = R8_SPR;
+    r0[6] = 2; r0[7] = 0x3F; r0[8] = 23; r0[9] = g_vscroll; r0[10] = 5; r0[11] = spr_regs.r5a;
+    put_e(&e[k], 0, RAS_REGS | RAS_SCROLL | RAS_PAL); e[k].haze = r0; e[k].haze_n = 6;
+    e[k].r26 = VDP_R26(bx); e[k].r27 = VDP_R27(bx); sky_pal(&e[k], 0); k++;    /* 空(色 1)は夜の色 */
+    r2[0] = 5; r2[1] = spr_regs.r5b; r2[2] = 11; r2[3] = 3;   /* 96 行: 下の帯の属性表 */
+    if (tm == TM_REWIND) {                                    /* 走査線のノイズ: 帯ごとに横位置を乱し、ときどき空(色 1)を白く飛ばす
+                                                                 (★色 0 は外枠の色でもあり、光らせると画面の外まで灰色の帯が出た) */
+        u8 l;
+        for (l = 12; l < 180; l += 12) {
+            u16 x = (u16)(bx + (rnd8() & 15) - 8);
+            put_e(&e[k], l, RAS_SCROLL | RAS_PAL); e[k].r26 = VDP_R26(x); e[k].r27 = VDP_R27(x);
+            sky_pal(&e[k], (u8)(l / 26));
+            if (rnd8() < 40) { u8 f = (u8)(4 + (rnd8() & 3)); e[k].prb = (u8)((f << 4) | f); e[k].pg = f; }
+            if (l == 96) { e[k].flags |= RAS_REGS; e[k].haze = r2; e[k].haze_n = 2; }
+            k++;
+        }
+    } else {
+        r1[0] = 2; r1[1] = 0x7F; r1[2] = 23; r1[3] = SC_R23;
+        for (i = 0; i < RANK_N; i++) {                         /* 32..111 行: ページ 2|3 の 8 行ずつの帯 */
+            u16 x = tm == TM_RANK ? (u16)rk_x[i] : (i == 0 ? dial_x : 0);
+            put_e(&e[k], (u8)(SC_LINE + i * 8), RAS_SCROLL); e[k].r26 = VDP_R26(x); e[k].r27 = VDP_R27(x);
+            if (i == 0) { e[k].flags |= RAS_REGS; e[k].haze = r1; e[k].haze_n = 2; }
+            if (i == 8) { e[k].flags |= RAS_REGS; e[k].haze = r2; e[k].haze_n = 2; }   /* 96 行 */
+            if (tm == TM_RANK && i < 2) {                     /* 1 位の色 9 を虹色に回し、次の帯で戻す */
+                const u8 *c = rainbow[(tm_t >> 2) & 7];
+                e[k].flags |= RAS_PAL; e[k].pidx = 9;
+                if (i == 0) { e[k].prb = (u8)((c[0] << 4) | c[2]); e[k].pg = c[1]; }
+                else { e[k].prb = 0x25; e[k].pg = 3; }
+            }
+            k++;
+        }
+        re[0] = 2; re[1] = 0x3F; re[2] = 23; re[3] = g_vscroll;   /* 120 行: 雲海へ戻す */
+        put_e(&e[k], SC_END, RAS_REGS | RAS_SCROLL | RAS_PAL); e[k].haze = re; e[k].haze_n = 2;
+        e[k].r26 = VDP_R26(bx); e[k].r27 = VDP_R27(bx); sky_pal(&e[k], 6); k++;
+    }
+    bg_fill_hud(&e[k], bi); k++;
+    ras_commit(k);
+    g_split_shown = 0;
+}
+
 void title_build(void) {
     RasEntry *e = ras_back();
     u8 bi = ras_back_index(), k = 0, i;
     u8 *rt = regs_top[bi], *rn = regs_n[bi], *rr = regs_ring[bi], *rb = regs_b[bi];
     u8 n = g_split_n, merge;
 
+    if (tm) { scene_build(); return; }
     if (g_phase == PH_LOGO) {
         /* 紋章: ページ 3 を見せる(横 256 = ページ 3 の左端、R#23 で紋章の行を TDF_LINE に) */
         rt[0] = 2; rt[1] = 0x7F; rt[2] = 23; rt[3] = (u8)(TDF_ROW - TDF_LINE);
@@ -386,4 +602,12 @@ void title_build(void) {
     g_split_shown = n;
 }
 
-void title_start(void) { cf_on = 0; cf_k = 0; cf_dirty = 0; cf_keys = 0; cf_bgm = 0; cf_row = 0; cf_cur = 0; enter(PH_LOGO); }
+void title_start(void) {
+    u8 a = g_after_over;
+    cf_on = 0; cf_k = 0; cf_dirty = 0; cf_keys = 0; cf_bgm = 0; cf_row = 0; cf_cur = 0; tm = TM_TITLE; g_title_mode = 0;
+    g_after_over = AO_BOOT;
+    rank_init();
+    if (a == AO_OVER) scene(g_last_score > g_rank_sc[RANK_N - 1] ? TM_NAME : TM_REWIND);   /* ゲームオーバー → ネームエントリー → 巻き戻し */
+    else if (a == AO_DEMO) scene(TM_RANK);                                                  /* デモの後はランキング */
+    else enter(PH_LOGO);
+}

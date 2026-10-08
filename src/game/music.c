@@ -78,7 +78,7 @@ void music_frame(u8 over) {
     while (sec >= sec_first[st]) st++;
     if (over) w = SONG_M17;
     else if (g_phase == PH_LOGO) w = SND_NONE;
-    else if (g_phase == PH_TITLE) w = SONG_M01;
+    else if (g_phase == PH_TITLE) w = g_title_mode == 1 ? SONG_M18 : g_title_mode == 2 ? SND_NONE : SONG_M01;   /* ネームエントリー / 巻き戻し */
     else if (g_phase == PH_SORTIE) w = SONG_M02;
     else if (g_calib && g_calib < 7) w = SONG_M10;               /* 7 面の試験 01..06 */
     else {
