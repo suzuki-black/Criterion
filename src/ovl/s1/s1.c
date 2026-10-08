@@ -96,7 +96,7 @@ void ovl_update(void) {
     case SEC_ASCENT:
         if (g_calib) { if (calib_out(sec_t)) return; break; }  /* 試験に合格: 判定文 → 次の試験へ */
         g_scam_q -= 24;                                       /* 1.5 行/フレーム */
-        if (g_sky_t < 16 && !(sec_t & 7)) g_sky_t++;
+        if (g_sky_t < 6 && !(sec_t & 7)) g_sky_t++;          /* 藍の途中まで(黒へは 2 面の空中戦で。指示書 5.2) */
         if (g_scam_q <= S_AIR2 * 16) { g_scam_q = S_AIR2 * 16; enter(SEC_AIR2); }
         break;
     default:

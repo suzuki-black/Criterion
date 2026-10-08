@@ -130,6 +130,7 @@ void ovl_update(void) {
     if (g_sec >= SEC2_DOWN && g_sec <= SEC2_CENTER) twinkle();
     switch (g_sec) {
     case SEC2_AIR:
+        if (g_sky_t < 16 && !(sec_t & 63)) g_sky_t++;          /* 最後の雲を抜けて、空が藍から黒へ(指示書 5.2) */
         if ((u16)(g_wx - sec_wx) >= AIR_LEN) enter(SEC2_SINK);
         break;
     case SEC2_SINK: {

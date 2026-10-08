@@ -258,6 +258,119 @@ static void move_enemy(Enemy *e) {
     else if (e->turned == 2 && e->x < FX(-200)) enemy_kill(e, 0);
 }
 
+
+/* ---- 敵弾を動かす(asm。★C では弾 16 発で毎フレーム 0.5ms ほど。重い場面の遅れを削るため、M7 の後) ----
+   位置に速さを足し、画面の外(x: -8..264、y: -8..PLAY_H ドット)は消す。es_alive なら自機の中心 (es_plx, es_ply) と
+   比べ、横 ±3・縦 ±2 ドットの弾を消して 1 を返す(一度当たったら残りは比べない)。4 発ごとに PCM の送出口 */
+static s16 es_plx, es_ply;
+static u8 es_alive;
+static u8 eshot_move(void) __naked {
+    __asm
+        push ix
+        ld   ix, #_g_eshot
+        ld   b, #MAX_ESHOT
+        ld   c, #0                 ; C = 当たった
+    00001$:
+        ld   a, 8 (ix)
+        or   a
+        jp   z, 00009$
+        ; x += vx。x + 128 >= 4352 + 1(-8..264 ドットの外)なら消す
+        ld   l, 0 (ix)
+        ld   h, 1 (ix)
+        ld   e, 4 (ix)
+        ld   d, 5 (ix)
+        add  hl, de
+        ld   0 (ix), l
+        ld   1 (ix), h
+        ld   de, #128
+        add  hl, de
+        ld   de, #4353
+        or   a
+        sbc  hl, de
+        jp   nc, 00008$
+        ; y += vy。y + 128 >= PLAY_H * 16 + 128 + 1 なら消す
+        ld   l, 2 (ix)
+        ld   h, 3 (ix)
+        ld   e, 6 (ix)
+        ld   d, 7 (ix)
+        add  hl, de
+        ld   2 (ix), l
+        ld   3 (ix), h
+        ld   de, #128
+        add  hl, de
+        ld   de, #(PLAY_H * 16 + 129)
+        or   a
+        sbc  hl, de
+        jp   nc, 00008$
+        ; 自機に当たったか
+        ld   a, (_es_alive)
+        or   a
+        jp   z, 00009$
+        ld   l, 0 (ix)
+        ld   h, 1 (ix)
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l                     ; HL = x(ドット)
+        ld   de, (_es_plx)
+        or   a
+        sbc  hl, de
+        ld   de, #3
+        add  hl, de                ; -3..3 → 0..6
+        ld   a, h
+        or   a
+        jp   nz, 00009$
+        ld   a, l
+        cp   #7
+        jp   nc, 00009$
+        ld   l, 2 (ix)
+        ld   h, 3 (ix)
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        ld   de, (_es_ply)
+        or   a
+        sbc  hl, de
+        ld   de, #2
+        add  hl, de                ; -2..2 → 0..4
+        ld   a, h
+        or   a
+        jp   nz, 00009$
+        ld   a, l
+        cp   #5
+        jp   nc, 00009$
+        ld   c, #1
+        xor  a
+        ld   (_es_alive), a        ; 残りは比べない
+    00008$:
+        ld   8 (ix), #0
+    00009$:
+        ld   de, #10
+        add  ix, de
+        ld   a, b
+        and  #3
+        jr   nz, 00010$
+        push bc
+        call _pcmx_service
+        pop  bc
+    00010$:
+        dec  b
+        jp   nz, 00001$
+        ld   a, c
+        pop  ix
+        ret
+    __endasm;
+}
+
 void enemy_update(void) {
     u8 i, j;
     s16 plx = PX(g_pl.x) + 8, ply = PX(g_pl.y) + 8;      /* ★自機の中心はループの外で 1 回(弾 16 発 × 毎回のシフトが重かった) */
@@ -266,21 +379,14 @@ void enemy_update(void) {
     for (i = 0; i < MAX_ENEMY; i++) if ((u8)(g_enemy[i].type - 1) < E_BK - 1) { move_enemy(&g_enemy[i]); pcmx_service(); }   /* PCM の送出口(敵 1 体ごと) */
     if (g_zako_n) zako_update();                     /* 第 2 バンクの雑魚 */
 
-    for (i = 0; i < MAX_ESHOT; i++) {
+    if (g_grav) for (i = 0; i < MAX_ESHOT; i++) {             /* 重力(2 面): 弾は放物線(中心へはらせん)を描く */
         Bullet *b = &g_eshot[i];
         if (!b->on) continue;
-        if (g_grav) {                                    /* 重力: 弾は放物線(中心へはらせん)を描く */
-            if (g_grav == GRAV_DIR) { b->vx += g_gx; b->vy += g_gy; }
-            else { b->vx += (s16)((g_gcx - PX(b->x)) >> 5); b->vy += (s16)((g_gcy - PX(b->y)) >> 5); }
-        }
-        b->x += b->vx; b->y += b->vy;
-        if (!(i & 3)) pcmx_service();                    /* PCM の送出口(弾 4 発ごと) */
-        if (b->x < FX(-8) || b->x > FX(264) || b->y < FX(-8) || b->y > FX(PLAY_H)) { b->on = 0; continue; }
-        if (g_pl.alive) {
-            s16 dx = PX(b->x) - plx, dy = PX(b->y) - ply;
-            if (dx > -4 && dx < 4 && dy > -3 && dy < 3) { b->on = 0; player_hit(); }
-        }
+        if (g_grav == GRAV_DIR) { b->vx += g_gx; b->vy += g_gy; }
+        else { b->vx += (s16)((g_gcx - PX(b->x)) >> 5); b->vy += (s16)((g_gcy - PX(b->y)) >> 5); }
     }
+    es_plx = plx; es_ply = ply; es_alive = g_pl.alive;
+    if (eshot_move()) player_hit();                           /* 動かして、画面の外は消し、自機に当たったものを消す(asm) */
 
     /* 自機のショット × 敵: 画面座標を先に 8 ビットの配列へ変換し、内側は 8 ビットの比較だけにする
        (構造体の固定小数点を毎回変換する二重ループは 1 フレームの 1/3 を使っていた。M1)。体当たりも同じ配列で見る */
