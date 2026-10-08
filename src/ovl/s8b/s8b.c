@@ -367,7 +367,13 @@ void ovl_logic(void) {
         g_boss_hp = g_boss_hp > d ? (u8)(g_boss_hp - d) : 1;
     }
 }
-void ovl_draw(void) { if (g_sec == SEC8_BOSS3 && g_boss_state == BS_FIGHT) ring_draw(); }
+void ovl_draw(void) {
+    if (g_sec == SEC8_BOSS3 && g_boss_state == BS_FIGHT) ring_draw();
+    if (g_sec == SEC8_ESCAPE) {                               /* 脱出: 光の流線が後ろへ飛ぶ(最高速の手応え) */
+        u8 i;
+        for (i = 0; i < 4; i++) spr_put((s16)((u8)(200 - sec_t * 24 - i * 71)), (s16)(24 + ((i * 97 + (sec_t >> 3) * 31) & 127)), PAT_STREAK, G_MISC, CS_CURSOR);
+    }
+}
 void ovl_vram(void) {
     extern u16 g_frame_t0;
     u8 late = (u16)(sys_timer() - g_frame_t0) > 150u * 16u;   /* ★重いフレームは絵の転送・文字を次へ回す(形態の替わり目に

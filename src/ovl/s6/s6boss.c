@@ -323,9 +323,9 @@ static void gn_hand(u8 h) {        /* 針 h を平行線で(長針 2 本・短�
         old_x[old_n] = x0; old_y[old_n] = y0; old_dx[old_n] = ex; old_dy[old_n] = ey; old_n++;
     }
 }
-static void gn_vram(void) {        /* 2 フレームに 1 回: 前の針を空の色で消し、今の針を描き、根元を描き直す */
+static void gn_vram(void) {        /* 2 フレームに 1 回(針が 2 本なら 4 フレーム): 前の針を空の色で消し、今の針を描き、根元を描き直す */
     u8 k;
-    if ((t & 1) || gq_free() < 16) return;
+    if ((t & (gn_nh > 1 ? 3 : 1)) || gq_free() < 16) return;   /* ★針が 2 本(再校正版)は 4 フレームごと(試験 6 で遅れた) */
     for (k = 0; k < old_n; k++) gq_line((u16)old_x[k], (u16)(old_y[k] + 68), old_dx[k], old_dy[k], 1);
     old_n = 0;
     if (g_boss_state == BS_DYING || g_boss_state == BS_DONE || g_boss_state == BS_NONE) {

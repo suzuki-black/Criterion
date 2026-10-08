@@ -21,7 +21,7 @@
 #include "bank_int.h"
 
 /* ---- 台本 ---- */
-enum { K_TICK, K_TOCK, K_NOTCH_DN, K_NOTCH_UP, K_CALIPER, K_HATCH, K_DIAL, K_PLUMMET, K_PROTR, K_COMPASS, K_ABACUS,
+enum { K_TICK, K_TOCK, K_NOTCH_DN, K_NOTCH_UP, K_SPIRIT, K_CALIPER, K_HATCH, K_DIAL, K_PLUMMET, K_PROTR, K_COMPASS, K_ABACUS,
        K_SEXTANT, K_SMITE, K_SCANNER };
 typedef struct { u16 t; u8 kind; u8 y; } ZWave;
 
@@ -42,7 +42,7 @@ static const ZWave sc_s4[] = {   /* 4 面の大気・雲海・陽炎 */
     { 880, K_TOCK, 130 }, { 1000, K_COMPASS, 90 },
 };
 static const ZWave sc_s5[] = {   /* 5 面の艦首・甲板 */
-    { 100, K_CALIPER, 0 }, { 300, K_HATCH, 0 }, { 480, K_SEXTANT, 60 }, { 650, K_NOTCH_DN, 0 }, { 800, K_CALIPER, 0 },
+    { 40, K_SPIRIT, 0 }, { 560, K_SPIRIT, 0 }, { 100, K_CALIPER, 0 }, { 300, K_HATCH, 0 }, { 480, K_SEXTANT, 60 }, { 650, K_NOTCH_DN, 0 }, { 800, K_CALIPER, 0 },
     { 950, K_HATCH, 0 },
 };
 static const ZWave sc_s6[] = {   /* 6 面の外壁・影 */
@@ -99,6 +99,11 @@ static void spawn(u8 kind, u8 y) {
     case K_TOCK: enemy_wave(E_TOCK, FX(y), 0); break;
     case K_NOTCH_DN: enemy_wave(E_NOTCH, 0, 1); break;
     case K_NOTCH_UP: enemy_wave(E_NOTCH, 0, -1); break;
+    case K_SPIRIT: {                                          /* 水準器: 甲板(床)に据わる砲台(enemy.c の Spirit) */
+        s16 f = ter_y(250, 0);
+        if (f != TER_NONE) enemy_spawn_spirit((u16)(g_wx + 250u), (u8)(f + g_scam));
+        break;
+    }
     case K_CALIPER: spawn_on(E_CALIPER, 4, 0); break;
     case K_HATCH: spawn_on(E_HATCH, 6, 0); break;
     case K_PLUMMET:
