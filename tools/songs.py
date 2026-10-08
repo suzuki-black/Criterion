@@ -392,7 +392,7 @@ SONGS.append(Song('M17', 60, {
     'FM0': 'PP03 @0 v12 o5a2 f2 | e2 d2',
     'FM1': '@0 v11 o5f2 d2 | c+2 o4a2',
     'FM2': '@0 v11 o5d2 o4a+2 | a2 f2',
-    'FM3': '@14 v12 o2d2 o1a+2 | a2 o2d2',
+    'FM3': '@14 v12 ' + cri(['Dm', 'A']),                    # Criterion の動機(同じ音を 7 つ刻んで半音下)で測り終える
     'PSGC': 'N1 @1 v12 q1 r1 r2. o5c4',
 }, loop=False, user=STRINGS))
 
@@ -424,3 +424,12 @@ SONGS.append(Song('M18', 116, {
     'PSGA': 'L @7 v8 ' + arp(m18, 72, 12, (0, 1, 2, 3, 2, 1, 2, 1)),
     'PSGB': 'L @7 v5 ' + rot(arp(m18, 72, 12, (0, 1, 2, 3, 2, 1, 2, 1)), 1),
 }, user=VIBE))
+
+# ---- M08C(5 面の撃沈の後の哀歌、約 13 秒): 行進曲の旋律を遅く、弦で。くり返さない ----
+m08c = ['Cm', 'Ab', 'Fm', 'G', 'Cm', 'Fm', 'G', 'Cm']
+SONGS.append(Song('M08C', 72, {
+    'FM0': '@0 v11 o5c2. d4 | d+2 c2 | f2 d+4 d4 | d1 | c2. d4 | d+2 f2 | d2 o4b2 | o5c1',
+    'FM1': '@9 v8 ' + pad(m08c, 1, 58),
+    'FM2': '@9 v8 ' + pad(m08c, 2, 62),
+    'FM3': '@14 v10 ' + pad(m08c, 0, 36),
+}, loop=False, user=STRINGS))

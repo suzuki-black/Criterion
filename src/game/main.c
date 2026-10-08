@@ -317,7 +317,7 @@ void main(void) {
             spr_voff = (u8)(g_vscroll + g_roll);   /* スプライトの Y はプレイエリアの R#23 を足して表へ(ロールは画面だけ) */
             spr_begin();
             if (g_phase <= PH_TITLE) title_draw();
-            else { if (g_phase == PH_SORTIE) title_draw(); player_draw(); if (g_infx_mode) infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
+            else { if (g_phase == PH_SORTIE) title_draw(); player_draw(); if (g_infx_mode) infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); if (g_lb) lb_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
             if (g_phase <= PH_TITLE && g_infx_mode) infx_draw();
         }
         wait_vram_window();              /* ここから先は VRAM を書く */

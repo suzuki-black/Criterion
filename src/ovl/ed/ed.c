@@ -32,7 +32,7 @@ static const u8 black[3] = { 0, 0, 0 };
 static const char *const roll[] = {
     "CRITERION", "", "", "STAFF", "", "GAME DESIGN", "TDF", "", "PROGRAM", "TDF", "", "GRAPHICS", "TDF", "",
     "SOUND", "TDF", "", "", "SPECIAL THANKS", "MSX TURBO R USERS", "", "", "THANK YOU FOR PLAYING", "", "", "",
-    "SUBJECT INFINITAS", "", "STATUS INFINITY" };
+    "SUBJECT: INFINITAS", "", "STATUS: ~" };   /* ~ は ∞(font.c) */
 #define NROLL (sizeof roll / sizeof roll[0])
 #define ROLL_S0 (CAM_ROLL0 + 200)  /* 1 行目の s(16 行おき) */
 

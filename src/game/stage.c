@@ -124,6 +124,7 @@ void calib_begin(u8 k) {
     char s[27];
     static const char head[] = "TEST 0  SUBJECT: INFINITAS";
     u8 i;
+    if (k == 7) { stage_banner("FINAL TEST  SUBJECT: INFINITAS"); g_hall = 1; return; }   /* 最後の試験(指示書 5.7) */
     for (i = 0; i < sizeof head; i++) s[i] = head[i];
     s[6] = (char)('0' + k);
     stage_banner(s);

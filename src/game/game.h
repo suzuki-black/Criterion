@@ -160,6 +160,7 @@ void banner_vram(void);            /* 第 2 バンク */
 void weap_init(void);              /* 出撃・復活: 分身の軌跡を自機の位置で埋める */
 void weap_update(void);            /* player_update の終わり(分身・防壁・爆雷) */
 void weap_draw(void);              /* player_draw の中 */
+void lb_draw(void);                /* LIMIT BREAK の衝撃波(g_lb の間) */
 extern u8 g_fired;                 /* このフレームに自機が撃った(分身も撃つ) */
 extern u8 g_drops;                 /* 生きている DROP の爆雷の数 */
 extern u8 g_shot_at;               /* pl_fire_from が次に空きを探す弾の枠 */

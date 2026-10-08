@@ -211,7 +211,7 @@ static void rod_vram(void) {
 static s16 rr;                     /* 半径(× 4) */
 static u8  ra, msg;
 static u8  tt_hp[NT];
-static const char *const msgs[4] = { "MEASURING...", "VALUE: 9999999", "VALUE OUT OF RANGE", "VALUE: INFINITY" };
+static const char *const msgs[4] = { "MEASURING...", "VALUE: 9999999", "VALUE OUT OF RANGE", "~" };   /* ~ は ∞(font.c) */
 static s16 tpx[NT], tpy[NT];       /* 砲台の位置(1 フレームに 1 回求める) */
 static void ring_pos(void) {
     u8 k;

@@ -228,9 +228,9 @@ $(BUILD)/ovl_%.bin: $(BUILD)/ovl_%.ihx tools/gen_ovl.py
 #   本体の後に、ページ 2 の記号を除いた本体の記号(resident_bk.rel)でリンクする。ライブラリ(z80.lib)は自分で持つ。
 #   本体からは呼び口(bkstubs.rel、ページ 1)を通して呼ぶ。入口は BK_EXPORTS の順の JP 表。
 BK_BASE  := 0x8000
-BK_DATA  := 0xBC00
+BK_DATA  := 0xBE00
 BK_DEND  := 0xC000
-BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw zako_script zako_update zako_draw zako_killed pl_fire_from gauge_steal
+BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw zako_script zako_update zako_draw zako_killed pl_fire_from gauge_steal lb_draw music_frame
 BK_SIZE_FIRST := infx
 BK_RELS  := $(patsubst src/bank/%.c,$(BUILD)/bk_%.rel,$(wildcard src/bank/*.c))
 $(BUILD)/bk_%.rel: src/bank/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)

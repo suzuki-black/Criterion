@@ -59,16 +59,18 @@ after time 36 {
   screenshot -raw "$OUT/game_play.png"
 }
 # ---- 2. ゲージの確定 ----
-after time 36.2 { wr $GA 6; wr [expr {$GA+1}] 1; wr [expr {$GA+2}] 0 }
+# ★確定の前にアイテムを消す(押すまでの間に Quanta を拾うとカーソルが隣へ進み、別の強化を確定した)
+proc noitem {} { for {set i 0} {\$i < 8} {incr i} { wr [expr {$IT + \$i*11 + 8}] 0 } }
+after time 36.2 { noitem; wr $GA 6; wr [expr {$GA+1}] 1; wr [expr {$GA+2}] 0 }
 after time 36.3 { key 5 0x20 0.1 }
 after time 36.6 { set g [gauge]; check split [expr {[lindex \$g 7] == 1}] "split=[lindex \$g 7]" }
-after time 36.8 { wr $GA 7; wr [expr {$GA+1}] 1; wr [expr {$GA+2}] 0 }
+after time 36.8 { noitem; wr $GA 7; wr [expr {$GA+1}] 1; wr [expr {$GA+2}] 0 }
 after time 36.9 { key 5 0x20 0.1 }
 after time 37.2 { set g [gauge]; check ray_exclusive [expr {[lindex \$g 8] == 1 && [lindex \$g 7] == 0}] "ray=[lindex \$g 8] split=[lindex \$g 7]" }
 # 敵を 1 機置いてから(画面の中央、Tick、編隊なし)
 after time 37.4 {
   debug write_block memory $EN [binary format cucususususucucucucu 1 0 3200 1280 [expr {-24 & 0xFFFF}] 0 1280 0 255 1 0]
-  set ::en0 [enemies]; wr $GA 0; wr [expr {$GA+1}] 1; wr [expr {$GA+2}] 0
+  noitem; set ::en0 [enemies]; wr $GA 0; wr [expr {$GA+1}] 1; wr [expr {$GA+2}] 0
 }
 after time 37.5 { key 5 0x20 0.05 }
 after time 37.56 { set g [gauge]; check limit_break [expr {\$::en0 > 0 && [enemies] == 0 && [lindex \$g 8] == 0}] "敵 \$::en0 → [enemies] ray=[lindex \$g 8]" }
