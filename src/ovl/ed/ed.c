@@ -74,14 +74,13 @@ void ovl_update(void) {
         break;
     case SECE_FINAL:                                          /* ∞ → 2 周目 */
         if (sec_t == 240) { u8 i; for (i = 0; i < 16; i++) vdp_set_pal(i, 0, 0, 0); }
-        if (sec_t == 250) {
+        if (sec_t == 250) {                                   /* 2 周目の出撃の場面へ(指示書 4.5)。タイトルの素材を読み直し(本体が表示を
+                                                                 止めて行う)、ロゴが飛び去る出撃から。得点・残機・強化はそのまま */
             g_loop++;
             g_split_n = 0; g_blk_skip = 0; g_blk_base = 0;
             bg_mix(15);                                       /* ★bg_mix は値が替わったときしか書かないので、一度ずらす(終幕で色 2..7 を
                                                                  黒にしたまま戻らず、2 周目の雲が黒かった) */
-            bg_init();                                        /* 雲の空を描き直す(色は bg_init が戻す) */
-            g_phase = PH_AIR; g_pt = 0; g_scroll_speed = 4;
-            stage_start();                                    /* 1 面の空中戦から(1 面のオーバレイを頼む) */
+            g_after_over = AO_LOOP; g_reload = 1;
         }
         break;
     default:

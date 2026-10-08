@@ -61,6 +61,7 @@ static u8 state;
 /* ---- デモ(M7 の後、指摘 B8): タイトルで 15 秒触らないと、自動操縦の 1 面でパワーアップの使い方を見せる。
    何か押すとタイトルへ戻る。説明は面の開始表示の帯に出す(フォントは英大文字・数字と - . " , / だけ) ---- */
 u8 g_demo;
+u8 g_demo_k, g_demo_save;                                   /* デモの持ち回り(1・3・4・5 面。指示書 4.2)と、面セレクトの元の値 */
 static u16 demo_t;
 static u8 demo_step, demo_seen, demo_prev;
 static void demo_input(void) {
@@ -77,7 +78,8 @@ static void demo_input(void) {
     }
     if (py < ty - 3) v |= IN_DOWN; else if (py > ty + 3) v |= IN_UP;
     if (px < tx - 3) v |= IN_RIGHT; else if (px > tx + 3) v |= IN_LEFT;
-    if (!(demo_seen & 1) && !bd) { demo_seen |= 1; stage_banner("FORMATION DOWN - QUANTA"); }
+    if (!(demo_seen & 4)) { if (g_phase >= PH_AIR) { demo_seen |= 4; stage_banner("DEMONSTRATION"); } }
+    else if (!(demo_seen & 1) && !bd && demo_t > 200) { demo_seen |= 1; stage_banner("FORMATION DOWN - QUANTA"); }
     if (!(demo_seen & 2) && g_gauge.cursor) { demo_seen |= 2; stage_banner("QUANTA MOVES THE CURSOR"); }
     /* THRUST(1)→ ECHO(2)で確定、最後は中心(4)で LIMIT BREAK */
     if (g_gauge.armed && !(demo_prev & IN_B) && demo_step < 3 && g_gauge.cursor == (u8)(demo_step == 2 ? 4 : demo_step + 1)) {
@@ -102,7 +104,8 @@ static const u8 big_lay[] = { 2, 2, 7, 1, 3, 4, 4, 4, 5, 4 };       /* 割り振
 static const u8 sec_sec[] = { 21, 63, 64, 0, 7, 15, 24, 33, 44, 52, 55 };
 static const u8 sec_lay[] = { 1, 4, 4, 6, 6, 6, 6, 6, 6, 6, 6 };    /* 0.. = 各面の空中戦(編隊の組を多く) */
 u8 g_infx_mode;                    /* ∞ の表示(第 2 バンクの infx.c)。0 = なし */
-u8 g_after_over, g_title_mode, g_rank_ok;
+u8 g_after_over, g_title_mode, g_rank_ok, g_vdp_mon, g_reload;
+#define MON(c) do { if (g_vdp_mon) vdp_wreg(7, (c)); } while (0)   /* VDP MONITOR: 外枠 = 論理 12・スプライト 9・VRAM 13・待ち 0(割込みの間は 15) */
 u16 g_last_score;
 u8 g_rank_nm[RANK_N][3];
 u16 g_rank_sc[RANK_N];
@@ -231,8 +234,10 @@ void main(void) {
         static s8 over_spd;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
         u16 late0 = g_frame_late, idle;
         u8 ph;
+        MON(0);
         idle = frame_sync(1);
         g_frame_t0 = sys_timer();
+        MON(12);
         if (g_frame_late != late0) g_stat.late++;
         g_slow = slow_next;
         slow_next = (u8)(!g_slow && g_phase >= PH_AIR && (g_frame_late != late0 || idle < (g_stat.base >> 2)));
@@ -258,7 +263,7 @@ void main(void) {
         if (g_phase >= PH_AIR) stage_pump_nb();   /* 列の描き込みと GHOST: VDP が空いていれば出す(待たない)。1 フレームに数か所 */
         input_read();
         if (g_demo) {                                          /* デモ: 何か押すか 50 秒でタイトルへ */
-            if (g_in || demo_t >= 3000) { g_demo = 0; demo_end = 1; g_after_over = AO_DEMO; }   /* デモの後はランキング */
+            if (g_in || demo_t >= 3000) { g_demo = 0; demo_end = 1; g_after_over = AO_DEMO; g_start_stage = g_demo_save; }   /* デモの後はランキング */
             else demo_input();
         }
         ph = g_phase;
@@ -286,6 +291,7 @@ void main(void) {
             }
             if ((over_t > 110 && (g_in_edge & IN_A)) || over_t > 400) { demo_end = 1; g_after_over = AO_OVER; g_last_score = g_pl.score; }
         }
+        if (g_reload) { g_reload = 0; demo_end = 1; }
         if (demo_end) {
             /* ゲームオーバー・デモの終わり: タイトルの素材を読み直して(読む間は表示を止める)、タイトルのオーバレイの場面へ
                (g_after_over: ゲームオーバー → ネームエントリー → 巻き戻し → タイトル、デモ → ランキング → タイトル) */
@@ -294,7 +300,8 @@ void main(void) {
             bg_init();                   /* 表示リングは都市や空に描き替わっている */
             ovl_load_sync(OVL_TITLE);
             title_load();
-            game_start();
+            if (g_after_over != AO_LOOP) game_start();       /* 2 周目は得点・残機・強化を引き継ぐ */
+            else state = ST_PLAY;
             title_start();
             frame_begin();
             demo_end = 0; demo_t = 0; demo_step = 0; demo_seen = 0; demo_prev = 0;
@@ -305,14 +312,16 @@ void main(void) {
         if (!g_slow && g_phase >= PH_AIR && (u16)(sys_timer() - g_frame_t0) > SPR_DEADLINE) {
             g_slow = 1; g_stat.slow++;   /* ここまでで重かった: スプライトは前のフレームのまま */
         }
+        MON(9);
         if (!g_slow) {
             spr_voff = (u8)(g_vscroll + g_roll);   /* スプライトの Y はプレイエリアの R#23 を足して表へ(ロールは画面だけ) */
             spr_begin();
             if (g_phase <= PH_TITLE) title_draw();
-            else { player_draw(); if (g_infx_mode) infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
+            else { if (g_phase == PH_SORTIE) title_draw(); player_draw(); if (g_infx_mode) infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
             if (g_phase <= PH_TITLE && g_infx_mode) infx_draw();
         }
         wait_vram_window();              /* ここから先は VRAM を書く */
+        MON(13);
         /* ★CPU で VRAM を書く仕事(属性表・HUD の文字)を先に、VDP のコマンドを出す仕事(stage_vram)を後に。
            VDP がコマンドを実行している間は CPU の VRAM の書き込みも遅くなる(Pawn を足したら 1 フレームが
            90 ライン延びた)。コマンドはフレームの頭とここで出し、次のフレームの論理の間に VDP が進める */

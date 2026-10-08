@@ -63,6 +63,15 @@ static const ZWave sc_s8[] = {   /* 8 面の空中戦 */
 
 static u8 rnd_lo(void) { return rnd8(); }
 
+/* 生きている雑魚の番号の一覧(★毎フレーム 16 体のプールを全部見ると、1 体でも 1 フレームに 0.3ms 使った) */
+static u8 zk[MAX_ENEMY], zn;
+static Enemy *zk_add(Enemy *e) {
+    if (!g_zako_n) zn = 0;                                    /* enemy_init(面の始め)で 0 になった: 一覧も空に */
+    if (zn < MAX_ENEMY) zk[zn++] = (u8)(e - g_enemy);
+    g_zako_n = zn;
+    return e;
+}
+
 /* 床(天井)に据わる雑魚: 画面の右端の外の床。無ければ出さない */
 static Enemy *spawn_on(u8 type, u8 hp, u8 up) {
     s16 f = ter_y(250, up);
@@ -72,8 +81,7 @@ static Enemy *spawn_on(u8 type, u8 hp, u8 up) {
     e->type = type; e->t = 0; e->hp = hp; e->form = 0xFF; e->turned = 0; e->phase = 0;
     e->y0 = (s16)(g_wx + 264u);                               /* 世界の横位置 */
     e->x = FX(264); e->y = FX(f); e->vx = e->vy = 0;
-    g_zako_n++;
-    return e;
+    return zk_add(e);
 }
 
 static Enemy *spawn_air(u8 type, u8 hp, u8 y) {
@@ -81,8 +89,7 @@ static Enemy *spawn_air(u8 type, u8 hp, u8 y) {
     if (!e) return 0;
     e->type = type; e->t = 0; e->hp = hp; e->form = 0xFF; e->turned = 0; e->phase = rnd_lo();
     e->x = FX(268); e->y = FX(y); e->y0 = y; e->vx = e->vy = 0;
-    g_zako_n++;
-    return e;
+    return zk_add(e);
 }
 
 static void spawn(u8 kind, u8 y) {
@@ -189,7 +196,7 @@ static void m_hatch(Enemy *e) {
         if (c) {
             c->type = E_CRAFT; c->t = 0; c->hp = 1; c->form = 0xFF; c->turned = 0;
             c->x = e->x; c->y = e->y - FX(8); c->vx = 0; c->vy = -FX(2);
-            g_zako_n++;
+            zk_add(c);
         }
     }
 }
@@ -284,10 +291,11 @@ static void m_scanner(Enemy *e) {
 }
 
 void zako_update(void) {
-    u8 i, n = 0;
-    Enemy *e = g_enemy;
-    for (i = 0; i < MAX_ENEMY; i++, e++) {
-        if (e->type < E_BK) continue;
+    u8 i, j = 0;
+    if (!g_zako_n) { zn = 0; return; }
+    for (i = 0; i < zn; i++) {                                /* 回す間に増えた(ハッチの小型機)分も同じ回で見る */
+        Enemy *e = &g_enemy[zk[i]];
+        if (e->type < E_BK) continue;                         /* 弾・LIMIT BREAK で倒された */
         e->t++;
         switch (e->type) {
         case E_CALIPER: m_caliper(e); break;
@@ -305,9 +313,10 @@ void zako_update(void) {
         if (e->type >= E_BK && e->type != E_SCANNER) {         /* 画面の外へ出たら消す(得点なし) */
             if (e->x < FX(-24) || e->x > FX(300) || e->y < FX(-48) || e->y > FX(PLAY_H + 32)) enemy_kill(e, 0);
         }
-        if (e->type >= E_BK) n++;
+        if (e->type >= E_BK) zk[j++] = zk[i];
     }
-    g_zako_n = n;
+    zn = j;
+    g_zako_n = zn;
 }
 
 /* 自機に倒された: 砂時計は砂を撒く(重みで下へ流れる弾) */
@@ -322,8 +331,8 @@ void zako_killed(Enemy *e) {
 static const u8 pat_one[] = { 0, PAT_HATCH, PAT_CRAFT, 0, 0, PAT_PROTR, PAT_COMPASS, PAT_ABACUS, 0, PAT_SMITE, 0 };   /* E_BK から。0 = 下で描く */
 void zako_draw(void) {
     u8 i, ty;
-    const Enemy *e = g_enemy;
-    for (i = 0; i < MAX_ENEMY; i++, e++) {
+    for (i = 0; i < zn; i++) {
+        const Enemy *e = &g_enemy[zk[i]];
         s16 x, y;
         u8 p;
         if (e->type < E_BK) continue;

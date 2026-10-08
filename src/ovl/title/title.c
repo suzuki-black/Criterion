@@ -53,18 +53,24 @@ static u8  fade15;                /* 紋章の明るさ(0..7) */
 static u8  reveal;                /* 紋章を見せる行 */
 static u16 yjk_q;                 /* 地平線の横位置(1/8 ドット) */
 static u8  v13;                   /* 色 13 に書いた値の目印(タイトルに入るときに 0xFF。title_logo_pal) */
+static s16 sh_x[8], sh_y[8];      /* 出撃: ロゴが砕けた破片(拡大スプライト) */
+static s8  sh_vx[8], sh_vy[8];
+static u8  loop_keep;             /* 1 = 2 周目の出撃(game_start しない) */
+static u8  hit_done;              /* ロゴが組み上がったオケヒを鳴らした */
+static u16 idle_t;                /* 最後に触ってからのフレーム(デモへ) */
 
 static u8 regs_top[2][16], regs_n[2][12], regs_ring[2][4], regs_b[2][4];
 
 /* ---- 隠しコンフィグ: タイトルで 上 上 下 下 左 右 左 右 B A(B と A はキーボードの B・A キー) ----
    HUD の帯の 2 行に出す。上下で項目、左右で値、SPACE で決定。★オーバレイの変数は初期化されないので title_start で */
-enum { CF_INV, CF_STAGE, CF_BGM, CF_EXIT, CF_N };
-static u8 cf_on, cf_k, cf_item, cf_bgm, cf_dirty, cf_keys, cf_row, cf_cur;   /* cf_cur: 書いている行(bit) */
+enum { CF_INV, CF_STAGE, CF_BGM, CF_SE, CF_PCM, CF_MON, CF_EXIT, CF_N };   /* SE / PCM: 試聴(SOUND TEST)、MON: VDP モニター */
+static u8 cf_on, cf_k, cf_item, cf_bgm, cf_se, cf_pcm, cf_dirty, cf_keys, cf_row, cf_cur;   /* cf_cur: 書いている行(bit) */
 static const u8 cf_seq[10] = { IN_UP, IN_UP, IN_DOWN, IN_DOWN, IN_LEFT, IN_RIGHT, IN_LEFT, IN_RIGHT, 0x80, 0x40 };   /* 0x80 = B、0x40 = A */
 static const char *const cf_song[SND_NSONG + 1] = {
     "M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10", "M11", "M12", "M13", "M14A", "M14B", "M14C",
     "M15", "M16", "M17", "J01", "J02", "M18", "STOP" };
 static char cf_line[20];
+static const char *const cf_pcmn[11] = { "P01", "P02", "P03", "P05", "P06", "V01", "V02", "V03", "V04", "V05", "V06" };
 #define CF_COPY "@ 2026 SUZUKI-BLACK"   /* 著作権表示(@ は ©。font.c)。19 文字 = x 52..203 */
 
 __sfr __at(0xA9) CF_PPI_B;
@@ -90,6 +96,9 @@ static void cf_build(void) {
     if (cf_item == CF_INV) { cf_put("INVINCIBLE", 1); cf_put(g_dbg_invul ? "ON" : "OFF", 14); }
     else if (cf_item == CF_STAGE) { cf_put("STAGE", 1); cf_line[14] = (char)('0' + (g_start_stage ? g_start_stage : 1)); }
     else if (cf_item == CF_BGM) { cf_put("BGM", 1); cf_put(cf_song[cf_bgm], 14); }
+    else if (cf_item == CF_SE) { cf_put("SE", 1); cf_line[14] = (char)('0' + (cf_se + 1) / 10); cf_line[15] = (char)('0' + (cf_se + 1) % 10); }
+    else if (cf_item == CF_PCM) { cf_put("PCM", 1); cf_put(cf_pcmn[cf_pcm], 14); }
+    else if (cf_item == CF_MON) { cf_put("VDP MONITOR", 1); cf_put(g_vdp_mon ? "ON" : "OFF", 14); }
     else cf_put("EXIT", 1);
 }
 
@@ -114,10 +123,15 @@ static u8 cf_update(void) {
             s = r ? (u8)(s < 8 ? s + 1 : 1) : (u8)(s > 1 ? s - 1 : 8);
             g_start_stage = s;
         } else if (cf_item == CF_BGM) cf_bgm = r ? (u8)(cf_bgm < SND_NSONG ? cf_bgm + 1 : 0) : (u8)(cf_bgm ? cf_bgm - 1 : SND_NSONG);
+        else if (cf_item == CF_SE) cf_se = r ? (u8)(cf_se + 1 < SFX_COUNT - 1 ? cf_se + 1 : 0) : (u8)(cf_se ? cf_se - 1 : SFX_COUNT - 2);
+        else if (cf_item == CF_PCM) cf_pcm = r ? (u8)(cf_pcm < 10 ? cf_pcm + 1 : 0) : (u8)(cf_pcm ? cf_pcm - 1 : 10);
+        else if (cf_item == CF_MON) { g_vdp_mon = (u8)!g_vdp_mon; g_ras_busy_border = g_vdp_mon ? 15 : 0; if (!g_vdp_mon) vdp_wreg(7, 0); }
         cf_dirty |= 1; if (cf_cur == 1) cf_dirty |= 0x10;
     }
     if (g_in_edge & IN_A) {
         if (cf_item == CF_BGM) bgm_play(cf_bgm < SND_NSONG ? cf_bgm : SND_NONE);
+        else if (cf_item == CF_SE) sfx((u8)(cf_se + 1));
+        else if (cf_item == CF_PCM) pcm_req(cf_pcm);
         else if (cf_item == CF_EXIT) { cf_on = 0; cf_dirty = (u8)((cf_dirty & 0x10) | 0x0C); bgm_play(SONG_M01); }   /* タイトルの文字を戻す */
     }
     return 1;
@@ -153,7 +167,7 @@ static void enter(u8 ph) {
     }
     if (ph == PH_TITLE) {
         for (i = 0; i < LOGO_BANDS; i++) band_x[i] = (i & 1) ? -256 : 256;   /* 奇数帯は左から、偶数帯は右から */
-        g_split_n = 0; ring_logo = 0; v13 = 0xFF;
+        g_split_n = 0; ring_logo = 0; v13 = 0xFF; hit_done = 0; idle_t = 0;
         g_scroll_speed = 1;
         bg_mix(0);
         vdp_set_pal(15, 7, 7, 7);
@@ -162,8 +176,14 @@ static void enter(u8 ph) {
     if (ph == PH_SORTIE) {
         s16 y = (s16)(150 + (g_sin64[(u8)(pt_prev >> 1) & 63] >> 4));   /* タイトルで最後に描いた位置 */
         wiped = 64;                                       /* ページ 0 の 0..63 行に地平線の偶数バイトが入っている */
-        game_start();
+        for (i = 0; i < 8; i++) {                         /* ロゴの文字の位置から外へ飛び散る破片 */
+            sh_x[i] = (s16)(12 + i * 30); sh_y[i] = (s16)(66 + (i & 3) * 14);
+            sh_vx[i] = (s8)((sh_x[i] - 128) >> 4); sh_vy[i] = (s8)(((sh_y[i] - 96) >> 3) - 2);
+        }
+        if (!loop_keep) game_start();                     /* 2 周目の出撃は引き継ぐ */
+        loop_keep = 0;
         g_pl.x = FX(40); g_pl.y = FX(y); g_pl.invul = 0;      /* タイトルで飛んでいた位置からそのまま操作 */
+        g_pl.alive = 1;
     }
 }
 
@@ -184,9 +204,9 @@ static u8 tm;
 void title_update(void) {
     u8 i;
     if (g_phase == PH_LOGO) {
-        if (g_pt < 60) { if (reveal < TDF_LINE + 48) reveal++; }
-        else if (g_pt >= 110 && fade15 && !(g_pt & 3)) fade15--;
-        if (g_pt >= 150) enter(PH_TITLE);
+        if (g_pt < 48) { if (reveal < TDF_LINE + 48) reveal++; }
+        else if (g_pt >= 90 && fade15 && !(g_pt & 3)) fade15--;
+        if (g_pt >= 120) enter(PH_TITLE);                     /* 2 秒(指示書 4.2) */
         return;
     }
     if (g_phase == PH_TITLE) {
@@ -194,13 +214,20 @@ void title_update(void) {
         if (g_split_n < YJK_H && g_pt >= 4) g_split_n = (u8)(g_split_n < 8 ? 8 : g_split_n + 2);   /* 地平線の帯が上から伸びる */
         for (i = 0; i < LOGO_BANDS; i++)
             if (g_pt >= 24 + i * 6) band_x[i] = ease(band_x[i], 0);
+        if (!hit_done && !band_x[LOGO_BANDS - 1] && !band_x[LOGO_BANDS - 2]) { hit_done = 1; pcm_req(PCM_P01); }   /* 組み上がった瞬間にオケヒ */
         yjk_q++;
+        if (g_in) idle_t = 0; else idle_t++;
         if (cf_update()) return;                              /* 隠しコンフィグ */
         if ((g_in_edge & IN_A) && g_pt >= 30) { g_demo = 0; enter(PH_SORTIE); }
-        else if (g_pt >= 900 && !cf_on && !g_in) { g_demo = 1; enter(PH_SORTIE); }   /* ★15 秒触らなければデモ(M7 の後) */
+        else if (idle_t >= 900 && !cf_on) {                  /* 最後に触ってから 15 秒でデモ(指示書 4.2)。1・3・4・5 面を順に */
+            static const u8 demo_st[4] = { 1, 3, 4, 5 };
+            g_demo_save = g_start_stage; g_start_stage = demo_st[g_demo_k & 3]; g_demo_k++;
+            g_demo = 1; enter(PH_SORTIE);
+        }
         return;
     }
     if (g_phase == PH_SORTIE) {
+        if (g_pt < 48) for (i = 0; i < 8; i++) { sh_x[i] += sh_vx[i]; sh_y[i] += sh_vy[i]; if (!(g_pt & 3)) sh_vy[i]++; }   /* 破片 */
         /* ロゴの帯が飛び去る */
         for (i = 0; i < LOGO_BANDS; i++)
             if (g_pt >= i * 3) band_x[i] = ease(band_x[i], (i & 1) ? 256 : -256);
@@ -218,6 +245,11 @@ void title_update(void) {
 
 void title_draw(void) {
     if (tm) { scene_draw(); return; }
+    if (g_phase == PH_SORTIE) {                               /* ロゴが砕けた破片(ロゴの帯の間は拡大。title_build の R#1) */
+        u8 i;
+        if (g_pt < 48) for (i = 0; i < 6; i++) spr_put(sh_x[i], sh_y[i], PAT_SHARD, G_ENEMY, 0);
+        return;
+    }
     if (g_phase == PH_TITLE) {
         s16 y = (s16)(150 + (g_sin64[(u8)(g_pt >> 1) & 63] >> 4));
         spr_put(40, y, PAT_SHIP_A, G_SHIP_A, 0);
@@ -567,7 +599,8 @@ void title_build(void) {
             b->flags |= RAS_REGS | RAS_MARK; b->haze = rn; b->haze_n = 6;
         } else if (i == 0 && !ring_logo) {                       /* ロゴの区間はページ 2|3 */
             rr[0] = 2; rr[1] = 0x7F;
-            b->flags |= RAS_REGS; b->haze = rr; b->haze_n = 1;
+            mag_pair(rr + 2, g_phase == PH_SORTIE && g_pt < 48);   /* 出撃の破片はロゴの区間で拡大(128 行で戻す) */
+            b->flags |= RAS_REGS; b->haze = rr; b->haze_n = 2;
         }
         if (i == 4) {                                            /* 96 行: 下の帯の属性表 */
             rb[0] = 5; rb[1] = spr_regs.r5b; rb[2] = 11; rb[3] = 3;
@@ -577,12 +610,12 @@ void title_build(void) {
     }
     /* 128 行: 表示リング(雲)に戻す。色 0 も黒へ戻す */
     {
-        static u8 rring[2][4];
+        static u8 rring[2][6];
         u8 *r = rring[bi];
         u16 x = bg_layer_x(1);
-        r[0] = 2; r[1] = 0x3F; r[2] = 23; r[3] = g_vscroll;
+        r[0] = 2; r[1] = 0x3F; r[2] = 23; r[3] = g_vscroll; mag_pair(r + 4, 0);
         put_e(&e[k], 128, RAS_REGS | RAS_SCROLL | RAS_PAL);
-        e[k].haze = r; e[k].haze_n = 2; e[k].r26 = VDP_R26(x); e[k].r27 = VDP_R27(x);
+        e[k].haze = r; e[k].haze_n = 3; e[k].r26 = VDP_R26(x); e[k].r27 = VDP_R27(x);
         sky_pal(&e[k], 6); k++;
     }
     {
@@ -604,10 +637,19 @@ void title_build(void) {
 
 void title_start(void) {
     u8 a = g_after_over;
-    cf_on = 0; cf_k = 0; cf_dirty = 0; cf_keys = 0; cf_bgm = 0; cf_row = 0; cf_cur = 0; tm = TM_TITLE; g_title_mode = 0;
+    cf_on = 0; cf_k = 0; cf_dirty = 0; cf_keys = 0; cf_bgm = 0; cf_se = 0; cf_pcm = 0; loop_keep = 0; cf_row = 0; cf_cur = 0; tm = TM_TITLE; g_title_mode = 0;
     g_after_over = AO_BOOT;
     rank_init();
     if (a == AO_OVER) scene(g_last_score > g_rank_sc[RANK_N - 1] ? TM_NAME : TM_REWIND);   /* ゲームオーバー → ネームエントリー → 巻き戻し */
     else if (a == AO_DEMO) scene(TM_RANK);                                                  /* デモの後はランキング */
+    else if (a == AO_LOOP) {                                  /* エンディングから: 組み上がったロゴと地平線から出撃 */
+        u8 i;
+        loop_keep = 1;
+        enter(PH_TITLE);
+        for (i = 0; i < LOGO_BANDS; i++) band_x[i] = 0;
+        g_split_n = YJK_H; hit_done = 1;
+        enter(PH_SORTIE);
+        *(volatile u8 *)0xF3E0 |= 0x40; vdp_wreg(1, *(volatile u8 *)0xF3E0);   /* 読み込みの間止めていた表示を戻す */
+    }
     else enter(PH_LOGO);
 }
