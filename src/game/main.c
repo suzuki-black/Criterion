@@ -255,7 +255,6 @@ void main(void) {
             u8 s = g_boss_state, l = 0, i;
             if (s != BS_NONE && s != BS_DONE) for (i = 0; i < sizeof big_sec; i++) if (big_sec[i] == g_sec) l = big_lay[i];
             for (i = 0; i < sizeof sec_sec; i++) if (sec_sec[i] == g_sec) l = sec_lay[i];
-            if (g_gauge.echo || g_gauge.aegis) l += 8;         /* 強化の分身・防壁: G_OPT の 4 枠がある割り振り */
             if (l != g_spr_layout) spr_layout(l);
         }
         music_frame(state == ST_OVER); pcmx_service(); snd_frame(); pcmx_service();   /* ★間にも PCM の送出口(合わせて約 0.7ms。M7) */
@@ -317,7 +316,7 @@ void main(void) {
             spr_voff = (u8)(g_vscroll + g_roll);   /* スプライトの Y はプレイエリアの R#23 を足して表へ(ロールは画面だけ) */
             spr_begin();
             if (g_phase <= PH_TITLE) title_draw();
-            else { if (g_phase == PH_SORTIE) title_draw(); player_draw(); if (g_infx_mode) infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); if (g_lb) lb_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
+            else { if (g_phase == PH_SORTIE) title_draw(); player_draw(); if (g_infx_mode) infx_draw(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_draw(); enemy_draw(); if (g_lb) lb_draw(); player_weap_draw(); hud_sprites(); }   /* ∞ は G_MISC の 4 枠を先に取る */
             if (g_phase <= PH_TITLE && g_infx_mode) infx_draw();
         }
         wait_vram_window();              /* ここから先は VRAM を書く */

@@ -15,6 +15,7 @@
        枠の地も色 1 にして重ね描きする。雲の底(画面の 14 行より上)と歩道(158 行から)には描かない。
    座標はドット(中心)。画面の外の上は y < 0。 */
 #include "s1.h"
+#include "sys.h"
 #include "spr.h"
 #include "sprite_data.h"
 #include "vdp.h"
@@ -483,7 +484,11 @@ static void pd_settle(void) {      /* VDP へ出た写しを「写した絵」�
 
 /* VRAM の窓で毎フレーム(stage.c): 絵を作る段と、PLUMB を写す */
 void boss_vram(void) {
-    if (gen_k < NFRAME) boss_vram_gen();
+    {   /* ★重いフレームは次へ(強化を積んだ都市後半で遅れが続いた)。★判定は呼ぶ側に置く: boss_vram_gen の中に置くと、
+           間に合わないときに作り切るループ(boss_start)が 1 フレームの中で回り続け、試験 1 で 6 秒止まった */
+        extern u16 g_frame_t0;
+        if (gen_k < NFRAME && (u16)(sys_timer() - g_frame_t0) <= 150u * 16u) boss_vram_gen();
+    }
     if (kind != BOSS_PLUMB) { gq_pump(0); return; }
     /* ★1 回の描き替えは最大 20 コマンド(写し 4 + 消し 4 方向 × リングの継ぎ目)。入りきらないときは見送る
        (途中まで積むと、消し残しや描き残しが出る) */

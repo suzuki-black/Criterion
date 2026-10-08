@@ -59,9 +59,9 @@ static void touch_rect(s16 x, s16 y, u8 w, u8 h) {
 
 /* ======== VERNIER ======== */
 #define VT_L   3                   /* 上の板の層 */
-#define VB_L   8                   /* 下の板の層 */
+#define VB_L   7                   /* 下の板の層(s4_layer の 110..124 は層 7。★8 にしていて、下の板の層が押さえられずに雲と流れた。指摘) */
 #define VT_S   51                  /* 上の板の行(s)。層 3 = 47..62 */
-#define VB_S   113                 /* 下の板の行。層 8 = 110..124 */
+#define VB_S   113                 /* 下の板の行。層 7 = 110..124 */
 #define V_W    224
 #define V_H    10
 static u16 vt_rx, vb_rx;           /* 板の左端のリングの x */
@@ -69,7 +69,7 @@ static s16 vt_sx, vb_sx;           /* 板の左端の画面の x */
 static u8  v_drawn;                /* 描いた命令の数(0..V_CMDS) */
 #define V_CMDS 8                   /* 0..3: 板の層の板の外を空の色で塗る、4..7: 板を部品(ページ 2)から左右 112 ずつ写す */
 #define VT_R0  47                  /* 層 3 の行(47..62) */
-#define VB_R0  110                 /* 層 8 の行(110..124) */
+#define VB_R0  110                 /* 層 7 の行(110..124) */
 static u8  core_hp[2];
 static u8  beam_t;                 /* 0 = なし、1..30 予告、31..60 ビーム */
 static s16 beam_x;

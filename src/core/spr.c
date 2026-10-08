@@ -148,7 +148,9 @@ void spr_begin(void) {
     spr_last[0] = spr_last[1] = 0;
     for (g = 0; g < G_COUNT; g++) {
         u8 c = spr_gcount[g];
-        if (c > 1 && (rot_g[g] += (g == G_PAIR ? 2 : 1)) >= c) rot_g[g] = 0;   /* ちらつきの分散: グループの中で回す(組は 2 つずつ) */
+        if (c > 1 && g != G_MISC && (rot_g[g] += (g == G_PAIR ? 2 : 1)) >= c) rot_g[g] = 0;   /* ちらつきの分散: グループの中で回す(組は 2 つずつ)。
+                                                                 ★G_MISC は回さない: 枠ごとの色を毎フレーム書き直すことになり重く、溢れたときは最後に置く
+                                                                 強化の分身・防壁から消えるほうがよい(指摘「オプションは優先順位を下げて」) */
         st = (u8)(spr_gfirst[g] + rot_g[g]);
         spr_pos[g] = st; spr_pos[8 + g] = st;
         spr_cnt[g] = 0; spr_cnt[8 + g] = 0;

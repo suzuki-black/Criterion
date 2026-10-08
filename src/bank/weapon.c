@@ -6,8 +6,8 @@
      2: 上向きの爆雷も(天井を這う)。爆雷は自機の弾(g_pshot の on = PS_DROP_DN / UP)なので、敵・ボス・Pawn の
      当たりはふつうの弾と同じ所で取られる。
    ・THRUST: 動いている間、段階に応じて離れた位置に残像(G_MISC、暗い色の組)。
-   分身と防壁は G_OPT(強化を持っている間だけ 4 枠。main.c が割り振りに 8 を足す)。溢れた分はグループの中で順番を
-   回すので、全部そろうと点滅して見える(MSX のオプションと同じ)。 */
+   分身と防壁は G_MISC にスプライトの段の最後で置く(溢れたら真っ先に消える = 優先順位がいちばん低い)。分身は
+   1 フレームおきに半分ずつの点滅(MSX のオプションと同じ見え方)。 */
 #include "game.h"
 #include "spr.h"
 #include "snd.h"
@@ -19,12 +19,13 @@
 #define ECHO_GAP  12               /* 分身どうしの間隔(軌跡の個数) */
 #define ECHO_MAX  4
 #define BLINK     180              /* 吸ったあと吸わない間(3 秒) */
-#define RING_R    22               /* AEGIS 2 の輪の半径 */
 #define DROP_CD   36               /* 爆雷を落とす間隔(フレーム) */
 
+static const s8 ring_dx[64] = { 22, 22, 22, 21, 20, 19, 18, 17, 16, 14, 12, 10, 8, 6, 4, 2, 0, -2, -4, -6, -8, -10, -12, -14, -16, -17, -18, -19, -20, -21, -22, -22, -22, -22, -22, -21, -20, -19, -18, -17, -16, -14, -12, -10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 12, 14, 16, 17, 18, 19, 20, 21, 22, 22 };
+static const s8 ring_dy[64] = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 17, 18, 19, 20, 21, 22, 22, 22, 22, 22, 21, 20, 19, 18, 17, 16, 14, 12, 10, 8, 6, 4, 2, 0, -2, -4, -6, -8, -10, -12, -14, -16, -17, -18, -19, -20, -21, -22, -22, -22, -22, -22, -21, -20, -19, -18, -17, -16, -14, -12, -10, -8, -6, -4, -2 };   /* AEGIS 2 の輪(半径 22)。★掛け算を毎フレームしない */
 static u8 tr_x[TRAIL], tr_y[TRAIL], tr_h, last_x, last_y;
 static u8 blink[ECHO_MAX];
-static u8 aeg_lv, aeg_dur, rot, drop_cd, moved, echo_prev;
+static u8 aeg_lv, aeg_dur, rot, drop_cd, moved, echo_prev, vol;   /* vol: 撃った回数(分身が交互に撃つ) */
 #define drops g_drops                /* 生きている爆雷の数(本体の変数: 強化も爆雷も無ければ本体は weap_* を呼ばない) */
 
 /* ---- 主砲(自機と分身。player.c は呼び口から) ---- */
@@ -175,11 +176,12 @@ void weap_update(void) {
     }
     /* ECHO */
     nt = 0;
+    if (g_fired) vol++;
     n = g_gauge.echo;
     for (i = 0; i < n; i++) {
         u8 k = echo_at(i);
         s16 ex = tr_x[k], ey = tr_y[k];
-        if (g_fired) pl_fire_from(FX(ex), FX(ey));
+        if (g_fired && ((i ^ vol) & 1)) pl_fire_from(FX(ex), FX(ey));   /* ★分身は 1 回おきに交互に撃つ(弾の枠はどのみち満杯。重かった) */
         if (blink[i]) blink[i]--;
         else target((s16)(ex + 1), (s16)(ey + 1), 14, 14, i);
     }
@@ -191,9 +193,8 @@ void weap_update(void) {
     if (aeg_lv == 1) target((s16)(px + 18), (s16)(py - 10), 12, 36, ECHO_MAX);
     else if (aeg_lv >= 2) {
         for (i = 0; i < 4; i++) {
-            u8 a = (u8)(rot + (i << 6));
-            s16 dx = (s16)(((s16)g_sin64[(u8)(a + 64) >> 2 & 63] * RING_R) >> 7), dy = (s16)(((s16)g_sin64[a >> 2] * RING_R) >> 7);
-            target((s16)(px + 8 + dx - 7), (s16)(py + 8 + dy - 7), 14, 14, ECHO_MAX);
+            u8 a = (u8)(((u8)(rot + (i << 6))) >> 2);
+            target((s16)(px + 1 + ring_dx[a]), (s16)(py + 1 + ring_dy[a]), 14, 14, ECHO_MAX);
         }
     }
     if (rot & 2) absorb_all();                                /* ★2 フレームに 1 回(敵弾は 1 フレームに 3 ドットまで、的は 14 ドット。
@@ -208,11 +209,13 @@ void weap_update(void) {
     }
 }
 
+/* ★分身と防壁は G_MISC(枠の番号が最後 = 1 ラインに 8 枚を超えると真っ先に消える)で、分身は 1 フレームおきの点滅。
+   敵の枠を回していた間は、中ボスの部品や敵が消えた(指摘) */
 static void echo_draw(s16 dy) {
     u8 i, n = g_gauge.echo;
-    for (i = 0; i < n; i++) {
+    for (i = (u8)(rot & 1); i < n; i += 2) {                  /* 半分ずつ交互に */
         u8 k = echo_at(i);
-        if (!(blink[i] & 4)) spr_put(tr_x[k], (s16)(tr_y[k] + dy), PAT_ECHO, G_OPT, 0);
+        if (!(blink[i] & 4)) spr_put(tr_x[k], (s16)(tr_y[k] + dy), PAT_ECHO, G_MISC, CS_EXPL);
     }
 }
 
@@ -220,12 +223,11 @@ static void aegis_draw(u8 px, u8 py, s16 dy) {
     u8 i;
     if (!aeg_lv || (aeg_dur <= 2 && (rot & 8))) return;       /* 耐久が残り少ないと点滅 */
     if (aeg_lv == 1) {
-        spr_put(px + 14, (s16)(py - 8 + dy), PAT_AEGIS, G_OPT, 0);
-        spr_put(px + 14, (s16)(py + 8 + dy), PAT_AEGIS, G_OPT, 0);
+        spr_put(px + 14, (s16)(py - 8 + dy), PAT_AEGIS, G_MISC, CS_CURSOR);
+        spr_put(px + 14, (s16)(py + 8 + dy), PAT_AEGIS, G_MISC, CS_CURSOR);
     } else for (i = 0; i < 4; i++) {
-        u8 a = (u8)(rot + (i << 6));
-        s16 ox = (s16)(((s16)g_sin64[(u8)(a + 64) >> 2 & 63] * RING_R) >> 7), oy = (s16)(((s16)g_sin64[a >> 2] * RING_R) >> 7);
-        spr_put((s16)(px + ox), (s16)(py + oy + dy), PAT_AEGIS, G_OPT, 0);
+        u8 a = (u8)(((u8)(rot + (i << 6))) >> 2);
+        spr_put((s16)(px + ring_dx[a]), (s16)(py + ring_dy[a] + dy), PAT_AEGIS, G_MISC, CS_CURSOR);
     }
 }
 
@@ -234,8 +236,7 @@ void weap_draw(void) {
     s16 dy;
     if (!g_pl.alive || (g_pl.invul & 4)) return;
     px = (u8)PX(g_pl.x); py = (u8)PX(g_pl.y); dy = g_pl_dy;
-    /* ★分身 4 機と防壁で G_OPT の 4 枠を超えると、後から置いたものが毎フレーム溢れて見えなくなる。順番をフレームごとに
-       入れ替えて、ちらつきに散らす */
+    /* 分身と防壁の順番はフレームごとに入れ替える(G_MISC の 4 枠を超えたとき、毎フレーム同じものが消えないように) */
     if (rot & 4) { aegis_draw(px, py, dy); echo_draw(dy); }
     else { echo_draw(dy); aegis_draw(px, py, dy); }
     /* THRUST の残像: 動いている間、段階が上がるほど後ろへ伸びる(3 段から 2 つ) */

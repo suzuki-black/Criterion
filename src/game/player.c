@@ -41,6 +41,8 @@ u8 g_fired;
 u8 g_shot_at;                      /* 次に空きを探す弾の枠(撃つフレームの初めに 0。weapon.c の pl_fire_from) */
 u8 g_drops;                        /* 生きている DROP の爆雷の数(weapon.c) */
 #define WEAP_ON() (g_gauge.thrust | g_gauge.echo | g_gauge.aegis | g_gauge.drop | g_drops)   /* 第 2 バンクの仕事があるか */
+/* 分身・防壁・残像はスプライトの段の最後に(main.c の player_weap_draw。溢れたら真っ先に消える側) */
+void player_weap_draw(void) { if (WEAP_ON()) weap_draw(); }
 Terrain g_ter;
 
 void player_update(void) {
@@ -142,5 +144,4 @@ void player_draw(void) {
         const Bullet *b = &g_pshot[i];
         if (b->on) spr_put(PX(b->x) - 2, PX(b->y) - 8, b->pierce ? PAT_RAY : PAT_SHOT, G_SHOT, 0);
     }
-    if (WEAP_ON()) weap_draw();
 }
