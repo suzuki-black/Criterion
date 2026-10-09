@@ -136,6 +136,7 @@ static u16 cal_t;                  /* 再校正版の重力の替わり目 */
 static u16 src_off;
 static u8  fr, fr_drawn;
 static u8  sat_hp[NSAT], sat_t[NSAT];
+static s8  orb_x[64], orb_y[64];   /* 小衛星の軌道(b2_start で作る。★毎フレーム掛け算で出すと 8 個 × 2 回で重かった) */
 static u16 open_t;                 /* 吸い込みの周期(0..239 閉じている、240..359 開いて吸い込む) */
 u8 b2_lens_tbl_up[48], b2_lens_tbl_dn[48];
 static u16 lens_nx;               /* 表を作ったときの横位置(0xFFFF = まだ。b2_start で) */
@@ -174,14 +175,16 @@ static void kg_gen(void) {
 
 static void kg_crack(u8 open) { if (open) vdp_set_pal(13, 7, 2, 1); else vdp_set_pal(13, 3, 0, 0); }
 
-/* 重力レンズの表: 球に近いほど大きく横へずらす(0..7 ドット。R#27 を足す向き) */
+/* 重力レンズの表: 球に近いほど大きく横へずらす(0..7 ドット。R#27 を足す向き)。ずらす量 = 7 i² / 529(★毎フレーム割り算で
+   作ると 48 回で約 16 ライン。KILOGRAM の間はスプライトの締め切りを毎フレーム過ぎた) */
+static const u8 lens_up[24] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7 };
 static void lens_tables(u16 nx) {
     u8 i, r26 = VDP_R26(nx), b = VDP_R27(nx);
+    u8 *pu = b2_lens_tbl_up, *pd = b2_lens_tbl_dn;
     for (i = 0; i < 24; i++) {
-        u8 up = (u8)((7u * i * i) / 529u), dn = (u8)((7u * (23u - i) * (23u - i)) / 529u);
-        u8 a = (u8)(b + up), c = (u8)(b + dn);
-        b2_lens_tbl_up[i * 2] = r26; b2_lens_tbl_up[i * 2 + 1] = a > 7 ? 7 : a;
-        b2_lens_tbl_dn[i * 2] = r26; b2_lens_tbl_dn[i * 2 + 1] = c > 7 ? 7 : c;
+        u8 a = (u8)(b + lens_up[i]), c = (u8)(b + lens_up[23 - i]);
+        *pu++ = r26; *pu++ = a > 7 ? 7 : a;
+        *pd++ = r26; *pd++ = c > 7 ? 7 : c;
     }
     lens_nx = nx;
 }
@@ -216,8 +219,8 @@ static void kg_update(void) {
     touch(KG_X, KG_Y, KG_R - 2);
     /* 小衛星 */
     for (k = 0; k < NSAT; k++) {
-        u8 a = (u8)((t >> 1) + k * 8);
-        s16 x = (s16)(KG_X + ((g_sin64[(u8)(a + 16) & 63] * 66) >> 7)), y = (s16)(KG_Y + ((g_sin64[a & 63] * 52) >> 7));   /* 球の外を回る */
+        u8 a = (u8)((u8)((t >> 1) + k * 8) & 63);
+        s16 x = (s16)(KG_X + orb_x[a]), y = (s16)(KG_Y + orb_y[a]);   /* 球の外を回る */
         if (!sat_hp[k]) { if (++sat_t[k] >= 240) { sat_hp[k] = 2; sat_t[k] = 0; } continue; }
         if (shot_hit(x, y, 7, 7) && --sat_hp[k] == 0) { fx_spawn(FX(x), FX(y)); score_add(5); continue; }
         touch(x, y, 6);
@@ -229,10 +232,9 @@ static void kg_draw(void) {
     u8 k;
     if (g_boss_state != BS_FIGHT) return;
     for (k = 0; k < NSAT; k++) {
-        u8 a = (u8)((t >> 1) + k * 8);
+        u8 a = (u8)((u8)((t >> 1) + k * 8) & 63);
         if (!sat_hp[k]) continue;
-        spr_put((s16)(KG_X + ((g_sin64[(u8)(a + 16) & 63] * 66) >> 7)) - 8, (s16)(KG_Y + ((g_sin64[a & 63] * 52) >> 7)) - 8,
-                PAT_SAT, G_ENEMY, 0);
+        spr_put((s16)(KG_X - 8 + orb_x[a]), (s16)(KG_Y - 8 + orb_y[a]), PAT_SAT, G_ENEMY, 0);
     }
 }
 
@@ -244,6 +246,7 @@ void b2_start(u8 k) {
     else {
         g_boss_hp = 60; fr = 0; fr_drawn = 0xFF; open_t = 0; lens_nx = 0xFFFF; cal_t = 0;
         for (i = 0; i < NSAT; i++) { sat_hp[i] = 2; sat_t[i] = 0; }
+        for (i = 0; i < 64; i++) { orb_x[i] = (s8)((g_sin64[(u8)(i + 16) & 63] * 66) >> 7); orb_y[i] = (s8)((g_sin64[i] * 52) >> 7); }
         vdp_set_pal(2, 0, 0, 0); vdp_set_pal(3, 1, 1, 1); vdp_set_pal(4, 3, 3, 4); vdp_set_pal(5, 6, 6, 7);
         kg_crack(0);
     }

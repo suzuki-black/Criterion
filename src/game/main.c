@@ -54,6 +54,8 @@ u16 g_frame_t0;                    /* このフレームの始まり(S1990 タ�
 #define HUD_DEADLINE (170u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
 #define SPR_DEADLINE (100u * 16u)  /* スプライトの段に入る時点でこれを過ぎていたら、そのフレームは描き直さない
                                       (スプライト・属性表・VRAM の仕事で残り 140 ライン前後かかる) */      /* 1 = 被弾しない(自動テスト用) */
+#define SPR_SKIP_MAX 4             /* スプライトを続けて飛ばすのはここまで(それより後は SPR_FORCE まで描く) */
+#define SPR_FORCE    (150u * 16u)
 
 static u8 state;
 
@@ -236,7 +238,9 @@ void main(void) {
 
     for (;;) {
         static u8 demo_end;
-        static u8 pat_now;
+        static u8 pat_now, pat_k;
+        static u16 poll_dl;
+        static u8 spr_skips;     /* スプライトを描き直さなかったフレームが続いた数 */
         static u16 over_t;
         static s8 over_spd;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
         u16 late0 = g_frame_late, idle;
@@ -245,6 +249,7 @@ void main(void) {
         idle = frame_sync(1);
         g_frame_t0 = sys_timer();
         mark_f0 = g_ras_mark;
+        poll_dl = (u16)g_poll_n * 16u;   /* stage_build の前 = 表示中の表のもの */
         MON(12);
         if (g_frame_late != late0) g_stat.late++;
         g_slow = slow_next;
@@ -323,9 +328,14 @@ void main(void) {
 
         /* ★処理落ちのフレームはスプライトも描き直さない(前のフレームの属性表のまま。敵は動いていないので
            止まって見えるのは同じ。スプライトの段は 1 フレームで 70 ライン前後かかる) */
-        if (!g_slow && g_phase >= PH_AIR && (u16)(sys_timer() - g_frame_t0) > SPR_DEADLINE) {
+        /* ★締め切りは、表示中の表の画面の上のほうの HR ポーリング帯の行数だけ後ろへずらす(その間は割込みが CPU を取る。
+           KILOGRAM の重力レンズの帯で毎フレーム締め切りを過ぎ、フレームは間に合っているのにスプライトが何秒も止まって見えた)。
+           ★続けて SPR_SKIP_MAX フレーム飛ばしたら、締め切りを SPR_FORCE まで延ばす(PCM の送出が 1 フレームに約 60 ライン使い、
+           声や効果音の鳴っている 0.3 秒ほどスプライトが止まった) */
+        if (!g_slow && g_phase >= PH_AIR && (u16)(sys_timer() - g_frame_t0) > (spr_skips < SPR_SKIP_MAX ? SPR_DEADLINE + poll_dl : SPR_FORCE)) {
             g_slow = 1; g_stat.slow++;   /* ここまでで重かった: スプライトは前のフレームのまま */
         }
+        if (g_slow) { if (spr_skips < 255) spr_skips++; } else spr_skips = 0;
         MON(9);
         if (!g_slow) {
             spr_voff = (u8)(g_vscroll + g_roll);   /* スプライトの Y はプレイエリアの R#23 を足して表へ(ロールは画面だけ) */
@@ -355,9 +365,11 @@ void main(void) {
                 rom_to_vram(ASSET_SPR_COL_BANK, (u16)(ASSET_SPR_COL_OFF + ((u16)col_now << 9) + o), 1, (u16)(sat_addr[k][b] - 0x200u + o), n);
             if (++cc_step == 3) cc_step = 0;
         }
-        if (g_ovl_ready && g_ovl != pat_now) {                 /* 面ごとの絵の組(gen_sprites.py の STAGE_GROUPS。約 1ms) */
-            pat_now = g_ovl;
-            rom_to_vram(ASSET_SPR_SET_BANK, (u16)(ASSET_SPR_SET_OFF + (u16)pat_now * SPR_SET_LEN), 1, (u16)(0xF800u + SPR_SET_BASE * 32u), SPR_SET_LEN);
+        if (g_ovl_ready && g_ovl != pat_now) { pat_now = g_ovl; pat_k = 0; }   /* 面ごとの絵の組(gen_sprites.py の STAGE_GROUPS) */
+        if (pat_k < 4) {                                       /* ★4 フレームに分ける(576 バイトを 1 回で写すと約 70 ライン。LIBRA と 8 面の入りで遅れた) */
+            u16 o = (u16)pat_k * (SPR_SET_LEN / 4);
+            rom_to_vram(ASSET_SPR_SET_BANK, (u16)(ASSET_SPR_SET_OFF + (u16)pat_now * SPR_SET_LEN + o), 1, (u16)(0xF800u + SPR_SET_BASE * 32u + o), SPR_SET_LEN / 4);
+            pat_k++;
         }
         /* HUD の文字は次のフレームへ回してよい: フレームの残りが少なければ書かない(VDP のコマンドと重なると
            2 行の書き込みが 50 ライン近くかかることがある) */

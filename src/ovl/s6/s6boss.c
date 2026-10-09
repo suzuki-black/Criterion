@@ -72,6 +72,7 @@ static void hg_slot(u8 g) {
     if (g < 20) { hg_sx = g >= 10 ? 96 : 0; if (g >= 10) g -= 10; hg_sy = (u16)(512 + 48 + g * 16u); }
     else { g -= 20; hg_sx = g >= 5 ? 96 : 0; if (g >= 5) g -= 5; hg_sy = (u16)(768 + 100 + g * 16u); }
 }
+extern u16 g_frame_t0;             /* main.c: このフレームの始まり */
 static u8 rj, rph, rrow;           /* 仕事の番号 / 0 = 元を読む、1 = 回す、2 = VRAM へ / 進んだ行 */
 static void rot_update(void) {
     if (rj >= RJ_END || g_sec < SEC6_SINK) return;
@@ -91,11 +92,10 @@ static void rot_update(void) {
         if (rrow >= 32) { rph = 2; rrow = 0; }
     }
 }
-static void rot_vram(void) {       /* 出来たコマを 8 行ずつ VRAM へ(重いフレームは次へ) */
-    extern u16 g_frame_t0;
+static void rot_vram(void) {       /* 出来たコマを 8 行(砂時計は 4 行)ずつ VRAM へ(重いフレームは次へ) */
     u8 k, n = rj < 8 ? 32 : HG_N;
     if (rj >= RJ_END || rph != 2 || (u16)(sys_timer() - g_frame_t0) >= 150u * 16u) return;
-    for (k = 0; k < 8 && rrow < n; k++, rrow++) {
+    for (k = rj < 8 ? 8 : 4; k && rrow < n; k--, rrow++) {    /* 砂時計(ROM から)は 4 行ずつ(8 行で約 50 ライン) */
         if (rj < 8) {
             vdp_write_addr17(1, (u16)(0x8000u + (u16)(68 + rrow) * 128u + rj * 16u));            /* ページ 3 の 68 行 */
             vdp_out_block(16, ROTOR_DST + (u16)rrow * 16u);
@@ -192,6 +192,7 @@ static void num_vram(void) {       /* 1 フレーム 1 個(CPU で VRAM を書�
         if (!stage_col_ready((u16)(g_w0 + s6_num[i])) || !stage_col_ready((u16)(g_w0 + s6_num[i] + 2))) continue;
         rx = (u16)(g_wx + (u16)x) & 511u;
         if ((u8)rx & 1 || (rx & 255u) + w > 256u) continue;
+        if (vdp_cmd_busy() && (u16)(sys_timer() - g_frame_t0) > 100u * 16u) return;   /* ★残りが少なければ次へ(列のコマンドを 100 ライン待って試験 6 で遅れた) */
         vdp_cmd_wait();                                       /* ★列のコマンドの後に CPU で書く */
         font_text((u8)(rx >> 8), (u8)rx, ry, 15, 1, num_str[i]);
         nm_drawn[i] = 1;

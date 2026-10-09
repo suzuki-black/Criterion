@@ -20,14 +20,16 @@ void banner_vram(void) {
     if (t <= 3 && vdp_cmd_busy()) return;                     /* 塗りは VDP が空いてから(待つと遅れた。3 面の入り) */
     if (t == 1) { vdp_hmmv(0, 512 + BAN_ROW - 8, 256, 24, 0x11); b->cp = 0; }   /* 1 フレームに 1 つ(VDP を待たない) */
     else if (t == 2) vdp_hmmv(0, b->p3 ? 768 + BAN_ROW - 8 : 512 + BAN_STG, 256, b->p3 ? 24 : 8, 0x11);
-    else if (t >= 3 && t < BAN_IN) {                          /* 文字は 1 フレームに 2 行ずつ(一度に書くと 120 ライン。2 面の入りで遅れた) */
-        u8 r = (u8)((t - 3) << 1), y = b->p3 ? (u8)(BAN_ROW + 4) : (u8)BAN_STG;
-        if ((u16)(sys_timer() - g_frame_t0) > 150u * 16u) return;   /* ★重いフレームは次へ(2 行で約 50 ライン。7 面の試験の
-                                                                   切り替えで描き替えの仕事と重なって遅れた) */
+    else if (t >= 3 && t < BAN_IN) {                          /* 文字は 1 フレームに 2 行まで(一度に書くと 120 ライン。2 面の入りで遅れた) */
+        u8 y = b->p3 ? (u8)(BAN_ROW + 4) : (u8)BAN_STG;
+        /* ★重いフレームは次へ。1 行(約 25 ライン)ずつ書き、2 行目は残りがあるときだけ。書いた行(cp)が足りなければ t を進めない
+           (150 ラインまで 2 行を書いていたので、7 面の試験の始まりで遅れた) */
+        if ((u16)(sys_timer() - g_frame_t0) > 150u * 16u) return;
         vdp_cmd_wait();
-        font_text_row(2, b->x, y, b->fg, 1, b->text, r);
-        font_text_row(2, b->x, y, b->fg, 1, b->text, (u8)(r + 1));
+        if (b->cp < 8) font_text_row(2, b->x, y, b->fg, 1, b->text, (u8)b->cp++);
+        if (b->cp < 8 && (u16)(sys_timer() - g_frame_t0) <= 120u * 16u) font_text_row(2, b->x, y, b->fg, 1, b->text, (u8)b->cp++);
         b->bx = 256;
+        if (b->cp < (u16)((t - 2) << 1)) return;
     } else if (t == BAN_END) {
         vdp_hmmv(0, 512 + BAN_ROW - 8, 256, BAN_STG + 8 - (BAN_ROW - 8), 0x00);   /* 起動ロゴの黒い区間へ戻す */
         b->t = 0;
