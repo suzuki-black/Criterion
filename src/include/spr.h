@@ -31,6 +31,8 @@ extern u8 spr_voff;           /* プレイエリアの縦スクロール(R#23)�
 void spr_init(void);                           /* 属性表の初期化、R#1/R#5/R#6/R#11。★パターン表(0x1F800、63 番 = 空白)と
                                                   色表は呼ぶ側が ROM から写す(常駐の空きのため。main.c) */
 extern const u16 sat_addr[2][2];               /* 帯ごと・二重化した属性表の番地(0x1xxxx の下 16 ビット)。色表はその 0x200 前 */
+u8   spr_written(void);                          /* spr_end が最後に書いた表(0/1) */
+u8   spr_pairs(u8 l);                            /* 割り振り l の組の枠の数(組は枠 8 から) */
 void spr_layout(u8 l);                         /* 枠の割り振り(0 = ふつう、1..3 = 部品の多いボス。spr.c)。色表は呼ぶ側(main.c) */
 extern u8 g_spr_layout;
 void spr_begin(void);

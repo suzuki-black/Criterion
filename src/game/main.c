@@ -52,7 +52,6 @@ u8 g_slow;
 static u8 slow_next;
 u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
 #define HUD_DEADLINE (170u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
-#define COL_DEADLINE (150u * 16u)  /* これを過ぎていたらスプライトの色表の書き込みを次のフレームへ */
 #define SPR_DEADLINE (100u * 16u)  /* スプライトの段に入る時点でこれを過ぎていたら、そのフレームは描き直さない
                                       (スプライト・属性表・VRAM の仕事で残り 140 ライン前後かかる) */      /* 1 = 被弾しない(自動テスト用) */
 
@@ -104,6 +103,8 @@ static const u8 big_lay[] = { 2, 2, 7, 1, 3, 4, 4, 4, 5, 4 };       /* 割り振
 static const u8 sec_sec[] = { 21, 63, 64, 0, 7, 15, 24, 33, 44, 52, 55 };
 static const u8 sec_lay[] = { 1, 4, 4, 6, 6, 6, 6, 6, 6, 6, 6 };    /* 0.. = 各面の空中戦(編隊の組を多く) */
 u8 g_infx_mode;                    /* ∞ の表示(第 2 バンクの infx.c)。0 = なし */
+static u8 col_now, col_done, cc_lo, cc_hi, cc_step;   /* スプライトの色表(下の main のループ。★初期値 0 = 色の組 0 を写す) */
+#define COL_DEADLINE (150u * 16u)  /* これを過ぎていたらスプライトの色表の書き込みを次のフレームへ */
 u8 g_after_over, g_title_mode, g_rank_ok, g_vdp_mon, g_reload;
 #define MON(c) do { if (g_vdp_mon) vdp_wreg(7, (c)); } while (0)   /* VDP MONITOR: 外枠 = 論理 12・スプライト 9・VRAM 13・待ち 0(割込みの間は 15) */
 u16 g_last_score;
@@ -229,7 +230,7 @@ void main(void) {
 
     for (;;) {
         static u8 demo_end;
-        static u8 col_now, col_done, pat_now;
+        static u8 pat_now;
         static u16 over_t;
         static s8 over_spd;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
         u16 late0 = g_frame_late, idle;
@@ -255,7 +256,14 @@ void main(void) {
             u8 s = g_boss_state, l = 0, i;
             if (s != BS_NONE && s != BS_DONE) for (i = 0; i < sizeof big_sec; i++) if (big_sec[i] == g_sec) l = big_lay[i];
             for (i = 0; i < sizeof sec_sec; i++) if (sec_sec[i] == g_sec) l = sec_lay[i];
-            if (l != g_spr_layout) spr_layout(l);
+            /* ★割り振りを替えると色表は 16 フレームかけて写すので、その間は色がずれる。色のずれは見えるだけだが、組(2 枚重ね)の
+               範囲が変わった枠は上の層の CC ビットが食い違い、CC = 1 の枠のスプライトは下に重なる相手がいないと出ないので消えた
+               (指摘「ボス登場の直前・撃破の直後に消える」)。その枠の行だけは、書いた表から 2 フレームで先に写す(cc_*) */
+            if (l != g_spr_layout) {
+                u8 a = spr_pairs(g_spr_layout), b = spr_pairs(l);
+                cc_lo = (u8)(8 + (a < b ? a : b)); cc_hi = (u8)(8 + (a < b ? b : a)); cc_step = cc_hi > cc_lo;
+                spr_layout(l);
+            }
         }
         music_frame(state == ST_OVER); pcmx_service(); snd_frame(); pcmx_service();   /* ★間にも PCM の送出口(合わせて約 0.7ms。M7) */
         pcm_keep();
@@ -326,25 +334,32 @@ void main(void) {
            90 ライン延びた)。コマンドはフレームの頭とここで出し、次のフレームの論理の間に VDP が進める */
         if (!g_slow) spr_end();
         if (g_infx_mode) infx_vram();
-        /* スプライトの色の組: オーバレイ(面)が替わったら、帯の色表 4 つ(各 448 バイト。G_MISC の 4 枠は使うときに書くので
-           写さない)を 112 バイトずつ 16 フレームで写す(1 回 ≒ 1ms)。★1 つを 1 フレームで写すと(4ms)、7 面の試験で
-           オーバレイを読み直すたびに遅れた。面ごとに体の色を背景と反対の色相にする(M7 の後) */
-        {   /* ★7 面の試験(過去の面のオーバレイを読み直す)の間は 7 面の色の組のまま(試験ごとに写すと PCM と重なって遅れた) */
+        /* スプライトの色の組: 面(背景と反対の色相)か割り振りが替わったら、帯の色表 4 つ(各 448 バイト。G_MISC の 4 枠は使うときに
+           書くので写さない)を 112 バイトずつ 16 フレームで写す(1 回 ≒ 1ms)。★1 つを 1 フレームで写すと(4ms)、区間の変わり目や
+           7 面の試験でオーバレイを読み直すたびに遅れた */
+        {   /* ★7 面の試験(過去の面のオーバレイを読み直す)の間は 7 面の色の組のまま */
             u8 want = (u8)(spr_scheme[g_calib ? OVL_S7 : g_ovl] + g_spr_layout * 3);   /* 割り振りごとに 3 つ(gen_sprites.py) */
             if (g_ovl_ready && want != col_now) { col_now = want; col_done = 0; }
+        }
+        if (!g_slow && cc_step) {                              /* 組の範囲が変わった枠の行を、書いた表から先に(上の cc_*) */
+            u8 b = spr_written(), k;
+            u16 o = (u16)cc_lo * 16u, n = (u16)(cc_hi - cc_lo) * 16u;
+            for (k = 0; k < 2; k++)
+                rom_to_vram(ASSET_SPR_COL_BANK, (u16)(ASSET_SPR_COL_OFF + ((u16)col_now << 9) + o), 1, (u16)(sat_addr[k][b] - 0x200u + o), n);
+            if (++cc_step == 3) cc_step = 0;
         }
         if (g_ovl_ready && g_ovl != pat_now) {                 /* 面ごとの絵の組(gen_sprites.py の STAGE_GROUPS。約 1ms) */
             pat_now = g_ovl;
             rom_to_vram(ASSET_SPR_SET_BANK, (u16)(ASSET_SPR_SET_OFF + (u16)pat_now * SPR_SET_LEN), 1, (u16)(0xF800u + SPR_SET_BASE * 32u), SPR_SET_LEN);
         }
+        /* HUD の文字は次のフレームへ回してよい: フレームの残りが少なければ書かない(VDP のコマンドと重なると
+           2 行の書き込みが 50 ライン近くかかることがある) */
         if (col_done < 16 && (u16)(sys_timer() - g_frame_t0) < COL_DEADLINE) {
             u16 o = (u16)(col_done & 3) * 112u;
             rom_to_vram(ASSET_SPR_COL_BANK, (u16)(ASSET_SPR_COL_OFF + ((u16)col_now << 9) + o), 1,
                         (u16)(((const u16 *)sat_addr)[col_done >> 2] - 0x200u + o), 112);
             col_done++;
         }
-        /* HUD の文字は次のフレームへ回してよい: フレームの残りが少なければ書かない(VDP のコマンドと重なると
-           2 行の書き込みが 50 ライン近くかかることがある) */
         if (g_hud_on && (g_phase < PH_AIR || (u16)(sys_timer() - g_frame_t0) < HUD_DEADLINE)) hud_update();
         if (g_phase <= PH_SORTIE) { title_vram(); title_build(); }
         else { stage_vram(); stage_build(); }

@@ -403,6 +403,9 @@ static void write_band(u8 b) {
     }
 }
 
+u8 spr_written(void) { return (u8)(buf ^ 1); }   /* spr_end が最後に書いた側(0/1) */
+u8 spr_pairs(u8 l) { return layouts[l][0]; }      /* 割り振り l の組(2 枚重ね)の枠の数 */
+
 void spr_end(void) {
     write_band(0);
     write_band(1);
