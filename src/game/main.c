@@ -112,7 +112,7 @@ u8 g_after_over, g_title_mode, g_rank_ok, g_vdp_mon, g_reload;
 u16 g_last_score;
 u8 g_rank_nm[RANK_N][3];
 u16 g_rank_sc[RANK_N];
-static u8 juice_t, juice_tier, juice_len, bs_last;
+static u8 juice_t, juice_tier, juice_len, bs_last, shard_t, shard_y;
 static void juice(void) {
     u8 s = g_boss_state;
     if (s == BS_DYING && bs_last != BS_DYING) {
@@ -123,11 +123,14 @@ static void juice(void) {
             else for (i = 0; i < sizeof boss_sec; i++) if (boss_sec[i] == g_sec) juice_tier = 2;
         }
         juice_len = juice_t = juice_tier == 1 ? 45 : juice_tier == 2 ? 120 : 255;
-        if (juice_tier == 2 || g_calib)                       /* 面のボス・試験のボス: Infinity Shard(指示書 2.3「ボス撃破時のみ出現」) */
-            item_spawn(FX(160), FX(g_boss_aim > 16 && g_boss_aim < PLAY_H - 16 ? g_boss_aim : 80), 1);
+        if (juice_tier == 2 || g_calib) {                     /* 面のボス・試験のボス: Infinity Shard(指示書 2.3「ボス撃破時のみ出現」) */
+            shard_y = (u8)(g_boss_aim > 16 && g_boss_aim < PLAY_H - 16 ? g_boss_aim : 80);
+            shard_t = juice_tier == 2 ? 112 : 1;              /* ★面ボスは部分拡大が終わってから出す(拡大の帯で 2 倍に見えた) */
+        }
     }
     bs_last = s;
     g_mag = 0;
+    if (shard_t && !--shard_t) item_spawn(FX(160), FX(shard_y), 1);
     if (!juice_t) return;
     juice_t--;
     /* ★面ボスとラスボスは、自機のいない帯のスプライトを 2 倍に(爆発が大きくなる。部分拡大、C5)。境は 96 行 */
