@@ -209,11 +209,11 @@ void weap_update(void) {
     }
 }
 
-/* ★分身と防壁は G_MISC(枠の番号が最後 = 1 ラインに 8 枚を超えると真っ先に消える)で、分身は 1 フレームおきの点滅。
-   敵の枠を回していた間は、中ボスの部品や敵が消えた(指摘) */
+/* ★分身と防壁は G_MISC(敵の枠を回していた間は、中ボスの部品や敵が消えた。指摘)。G_MISC の 4 枠を超えた分は、spr.c の窓が
+   フレームごとに顔ぶれをずらしてちらつかせる(前は分身を 1 フレームおきに半分ずつ描き、1 ラインの制限と重なって消えて見えた) */
 static void echo_draw(s16 dy) {
     u8 i, n = g_gauge.echo;
-    for (i = (u8)(rot & 1); i < n; i += 2) {                  /* 半分ずつ交互に */
+    for (i = 0; i < n; i++) {
         u8 k = echo_at(i);
         if (!(blink[i] & 4)) spr_put(tr_x[k], (s16)(tr_y[k] + dy), PAT_ECHO, G_MISC, CS_EXPL);
     }
@@ -236,9 +236,7 @@ void weap_draw(void) {
     s16 dy;
     if (!g_pl.alive || (g_pl.invul & 4)) return;
     px = (u8)PX(g_pl.x); py = (u8)PX(g_pl.y); dy = g_pl_dy;
-    /* 分身と防壁の順番はフレームごとに入れ替える(G_MISC の 4 枠を超えたとき、毎フレーム同じものが消えないように) */
-    if (rot & 4) { aegis_draw(px, py, dy); echo_draw(dy); }
-    else { echo_draw(dy); aegis_draw(px, py, dy); }
+    echo_draw(dy); aegis_draw(px, py, dy);
     /* THRUST の残像: 動いている間、段階が上がるほど後ろへ伸びる(3 段から 2 つ) */
     if (g_gauge.thrust && moved && !(g_ovl == OVL_S3 && g_scroll_speed >= 16)) {   /* 3 面の高速は面が残像を出す */
         u8 k = (u8)((tr_h - (u8)(g_gauge.thrust * 2)) & (TRAIL - 1));

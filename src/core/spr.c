@@ -60,6 +60,18 @@ static const u8 layouts[16][3] = {    /* 組・1 枚の敵・敵弾の枠の数(
     { 6, 5, 5 }, { 4, 7, 5 }, { 2, 9, 5 }, { 4, 6, 6 }, { 2, 4, 10 }, { 2, 6, 8 }, { 8, 3, 5 }, { 4, 8, 4 },
 };
 u8 spr_gfirst[8], spr_gend[8], spr_gcount[8];
+/* ★枠の並び(番号の小さい枠が 1 ラインに 8 枚の制限に勝つ): 自機 → その他(強化の分身・防壁・爆発・Quanta)→ 自機弾 → 敵 → 敵弾。
+   その他を最後(28..31)に置いていた間は、自機 2 枚と自機弾 6 枚が同じ行に並ぶとその行の分身が必ず消えた(指摘「オプションが
+   消える」)。自機弾はグループの中で順番を回すので、負けても消えずにちらつく。その他は色を枠ごとに書くので回さない */
+#define MISC_FIRST 2
+static const u8 slot_order[G_COUNT] = { G_SHIP_A, G_SHIP_B, G_MISC, G_SHOT, G_PAIR, G_ENEMY, G_EBUL, G_OPT };
+/* ★溢れたときの窓(asm から使う): グループの枠より多く置かれたら、置く顔ぶれをフレームごとに枠の数ずつずらす(後から置いた
+   ものが毎フレーム同じように消えていた。指摘「完全に消えずにちらつかせて」)。帯・グループごとに 4 バイト:
+   [0] このフレームに置こうとした数、[1] 窓の始め s(0xFF = 溢れていない)、[2] 先頭から置く数(折り返し分)、[3] その次に飛ばす数。
+   フレームの頭(win_steps)で s を枠の数だけ進め、[2][3] を出す。1 枚ごとは [2] か [3] を 1 つ減らすだけ(★1 枚ごとに
+   (k - s) mod n を計算すると、弾の多い場面で積み重なり、PCM の鳴る間の遅れが 5 → 13 に増えた) */
+u8 spr_win[64];
+u8 spr_wcap[8];                      /* グループに入る数(組は 2 枠で 1 つ) */
 u8 g_spr_layout;
 static u8 spr_step;                  /* spr_add: 1 回に使う枠の数(G_PAIR は 2) */
 u8 spr_bx, spr_bp, spr_bg, spr_bcs, spr_bmask;   /* spr_add への受け渡し */
@@ -89,7 +101,11 @@ void spr_layout(u8 l) {
     g_spr_layout = l;
     spr_gcount[G_SHIP_A] = 1; spr_gcount[G_SHIP_B] = 1; spr_gcount[G_SHOT] = 6; spr_gcount[G_MISC] = 4;
     spr_gcount[G_PAIR] = s[0]; spr_gcount[G_ENEMY] = s[1]; spr_gcount[G_EBUL] = s[2]; spr_gcount[G_OPT] = l >= 8 ? 4 : 0;
-    for (i = 0; i < G_COUNT; i++) { spr_gfirst[i] = at; at += spr_gcount[i]; spr_gend[i] = at; rot_g[i] = 0; }
+    for (i = 0; i < G_COUNT; i++) {
+        u8 g = slot_order[i];
+        spr_gfirst[g] = at; at += spr_gcount[g]; spr_gend[g] = at; rot_g[g] = 0;
+        spr_wcap[g] = g == G_PAIR ? (u8)(spr_gcount[g] >> 1) : spr_gcount[g];
+    }
 }
 
 void spr_init(void) {
@@ -142,20 +158,91 @@ static void spr_hide(u8 y) __naked {
     __endasm;
 }
 
+/* 窓を枠の数 c だけ進め(n = 前のフレームに置こうとした数。溢れていなければ s = 0xFF)、先頭から置く数 = max(0, s + c - n)、
+   飛ばす数 = s - 先頭から置く数 を出す。帯・グループの 16 組すべて(asm。★C で 16 回呼ぶと 1 フレームに 7 ラインかかった) */
+static void win_steps(void) __naked {
+    __asm
+        ld   hl, #_spr_win
+        ld   bc, #0x1000           ; B = 16 組、C = 帯 * 8 + グループ
+    00001$:
+        ld   e, (hl)               ; E = n
+        ld   (hl), #0
+        push hl
+        ld   a, c
+        and  #7
+        ld   hl, #_spr_wcap
+        add  a, l
+        ld   l, a
+        jr   nc, 00002$
+        inc  h
+    00002$:
+        ld   d, (hl)               ; D = c
+        pop  hl
+        push hl
+        inc  hl                    ; HL = s
+        ld   a, d
+        cp   e
+        jr   c, 00003$             ; c < n: 溢れている
+        ld   (hl), #0xFF
+        inc  hl
+        ld   (hl), #0
+        inc  hl
+        ld   (hl), #0
+        jr   00008$
+    00003$:
+        ld   a, (hl)               ; 前の s(0xFF なら 0 から)
+        inc  a
+        jr   z, 00004$
+        dec  a
+    00004$:
+        add  a, d
+    00005$:
+        cp   e
+        jr   c, 00006$
+        sub  e
+        jr   00005$
+    00006$:
+        ld   (hl), a               ; s
+        add  a, d
+        sub  e                     ; s + c - n
+        jr   nc, 00007$
+        xor  a
+    00007$:
+        inc  hl
+        ld   (hl), a               ; 先頭から置く数
+        ld   d, a
+        dec  hl
+        ld   a, (hl)
+        sub  d
+        inc  hl
+        inc  hl
+        ld   (hl), a               ; 飛ばす数
+    00008$:
+        pop  hl
+        inc  hl
+        inc  hl
+        inc  hl
+        inc  hl
+        inc  c
+        djnz 00001$
+        ret
+    __endasm;
+}
+
 void spr_begin(void) {
     u8 g, st;
     spr_hide(hide_y());
     spr_last[0] = spr_last[1] = 0;
     for (g = 0; g < G_COUNT; g++) {
         u8 c = spr_gcount[g];
-        if (c > 1 && g != G_MISC && (rot_g[g] += (g == G_PAIR ? 2 : 1)) >= c) rot_g[g] = 0;   /* ちらつきの分散: グループの中で回す(組は 2 つずつ)。
-                                                                 ★G_MISC は回さない: 枠ごとの色を毎フレーム書き直すことになり重く、溢れたときは最後に置く
-                                                                 強化の分身・防壁から消えるほうがよい(指摘「オプションは優先順位を下げて」) */
+        if (c > 1 && g != G_MISC && (rot_g[g] += (g == G_PAIR ? 2 : 1)) >= c) rot_g[g] = 0;   /* 1 ラインの制限のちらつきの分散: グループの中で枠を回す(組は 2 つずつ)。
+                                                                 ★G_MISC は回さない(枠ごとの色を毎フレーム書き直すことになり重い)。溢れた分は窓(spr_win)でちらつく */
         st = (u8)(spr_gfirst[g] + rot_g[g]);
         spr_pos[g] = st; spr_pos[8 + g] = st;
         spr_cnt[g] = 0; spr_cnt[8 + g] = 0;
+        spr_misc_cs[g] = 0xFF;
     }
-    for (g = 0; g < 8; g++) spr_misc_cs[g] = 0xFF;
+    win_steps();
 }
 
 /* 帯の写しへ 1 枚置く(asm)。A = 表の Y(表示の上端 - 1)、spr_bx / spr_bp / spr_bg / spr_bcs / spr_bmask。
@@ -194,6 +281,32 @@ void spr_add(u8 yy) __naked {
         ld   l, a
         ld   h, #0                 ; HL = 帯 * 8 + グループ
         push hl
+        ; ---- 窓(上の spr_win): 先頭から置く数が残っていれば置く、飛ばす数が残っていれば置かない
+        add  hl, hl
+        add  hl, hl
+        ld   de, #_spr_win
+        add  hl, de
+        inc  (hl)                  ; 置こうとした数
+        inc  hl
+        inc  hl
+        ld   a, (hl)               ; 先頭から置く数
+        or   a
+        jr   z, 00031$
+        dec  (hl)
+        jr   00032$
+    00031$:
+        inc  hl
+        ld   a, (hl)               ; 飛ばす数
+        or   a
+        jr   z, 00032$
+        dec  (hl)
+        jp   00090$                ; 窓の外: 今回は置かない(数えるのは溢れと同じ)
+    00032$:
+        pop  hl
+        push hl
+        ld   a, (_spr_bg)
+        ld   e, a
+        ld   d, #0                 ; DE = グループ
         ld   iy, #_spr_gcount
         add  iy, de
         ld   de, #_spr_cnt
@@ -253,7 +366,7 @@ void spr_add(u8 yy) __naked {
         add  a, a
         add  a, a
         add  a, e
-        sub  #28
+        sub  #MISC_FIRST
         ld   hl, #_spr_misc_cs
         add  a, l
         ld   l, a
@@ -392,13 +505,15 @@ static void write_band(u8 b) {
     vdp_write_addr17(1, sa);
     if (n) vdp_out_block((u8)(n * 4), &spr_shadow[b ? SLOTS * 4 : 0]);
     if (n < SLOTS) VDP_DAT = 216;
-    /* G_MISC の色: 組が変わった枠だけ */
+    /* G_MISC の色: 組が変わった枠だけ。★1 フレームに 1 枠まで(溢れて窓がずれると 4 枠とも替わることがあり、1 枠 ≒ 170us。
+       PCM の鳴る間に重なって遅れた)。残りは次のフレームに書く(ちらつくものが一瞬違う色になるだけ) */
     for (i = 0; i < 4; i++) {
         u8 cs = spr_misc_cs[b * 4 + i];
         if (cs != 0xFF && misc_cache[b][buf][i] != cs) {
-            vdp_write_addr17(1, (u16)(sa - 0x200u + (u16)(spr_gfirst[G_MISC] + i) * 16u));
+            vdp_write_addr17(1, (u16)(sa - 0x200u + (u16)(MISC_FIRST + i) * 16u));
             vdp_out_block(16, misc_col[cs]);
             misc_cache[b][buf][i] = cs;
+            break;
         }
     }
 }

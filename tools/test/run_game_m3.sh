@@ -6,7 +6,7 @@
 #      迷子の書き込みを捕まえる。M3 でコマンドのレジスタを省いて画面全体が崩れたのを見逃した反省)
 #   2. legion: LEGION と戦っている最中、積んであるマス(g_lg_on)がリングに Pawn の絵で描かれていて、
 #      120 マス以上積み上がっている
-#   3. rotor: 都市後半で ROTOR が作った PLUMB の 10 枚(ページ 2)が tools/gen_boss.py の答えと一致
+#   3. rotor: 都市後半で ROTOR が作った PLUMB の 10 枚(ページ 2)が tools/gen_boss.py の答えと一致(PLUMB と戦い始めたとき)
 #   4. no_late: 遅れたフレーム 0(起動から PLUMB を倒して上昇するまで)
 #   5. gq_drop: GHOST の待ち行列が溢れて捨てたコマンドが 0(捨てると描き戻しが抜けて絵が崩れる)
 #   usage: tools/test/run_game_m3.sh <作業ディレクトリ>
@@ -15,7 +15,7 @@ OUT=${1:?usage: $0 <workdir>}
 ROM=GAME.ROM
 NOI=build/game.noi
 MACHINE=${MACHINE:-My_FS-A1ST_512K}
-mkdir -p "$OUT"
+mkdir -p "$OUT"; rm -f "$OUT"/rotor.vram "$OUT"/legion.vram "$OUT"/city.vram
 sym() { awk -v s="$1" '$2==s{print $3}' "$NOI"; }
 ST=$(sym _g_stat); GQD=$(sym _g_gq_drop); PL=$(sym _g_pl); SEC=$(sym _g_sec); BS=$(sym _g_boss_state); INV=$(sym _g_dbg_invul)
 WX=$(sym _g_wx); W0=$(sym _g_w0); LGON=$(sym _g_lg_on); LGX=$(sym _g_lg_x0); SCAM=$(sym _g_scam)
@@ -46,16 +46,17 @@ proc watch {} {
     incr ::legion_wait
     if {\$::legion_wait > 8} { dump legion; set ::legion_done 1 }
   }
+  if {\$s == 5 && [rd $BS] == 2 && !\$::rotor_done} { dump rotor; set ::rotor_done 1 }   ;# ★PLUMB は絵ができてから降りてくる(作る速さは重さしだいなので、決まった時刻では照合しない)
   if {\$s == 6} { puts \$::f "late=[rd16 [expr {$ST+4}]] drop=[rd16 $GQD]"; close \$::f; exit }
   after time 0.25 watch
 }
 set ::legion_wait 0
+set ::rotor_done 0
 after time 16.6 { keymatrixdown 8 0x01 }
 after time 16.8 { keymatrixup 8 0x01 }
 after time 19.0 { debug write memory $INV 1; keymatrixdown 8 0x01; watch }
 # ★1 面の空中戦を 512 → 1024 ドットに延ばした(M7 の後)ので、都市の時刻は 8.5 秒遅れる
 after time 54 { dump city }
-after time 94 { dump rotor }
 after time 200 { puts \$::f "timeout"; close \$::f; exit }
 TCL
 timeout 600 openmsx -machine "$MACHINE" -carta "$ROM" -romtype ASCII8 -script "$T" >/dev/null 2>&1 || true

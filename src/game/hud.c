@@ -62,7 +62,7 @@ void hud_init(void) {
     init_stage = 1;
 }
 
-#define GAUGE_STEP 4                 /* ゲージの絵を 1 フレームに描く行数(1 行 64 回の書き込み ≒ 0.55ms) */
+#define GAUGE_STEP 2                 /* ゲージの絵を 1 フレームに描く行数(1 行 64 回の書き込み ≒ 0.55ms。★4 行だと出撃の声と重なって遅れた) */
 #define INIT_TEXT  (GAUGE_H / GAUGE_STEP + 1)
 
 static void init_step(void) {

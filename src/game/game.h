@@ -156,6 +156,7 @@ extern Banner g_ban;
 #define BAN_END   (BAN_SUCK + 22)  /* 吸い込み: 帯の上端を 2 フレームに 1 行下げる(HUD の手前 6 行まで) */
 #define BAN_STG   186              /* 短冊を使っているときの文字の置き場(ページ 2。帯には見えない起動ロゴの黒い区間) */
 void banner_vram(void);            /* 第 2 バンク */
+void juice_frame(void);            /* 撃破の演出(第 2 バンクの juice.c。毎フレーム) */
 /* ---- 強化の ECHO / AEGIS / DROP(第 2 バンクの weapon.c。指示書 2.3) ---- */
 void weap_init(void);              /* 出撃・復活: 分身の軌跡を自機の位置で埋める */
 void weap_update(void);            /* player_update の終わり(分身・防壁・爆雷) */

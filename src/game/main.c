@@ -51,11 +51,11 @@ u8  g_hud_on;
 u8 g_slow;
 static u8 slow_next;
 u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
-#define HUD_DEADLINE (170u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
+#define HUD_DEADLINE (150u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
 #define SPR_DEADLINE (100u * 16u)  /* スプライトの段に入る時点でこれを過ぎていたら、そのフレームは描き直さない
                                       (スプライト・属性表・VRAM の仕事で残り 140 ライン前後かかる) */      /* 1 = 被弾しない(自動テスト用) */
 #define SPR_SKIP_MAX 4             /* スプライトを続けて飛ばすのはここまで(それより後は SPR_FORCE まで描く) */
-#define SPR_FORCE    (150u * 16u)
+#define SPR_FORCE    (120u * 16u)
 
 static u8 state;
 
@@ -91,11 +91,6 @@ static void demo_input(void) {
     g_in = demo_prev = v;
 }
 
-/* ---- 撃破の演出(M7 の後、指摘 C4): 中ボス = ちょっとした破壊、面ボス = 派手、ラスボス = やり過ぎなくらい。
-   ボスが BS_DYING になった区間で段階を決め、画面の揺れ(R#23 に足す g_roll)・閃光(色 0)・爆発の追加・爆発音を出す。
-   ★区間の番号は各面の sN.h の enum と合わせる(本体は面のヘッダを取り込まないので数で持つ) ---- */
-static const u8 boss_sec[] = { 5, 13, 22, 31, 41, 50, 53, 60, 61 };   /* 1〜6 面のボス、7 面 LIBRA、8 面の第 1・第 2 形態 */
-#define SEC_LAST 62                                                   /* 8 面の第 3 形態(SEC8_BOSS3) */
 /* ★部品の多いボスの区間: 戦っている間はスプライトの枠をボスの割り振りに(spr_layout。1 つの帯に 1 枚の敵が 7〜10 枚並び、
    ふつうの 6 枠では消えて見えた)。1 面 PLUMB の鎖、2 面 CW、3 面 Metronome、4 面 VERNIER の光線、6 面の砂時計の目 */
 static const u8 big_sec[] = { 5, 11, 20, 29, 48, 31, 41, 60, 62, 3 };
@@ -106,52 +101,13 @@ static const u8 sec_sec[] = { 21, 63, 64, 0, 7, 15, 24, 33, 44, 52, 55 };
 static const u8 sec_lay[] = { 1, 4, 4, 6, 6, 6, 6, 6, 6, 6, 6 };    /* 0.. = 各面の空中戦(編隊の組を多く) */
 u8 g_infx_mode;                    /* ∞ の表示(第 2 バンクの infx.c)。0 = なし */
 static u8 col_now, col_done, cc_lo, cc_hi, cc_step;   /* スプライトの色表(下の main のループ。★初期値 0 = 色の組 0 を写す) */
+#define PAIR_FIRST 12              /* 組(2 枚重ね)の最初の枠(spr.c の slot_order: 自機 2・その他 4・自機弾 6 の後) */
 #define COL_DEADLINE (150u * 16u)  /* これを過ぎていたらスプライトの色表の書き込みを次のフレームへ */
 u8 g_after_over, g_title_mode, g_rank_ok, g_vdp_mon, g_reload;
 #define MON(c) do { if (g_vdp_mon) vdp_wreg(7, (c)); } while (0)   /* VDP MONITOR: 外枠 = 論理 12・スプライト 9・VRAM 13・待ち 0(割込みの間は 15) */
 u16 g_last_score;
 u8 g_rank_nm[RANK_N][3];
 u16 g_rank_sc[RANK_N];
-static u8 juice_t, juice_tier, juice_len, bs_last, shard_t, shard_y;
-static void juice(void) {
-    u8 s = g_boss_state;
-    if (s == BS_DYING && bs_last != BS_DYING) {
-        u8 i;
-        juice_tier = 1;
-        if (!g_calib) {
-            if (g_sec == SEC_LAST) juice_tier = 3;
-            else for (i = 0; i < sizeof boss_sec; i++) if (boss_sec[i] == g_sec) juice_tier = 2;
-        }
-        juice_len = juice_t = juice_tier == 1 ? 45 : juice_tier == 2 ? 120 : 255;
-        if (juice_tier == 2 || g_calib) {                     /* 面のボス・試験のボス: Infinity Shard(指示書 2.3「ボス撃破時のみ出現」) */
-            shard_y = (u8)(g_boss_aim > 16 && g_boss_aim < PLAY_H - 16 ? g_boss_aim : 80);
-            shard_t = juice_tier == 2 ? 112 : 1;              /* ★面ボスは部分拡大が終わってから出す(拡大の帯で 2 倍に見えた) */
-        }
-    }
-    bs_last = s;
-    g_mag = 0;
-    if (shard_t && !--shard_t) item_spawn(FX(160), FX(shard_y), 1);
-    if (!juice_t) return;
-    juice_t--;
-    /* ★面ボスとラスボスは、自機のいない帯のスプライトを 2 倍に(爆発が大きくなる。部分拡大、C5)。境は 96 行 */
-    if (juice_tier >= 2 && juice_t > 8) { u8 py = (u8)(g_pl.y >> 4); if (py >= 96) g_mag = 1; else if (py < 78) g_mag = 2; }
-    {   /* 揺れ: 段階で幅を変え(±2 / ±4 / ±8)、終わりへ向けて小さく(★毎フレームの経路なので % を使わない) */
-        u8 m = (u8)(juice_tier == 1 ? 3 : juice_tier == 2 ? 7 : 15);
-        if (juice_t < 10) m >>= 2; else if (juice_t < 20) m >>= 1;
-        g_roll = juice_t ? (u8)((rnd8() & m) - (m >> 1)) : 0;
-    }
-    {   /* 閃光: 中ボス 1 回、面ボス 3 回、ラスボスは何度も(最後は白く飛ぶ) */
-        u8 e = (u8)(juice_len - juice_t), on;
-        if (juice_tier == 1) on = e < 2;
-        else if (juice_tier == 2) on = e < 3 || (e >= 30 && e < 32) || (e >= 70 && e < 72);
-        else on = (e < 4) || !(e & 15) || (juice_t < 24 && juice_t > 8);
-        if (on) vdp_set_pal(0, 7, 7, 7); else vdp_set_pal(0, 0, 0, 0);
-    }
-    /* ★爆発を足すのはラスボスだけ(爆発は G_MISC の 4 枠を ∞ と取り合って枠の色を書き直すので重く、処理落ちで
-       撃破が長引いた。ボスは撃破の間それぞれ爆発を出している) */
-    if (juice_tier == 3 && !(juice_t & 7)) fx_spawn(FX(64 + (rnd8() & 127)), FX(24 + (rnd8() & 127)));
-    if (juice_tier >= 2 && !(juice_t & 31)) sfx(SFX_BOOM);
-}
 
 void game_start(void) {
     player_init();
@@ -265,7 +221,7 @@ void main(void) {
 
         /* 音: 選曲と演出 → ドライバ。★毎フレーム必ず回す(先送りすると音が固まって出て、リズムがもたついた。M7 の測定で
            16 分音符の半分が 1 フレームより大きくずれた) */
-        juice();
+        juice_frame();                   /* 撃破の演出(第 2 バンク) */
         if (g_lb) g_lb--;
         {
             u8 s = g_boss_state, l = 0, i;
@@ -276,7 +232,7 @@ void main(void) {
                (指摘「ボス登場の直前・撃破の直後に消える」)。その枠の行だけは、書いた表から 2 フレームで先に写す(cc_*) */
             if (l != g_spr_layout) {
                 u8 a = spr_pairs(g_spr_layout), b = spr_pairs(l);
-                cc_lo = (u8)(8 + (a < b ? a : b)); cc_hi = (u8)(8 + (a < b ? b : a)); cc_step = cc_hi > cc_lo;
+                cc_lo = (u8)(PAIR_FIRST + (a < b ? a : b)); cc_hi = (u8)(PAIR_FIRST + (a < b ? b : a)); cc_step = cc_hi > cc_lo;
                 spr_layout(l);
             }
         }
@@ -338,7 +294,7 @@ void main(void) {
         if (!g_slow && g_phase >= PH_AIR && (u16)(sys_timer() - g_frame_t0) > (spr_skips < SPR_SKIP_MAX ? SPR_DEADLINE + poll_dl : SPR_FORCE)) {
             g_slow = 1; g_stat.slow++;   /* ここまでで重かった: スプライトは前のフレームのまま */
         }
-        if (g_slow) { if (spr_skips < 255) spr_skips++; } else spr_skips = 0;
+        spr_skips = g_slow ? (u8)(spr_skips + 1) : 0;
         MON(9);
         if (!g_slow) {
             spr_voff = (u8)(g_vscroll + g_roll);   /* スプライトの Y はプレイエリアの R#23 を足して表へ(ロールは画面だけ) */
@@ -377,9 +333,12 @@ void main(void) {
         /* HUD の文字は次のフレームへ回してよい: フレームの残りが少なければ書かない(VDP のコマンドと重なると
            2 行の書き込みが 50 ライン近くかかることがある) */
         if (col_done < 16 && (u16)(sys_timer() - g_frame_t0) < COL_DEADLINE) {
-            u16 o = (u16)(col_done & 3) * 112u;
-            rom_to_vram(ASSET_SPR_COL_BANK, (u16)(ASSET_SPR_COL_OFF + ((u16)col_now << 9) + o), 1,
-                        (u16)(((const u16 *)sat_addr)[col_done >> 2] - 0x200u + o), 112);
+            /* ★その他の 4 枠(枠 2..5、spr.c の slot_order)は使うときに書くので飛ばす: 1 回目は枠 0..1 と 6..10、2..4 回目は 7 枠ずつ */
+            u16 src = (u16)(ASSET_SPR_COL_OFF + ((u16)col_now << 9)), dst = (u16)(((const u16 *)sat_addr)[col_done >> 2] - 0x200u);
+            u8 q = (u8)(col_done & 3);
+            if (!q) { rom_to_vram(ASSET_SPR_COL_BANK, src, 1, dst, 32); src += 96; dst += 96; }
+            else { u16 o = (u16)(q * 112u + 64u); src += o; dst += o; }
+            rom_to_vram(ASSET_SPR_COL_BANK, src, 1, dst, q ? 112 : 80);
             col_done++;
         }
         if (g_hud_on && (g_phase < PH_AIR || (u16)(sys_timer() - g_frame_t0) < HUD_DEADLINE)) hud_update();
