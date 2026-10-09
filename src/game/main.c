@@ -176,11 +176,17 @@ static void screen_init(void) {
    待ったらフレーム待ちの基準も置き直す(ループの位相が境界に揃うため)。
    ★見るのは表示中のリスト(前のフレームに作ったもの)の分割 g_split_shown だけ。g_split_n が 0 になったフレームも
      表示中のリストはまだ 244 行で SCREEN12 に切り替わる(待たずに書いたら HUD の文字がプレイエリアへ化けた)。
-     逆に g_split_n を立てたフレームの表示中のリストには境界の項目が無いので、待つと 370 ライン空回りした(6 面)。 */
+     逆に g_split_n を立てたフレームの表示中のリストには境界の項目が無いので、待つと 370 ライン空回りした(6 面)。
+   ★フレームの頭(VBLANK)から境界(次の画面の 48 行目、約 98 ライン後)までに論理とスプライトが終わらないと、次の境界まで
+     丸 1 フレーム待ち、待った後に基準を置き直すので遅れにも数えず、6 面と終幕がずっと 30fps だった。境界がこのフレームの中で
+     もう過ぎていれば窓は開いているので待たない(WIN_LATE より後なら、窓の残りで VRAM の仕事が終わらないので従来どおり待つ) */
+#define WIN_LATE (180u * 16u)
+static u8 mark_f0;               /* フレームの頭の g_ras_mark */
 static void wait_vram_window(void) {
     u8 m0, i;
     if (!g_split_shown) return;
     m0 = g_ras_mark;
+    if (m0 != mark_f0 && (u16)(sys_timer() - g_frame_t0) < WIN_LATE) return;
     for (i = 0; i < 200 && g_ras_mark == m0; i++) {
         u16 t0 = sys_timer();
         while (g_ras_mark == m0 && (u16)(sys_timer() - t0) < 30) { if (g_poll_hook) g_poll_hook(); }   /* ★待つ間も PCM を出す(M7) */
@@ -238,6 +244,7 @@ void main(void) {
         MON(0);
         idle = frame_sync(1);
         g_frame_t0 = sys_timer();
+        mark_f0 = g_ras_mark;
         MON(12);
         if (g_frame_late != late0) g_stat.late++;
         g_slow = slow_next;

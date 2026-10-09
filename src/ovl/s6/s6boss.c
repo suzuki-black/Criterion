@@ -76,9 +76,13 @@ static u8 rj, rph, rrow;           /* 仕事の番号 / 0 = 元を読む、1 = �
 static void rot_update(void) {
     if (rj >= RJ_END || g_sec < SEC6_SINK) return;
     if (rph == 0) {
+        if (rj >= 8) { rrow = 0; rph = 2; return; }           /* 砂時計: 描いた絵(ROM)を写すだけ */
+        if (rj == 0 && rrow < 4) {                            /* 元の絵(2KB)は 4 回に分けて(★1 回で読むと約 80 ライン、試験 6 で遅れた) */
+            rom_to_ram(ASSET_GEAR_BANK, (u16)(ASSET_GEAR_OFF + rrow * 512u), ROTOR_SRC + rrow * 512u, 512);
+            rrow++;
+            return;
+        }
         rrow = 0;
-        if (rj >= 8) { rph = 2; return; }                     /* 砂時計: 描いた絵(ROM)を写すだけ */
-        if (rj == 0) rom_to_ram(ASSET_GEAR_BANK, ASSET_GEAR_OFF, ROTOR_SRC, 2048);
         rotor_begin(32, rj, 512, 2);
         rph = 1;
     } else if (rph == 1) {                                    /* 1 フレーム 256 ドットほど(約 3ms) */
