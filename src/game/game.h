@@ -123,6 +123,10 @@ extern u16 g_pt;                    /* 今の場面に入ってからのフレ�
 extern u8  g_hud_on;                /* 1 = ゲームの HUD を描いた(出撃で上の帯が消えてから) */
 extern u8  g_split_shown;           /* 今表示しているリストを作ったときの g_split_n */
 extern u8  g_split_n;               /* 上の SCREEN12 の帯の高さ(0 = 分割なし)。VRAM の書き込みはその下の区間で */
+/* ★SCREEN12(GRAPHIC7)の帯は SCREEN5 より表示が右へ 4 ドットずれる(openMSX で測定: 表示の左右の端が 40..287 → 44..291)。
+   上の帯の間だけ R#18 の横の調整を左へ 4 にし、SCREEN5 へ戻す所で元の値(RG18SAV)に戻す(遊んでの指摘「上と下で x の始まりが違う」) */
+#define R18_SAVE   (*(volatile u8 *)0xFFF1)
+#define R18_G7     ((u8)((R18_SAVE & 0xF0) | ((R18_SAVE + 4) & 0x0F)))
 void title_load(void);              /* タイトルの素材を ROM から VRAM へ(全面 SCREEN5 のときに) */
 void title_update(void);            /* 起動ロゴ・タイトル・出撃の進行(場面を進める) */
 void title_draw(void);              /* その場面のスプライト */

@@ -25,7 +25,7 @@ enum { SECE_SPACE = 65, SECE_EARTH, SECE_ROLL, SECE_FINAL };
 
 static u16 sec_t;
 static u8  yrow, split;
-static u8  regs_top[2][14], regs_n[2][12];
+static u8  regs_top[2][16], regs_n[2][14];
 static u8  next_line, roll_row;    /* 次に書く名前、その文字の行 */
 static const u8 black[3] = { 0, 0, 0 };
 
@@ -124,12 +124,12 @@ void ovl_bands(s16 sc, u16 nx) {
     {
         u8 *rt = regs_top[bi], *rn = regs_n[bi];
         rt[0] = 0; rt[1] = 0x1E; rt[2] = 25; rt[3] = 0x0A; rt[4] = 2; rt[5] = 0x1F;
-        rt[6] = 8; rt[7] = 0x2A; rt[8] = 23; rt[9] = YJK_ROW; rt[10] = 5; rt[11] = spr_regs.r5a; rt[12] = 11; rt[13] = 3;
+        rt[6] = 8; rt[7] = 0x2A; rt[8] = 23; rt[9] = YJK_ROW; rt[10] = 5; rt[11] = spr_regs.r5a; rt[12] = 11; rt[13] = 3; rt[14] = 18; rt[15] = R18_G7;
         e = stage_ev_raw(244, RAS_REGS | RAS_SCROLL);
-        if (e) { e->haze = rt; e->haze_n = 7; e->r26 = (u8)(VDP_R26(sec_t >> 3) & 31); e->r27 = VDP_R27(sec_t >> 3); }
+        if (e) { e->haze = rt; e->haze_n = 8; e->r26 = (u8)(VDP_R26(sec_t >> 3) & 31); e->r27 = VDP_R27(sec_t >> 3); }
         rn[0] = 0; rn[1] = 0x16; rn[2] = 25; rn[3] = 0x03; rn[4] = 8; rn[5] = 0x28;
-        rn[6] = 2; rn[7] = 0x3F; rn[8] = 23; rn[9] = (u8)(g_vscroll + g_roll); rn[10] = 5; rn[11] = spr_regs.r5a;
+        rn[6] = 2; rn[7] = 0x3F; rn[8] = 23; rn[9] = (u8)(g_vscroll + g_roll); rn[10] = 5; rn[11] = spr_regs.r5a; rn[12] = 18; rn[13] = R18_SAVE;
         e = stage_ev_raw(n, RAS_REGS | RAS_SCROLL | RAS_PAL | RAS_MARK);
-        if (e) { e->haze = rn; e->haze_n = 6; e->r26 = VDP_R26(nx); e->r27 = VDP_R27(nx); e->pidx = 1; e->prb = 0; e->pg = 0; }
+        if (e) { e->haze = rn; e->haze_n = 7; e->r26 = VDP_R26(nx); e->r27 = VDP_R27(nx); e->pidx = 1; e->prb = 0; e->pg = 0; }
     }
 }

@@ -29,8 +29,6 @@ static u8  far_k, far_drawn, flash_t, far_t;
 static u8  vortex;
 static u8  press_on;
 s8 s5_press_c, s5_press_f;
-static s16 wreck_a, wreck_b;       /* 撃沈: 前後の沈み(ドット) */
-static u16 wreck_x;                /* 撃沈: 離れる量 */
 
 static const u8 sky0[3] = { 1, 0, 2 }, sky1[3] = { 2, 1, 3 }, sky2[3] = { 3, 2, 4 }, sky3[3] = { 4, 3, 5 };
 static const u8 white[3] = { 7, 7, 7 }, inside[3] = { 1, 1, 2 }, gap[3] = { 2, 2, 4 };
@@ -193,11 +191,13 @@ void ovl_update(void) {
     case SEC5_BOSS:
         if (sec_t == 5400) g_boss_state = BS_DONE;
         if (g_boss_state == BS_DONE) {
-            g_boss_state = BS_NONE; wreck_a = wreck_b = 0; wreck_x = 0;
-            if (g_calib) { g_bands_all = 0; g_scroll_speed = 4; enter(SEC5_OUT); } else enter(SEC5_WRECK);
+            g_boss_state = BS_NONE; g_bands_all = 0;
+            if (g_calib) { g_scroll_speed = 4; enter(SEC5_OUT); } else enter(SEC5_WRECK);
         }
         break;
-    case SEC5_WRECK:                                          /* 撃沈: 2 秒爆発 → 前後の帯が離れながら沈む */
+    case SEC5_WRECK:                                          /* 撃沈: 2 秒爆発 → カメラが上がり、艦が画面の下へ沈む。
+                                                                 ★前は前後の帯を R#23 で別々に沈めていたが、R#23 はスプライトもずらすので
+                                                                 自機が 2 機に見え、帯の空も割れた(遊んでの指摘「画面が壊れる」) */
         if (sec_t < 120) {
             if (!(sec_t & 3)) fx_spawn(FX(100 + (rnd8() & 63)), FX(s5_sy(40 + (rnd8() & 31))));
             if (sec_t == 100 && gq_free() >= 8) {             /* 艦体の中央に裂け目(前後の帯が離れると、上と下で逆へずれて見える) */
@@ -206,15 +206,14 @@ void ovl_update(void) {
                 ring_cmd(0, 0, 122, s5_sy(S5_DECK + 10), 4, 30, 1, 0xDD);
             }
         } else {
-            if (sec_t & 1) { if (wreck_a < 60) wreck_a++; if (wreck_b < 120) wreck_b += 2; }
-            wreck_x += 2;
+            cam_to = S_TOP * 16;
             if (!(sec_t & 3)) {                               /* 雲海の渦(パレットを回す) */
                 u8 p = vortex;
                 if (++vortex >= 3) vortex = 0;
                 vdp_set_pal(4, (u8)(4 + p), (u8)(4 + p), (u8)(5 + p));   /* 雲のきめ(4, 5)だけ回す(3 は雲の地で、回すと全面が光った) */
                 vdp_set_pal(5, (u8)(6 - p), (u8)(6 - p), 7);
             }
-            if (wreck_b >= 120 && sec_t > 400) { enter(SEC5_OUT); g_scroll_speed = 4; }
+            if (sec_t > 300) { enter(SEC5_OUT); g_scroll_speed = 4; }
         }
         g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16;
         break;
@@ -223,7 +222,6 @@ void ovl_update(void) {
         cam_to = S_TOP * 16;
         if (sec_t == 240) {
             palette();
-            g_bands_all = 0;
             stage_banner("STAGE 6 / GNOMON CITADEL");
             ovl_request(OVL_S6);
             g_pl_dy = 0;
@@ -239,14 +237,8 @@ void ovl_update(void) {
         if (g_scam_q < cam_to) { g_scam_q += 16; if (g_scam_q > cam_to) g_scam_q = cam_to; }
         else if (g_scam_q > cam_to) { g_scam_q -= 16; if (g_scam_q < cam_to) g_scam_q = cam_to; }
     }
-    /* ★沈む帯(56..111 は wreck_a、112..171 は wreck_b だけ R#23 を減らす)ではスプライトが同じだけ下にずれるので、
-       自機を描く y で打ち消す(前は自機を上の 30 ドットへ押し上げていた = 勝手に動いて見えた。M7 の後) */
-    if (g_sec == SEC5_WRECK || g_sec == SEC5_OUT) {
-        s16 yc = (s16)(PX(g_pl.y) + 8);
-        g_pl_dy = yc >= 112 && yc < 172 ? -wreck_b : yc >= 56 && yc < 112 ? -wreck_a : 0;
-        return;
-    }
     g_pl_dy = 0;
+    if (g_sec == SEC5_WRECK || g_sec == SEC5_OUT) return;
     if (g_sec < SEC5_APPROACH) { g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16; }
     else terrain();
 }
@@ -268,14 +260,6 @@ void ovl_vram(void) {
 void ovl_bands(s16 sc, u16 nx) {
     if (g_bands_all) {
         if (g_sec == SEC5_BOSS) { b5_gauge_bands(sc, nx); return; }
-        /* 撃沈: 上の空 / 前の半分(沈みながら左へ)/ 後ろの半分(沈みながら右へ)/ 雲海 */
-        {
-            u8 base = (u8)(g_vscroll + g_roll);
-            stage_ev_pal(0, sky0); stage_ev_scroll(0, nx);
-            stage_ev_scroll(56, (u16)(nx + wreck_x)); stage_ev_vscroll(56, (u8)(base - wreck_a));
-            stage_ev_scroll(112, (u16)(nx - wreck_x)); stage_ev_vscroll(112, (u8)(base - wreck_b));
-            stage_ev_pal(172, gap); stage_ev_scroll(172, nx); stage_ev_vscroll(172, base);
-        }
         return;
     }
     if (g_sec < SEC5_SINK) return;

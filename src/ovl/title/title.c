@@ -59,7 +59,7 @@ static u8  loop_keep;             /* 1 = 2 周目の出撃(game_start しない)
 static u8  hit_done;              /* ロゴが組み上がったオケヒを鳴らした */
 static u16 idle_t;                /* 最後に触ってからのフレーム(デモへ) */
 
-static u8 regs_top[2][16], regs_n[2][12], regs_ring[2][4], regs_b[2][4];
+static u8 regs_top[2][16], regs_n[2][14], regs_ring[2][4], regs_b[2][4];
 
 /* ---- 隠しコンフィグ: タイトルで 上 上 下 下 左 右 左 右 B A(B と A はキーボードの B・A キー) ----
    HUD の帯の 2 行に出す。上下で項目、左右で値、SPACE で決定。★オーバレイの変数は初期化されないので title_start で */
@@ -557,9 +557,9 @@ void title_build(void) {
     if (n) {
         u16 yx = yjk_q >> 3;
         rt[0] = 0; rt[1] = R0_G7; rt[2] = 25; rt[3] = R25_YJK; rt[4] = 2; rt[5] = 0x1F;
-        rt[6] = 8; rt[7] = R8_NOSP; rt[8] = 23; rt[9] = 0; rt[10] = 5; rt[11] = spr_regs.r5a; rt[12] = 11; rt[13] = 3;
+        rt[6] = 8; rt[7] = R8_NOSP; rt[8] = 23; rt[9] = 0; rt[10] = 5; rt[11] = spr_regs.r5a; rt[12] = 11; rt[13] = 3; rt[14] = 18; rt[15] = R18_G7;
         put_e(&e[k], TOP_SWITCH, RAS_REGS | RAS_SCROLL | RAS_PAL);
-        e[k].haze = rt; e[k].haze_n = 7; e[k].r26 = (u8)(VDP_R26(yx) & 31); e[k].r27 = VDP_R27(yx);   /* SP2 なし = 256 幅 */
+        e[k].haze = rt; e[k].haze_n = 8; e[k].r26 = (u8)(VDP_R26(yx) & 31); e[k].r27 = VDP_R27(yx);   /* SP2 なし = 256 幅 */
         e[k].pidx = 11; e[k].prb = 0x67; e[k].pg = 7; k++;   /* ★色 11 を戻す(HUD 帯で PUSH SPACE KEY を点滅させる色。ロゴの文字の
                                                               2・3 段目も色 11 なので、戻さないとロゴの一部が一緒に点滅した) */
     }
@@ -570,10 +570,10 @@ void title_build(void) {
         u8 ring = g_phase == PH_SORTIE && !(merge && !ring_logo);
         rn[0] = 0; rn[1] = R0_G4; rn[2] = 25; rn[3] = R25_G4; rn[4] = 8; rn[5] = R8_SPR;
         rn[6] = 2; rn[7] = ring ? 0x3F : 0x7F; rn[8] = 23; rn[9] = g_vscroll;
-        rn[10] = 5; rn[11] = spr_regs.r5a;
+        rn[10] = 5; rn[11] = spr_regs.r5a; rn[12] = 18; rn[13] = R18_SAVE;
         if (!merge) {
             put_e(&e[k], n, RAS_REGS | RAS_SCROLL | RAS_PAL | RAS_MARK);
-            e[k].haze = rn; e[k].haze_n = 6;
+            e[k].haze = rn; e[k].haze_n = 7;
             e[k].r26 = ring ? 0 : VDP_R26(256u); e[k].r27 = 0;
             sky_pal(&e[k], 0); k++;
         }
@@ -596,7 +596,7 @@ void title_build(void) {
             else b->flags &= (u8)~RAS_PAL;
         }
         if (i == 0 && merge) {                                   /* n 行の項目をまとめた(SCREEN5 へ戻すのもここ) */
-            b->flags |= RAS_REGS | RAS_MARK; b->haze = rn; b->haze_n = 6;
+            b->flags |= RAS_REGS | RAS_MARK; b->haze = rn; b->haze_n = 7;
         } else if (i == 0 && !ring_logo) {                       /* ロゴの区間はページ 2|3 */
             rr[0] = 2; rr[1] = 0x7F;
             mag_pair(rr + 2, g_phase == PH_SORTIE && g_pt < 48);   /* 出撃の破片はロゴの区間で拡大(128 行で戻す) */
