@@ -371,6 +371,117 @@ static u8 eshot_move(void) __naked {
     __endasm;
 }
 
+/* 自機のショット × 敵の当たりを探す(asm。C の二重ループは 1 発ごとの固定小数点の変換と内側の IX の出し入れで、強化した
+   弾 12 発 × 敵 16 体のとき 1 フレームに 1ms 近く使い、3 面の逆走の編隊でスプライトの描き直しが止まった。遊んでの指摘)。
+   hit_xy は画面の敵の (x, y)、hit_idx は g_enemy の番号、hit_n はその数。(hs_i, hs_k) から探し、当たったら
+   hs_i = 弾、hs_k = hit_xy の番号で 1 を返す。無ければ 0。判定は C と同じ (u8)(bx - x + 10) < 20 かつ (u8)(by - y + 8) < 16 */
+static u8 hit_xy[MAX_ENEMY * 2], hit_idx[MAX_ENEMY], hit_n, hs_i, hs_k, hs_n;
+static u8 hit_next(void) __naked {
+    __asm
+        push ix
+        ld   a, (_hs_i)
+        ld   c, a                  ; C = 弾の番号
+    00001$:
+        ld   a, (_hs_n)
+        cp   c
+        jp   z, 00009$
+        jp   c, 00009$
+        ld   l, c
+        ld   h, #0
+        add  hl, hl
+        ld   e, l
+        ld   d, h
+        add  hl, hl
+        add  hl, hl
+        add  hl, de                ; HL = C * 10
+        ld   de, #_g_pshot
+        add  hl, de
+        push hl
+        pop  ix
+        ld   a, 8 (ix)             ; on
+        or   a
+        jp   z, 00008$
+        ld   a, 1 (ix)             ; bx = (u8)(x >> 4)
+        rlca
+        rlca
+        rlca
+        rlca
+        and  #0xF0
+        ld   d, a
+        ld   a, 0 (ix)
+        rrca
+        rrca
+        rrca
+        rrca
+        and  #0x0F
+        or   d
+        ld   d, a
+        ld   a, 3 (ix)             ; by
+        rlca
+        rlca
+        rlca
+        rlca
+        and  #0xF0
+        ld   e, a
+        ld   a, 2 (ix)
+        rrca
+        rrca
+        rrca
+        rrca
+        and  #0x0F
+        or   e
+        ld   e, a
+        ld   a, (_hs_k)
+        ld   l, a
+        ld   a, (_hit_n)
+        sub  l
+        jr   z, 00008$
+        jr   c, 00008$
+        ld   b, a                  ; B = 残りの敵の数
+        ld   a, l
+        ld   (_hs_k), a
+        ld   h, #0
+        add  hl, hl
+        push de
+        ld   de, #_hit_xy
+        add  hl, de
+        pop  de
+    00002$:
+        ld   a, d
+        sub  (hl)
+        add  a, #10
+        cp   #20
+        inc  hl                    ; (フラグは変わらない)
+        jr   nc, 00003$
+        ld   a, e
+        sub  (hl)
+        add  a, #8
+        cp   #16
+        jr   c, 00010$
+    00003$:
+        inc  hl
+        ld   a, (_hs_k)
+        inc  a
+        ld   (_hs_k), a
+        djnz 00002$
+    00008$:
+        xor  a
+        ld   (_hs_k), a
+        inc  c
+        jp   00001$
+    00009$:
+        xor  a
+        pop  ix
+        ret
+    00010$:
+        ld   a, c
+        ld   (_hs_i), a
+        ld   a, #1
+        pop  ix
+        ret
+    __endasm;
+}
+
 void enemy_update(void) {
     u8 i, j;
     s16 plx = PX(g_pl.x) + 8, ply = PX(g_pl.y) + 8;      /* ★自機の中心はループの外で 1 回(弾 16 発 × 毎回のシフトが重かった) */
@@ -389,39 +500,36 @@ void enemy_update(void) {
     if (eshot_move()) player_hit();                           /* 動かして、画面の外は消し、自機に当たったものを消す(asm) */
 
     /* 自機のショット × 敵: 画面座標を先に 8 ビットの配列へ変換し、内側は 8 ビットの比較だけにする
-       (構造体の固定小数点を毎回変換する二重ループは 1 フレームの 1/3 を使っていた。M1)。体当たりも同じ配列で見る */
+       (構造体の固定小数点を毎回変換する二重ループは 1 フレームの 1/3 を使っていた。M1)。探すのは asm(hit_next)。
+       体当たりも同じ配列で見る */
     {
-        u8 ex[MAX_ENEMY], ey[MAX_ENEMY], eidx[MAX_ENEMY], ne = 0, k;
-        u8 nps = g_drops ? MAX_PSHOT : PS_SHOTS;              /* 爆雷の枠は爆雷があるときだけ見る */
+        u8 ne = 0, k, *p = hit_xy;
         for (j = 0; j < MAX_ENEMY; j++) {
             const Enemy *e = &g_enemy[j];
             s16 x, y;
             if (!e->type) continue;
             x = PX(e->x); y = PX(e->y);
             if (x < 0 || x > 255 || y < 0 || y > PLAY_H) continue;
-            ex[ne] = (u8)x; ey[ne] = (u8)y; eidx[ne] = j; ne++;
+            *p++ = (u8)x; *p++ = (u8)y; hit_idx[ne] = j; ne++;
         }
-        if (ne) for (i = 0; i < nps; i++) {
-            Bullet *b = &g_pshot[i];
-            u8 bx, by;
-            if (!b->on) continue;
-            bx = (u8)PX(b->x); by = (u8)PX(b->y);
-            for (k = 0; k < ne; k++) {
-                Enemy *e;
-                if ((u8)(bx - ex[k] + 10) >= 20 || (u8)(by - ey[k] + 8) >= 16) continue;
-                e = &g_enemy[eidx[k]];
-                if (!e->type) continue;
+        hit_n = ne;
+        hs_n = g_drops ? MAX_PSHOT : PS_SHOTS;                /* 爆雷の枠は爆雷があるときだけ見る */
+        hs_i = 0; hs_k = 0;
+        if (ne) while (hit_next()) {
+            Bullet *b = &g_pshot[hs_i];
+            Enemy *e = &g_enemy[hit_idx[hs_k]];
+            if (e->type) {
                 if (!b->pierce) b->on = 0;
                 if (--e->hp == 0) enemy_kill(e, 1); else sfx(SFX_HIT);
-                if (!b->on) break;
             }
+            if (b->on) hs_k++; else { hs_i++; hs_k = 0; }
         }
         /* 敵 × 自機(体当たり)。画面の外の敵は当たらないので同じ配列で */
         if (g_pl.alive && plx >= 0 && plx < 256) {
             u8 px = (u8)plx, py = (u8)ply;
-            for (k = 0; k < ne; k++) {
-                Enemy *e = &g_enemy[eidx[k]];
-                if (!e->type || (u8)(ex[k] - px + 7) >= 15 || (u8)(ey[k] - py + 5) >= 11) continue;
+            for (k = 0, p = hit_xy; k < ne; k++, p += 2) {
+                Enemy *e = &g_enemy[hit_idx[k]];
+                if (!e->type || (u8)(p[0] - px + 7) >= 15 || (u8)(p[1] - py + 5) >= 11) continue;
                 enemy_kill(e, 1); player_hit(); break;
             }
         }

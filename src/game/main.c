@@ -53,8 +53,8 @@ static u8 slow_next;
 u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
 #define HUD_DEADLINE (150u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
 #define SPR_LIMIT    (245u * 16u)  /* スプライトの段の時点の経過 + 前に描いたフレームの「段からフレームの終わりまで」がこれを越えるなら描き直さない */
-#define SPR_SKIP_MAX 4             /* スプライトを続けて飛ばすのはここまで(それより後は SPR_FORCE まで描く) */
-#define SPR_FORCE    (120u * 16u)
+#define SPR_SKIP_MAX 3             /* スプライトを続けて飛ばすのはここまで(その次は SPR_FORCE までなら描く) */
+#define SPR_FORCE    (200u * 16u)
 
 static u8 state;
 
@@ -289,8 +289,9 @@ void main(void) {
         /* ★飛ばすかは、今の経過に「前に描いたフレームの、段からフレームの終わりまで」を足して決める(spr_post)。前は段の時点で
            100 ラインを過ぎたら飛ばしていたが、段の手前が重く後ろが軽い場面(3 面の中ボスの手前)で、間に合うのに 4 フレームに 3 回
            飛ばし、3〜4fps に見えた(遊んでの指摘)。割込みの HR ポーリング帯(KILOGRAM の重力レンズ)や PCM の送出の重さも
-           この長さに入る。★続けて SPR_SKIP_MAX フレーム飛ばしたら、締め切りを SPR_FORCE にする(描き続けた長さが古いまま
-           飛ばし続けないように) */
+           この長さに入る。★続けて SPR_SKIP_MAX フレーム飛ばしたら、次は段の時点で SPR_FORCE までなら描く(前はここで締め切りを段の時点の 120 ラインに
+           していたが、段の手前が 120 ラインを越える場面(3 面の逆走の編隊を強化した弾で撃つ)では一度も描かず、敵は動くのに
+           絵が 1 秒近く止まった。遊んでの指摘) */
         {
             u16 el = (u16)(sys_timer() - g_frame_t0);
             if (!g_slow && g_phase >= PH_AIR && (spr_skips < SPR_SKIP_MAX ? (u16)(el + spr_post) > SPR_LIMIT : el > SPR_FORCE)) {
