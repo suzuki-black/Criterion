@@ -35,14 +35,14 @@ static u8 joy1(void) {
 }
 
 void input_read(void) {
-    u8 r8 = key_row(8), r5 = key_row(5), r4 = key_row(4), j = joy1();
+    u8 r8 = key_row(8), r5 = key_row(5), r4 = key_row(4), r2 = key_row(2), j = joy1();
     u8 v = (u8)(j & 0x3F);                         /* 上 下 左 右 A B の並びはジョイスティックと同じ */
     if (r8 & 0x20) v |= IN_UP;
     if (r8 & 0x40) v |= IN_DOWN;
     if (r8 & 0x10) v |= IN_LEFT;
     if (r8 & 0x80) v |= IN_RIGHT;
     if ((r8 & 0x01) || (r5 & 0x80)) v |= IN_A;    /* SPACE / Z */
-    if ((r5 & 0x20) || (r4 & 0x04)) v |= IN_B;    /* X / M */
+    if ((r5 & 0x20) || (r4 & 0x04) || (r2 & 0x80)) v |= IN_B;   /* X / M / B(行 2 の bit7) */
     g_in_edge = (u8)(v & ~g_in);
     g_in = v;
 }
