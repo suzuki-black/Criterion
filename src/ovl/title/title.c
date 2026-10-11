@@ -364,7 +364,10 @@ static void scene(u8 m) {
     infx_reset(); bg_mix(0); vdp_set_pal(15, 7, 7, 7);
     g_scroll_speed = m == TM_REWIND ? -24 : 1;
     sel = 0; dial_x = dial_target(); nm_pos = 0; nm[0] = nm[1] = nm[2] = ' '; nm_drawn = 0xFF;
-    for (i = 0; i < RANK_N; i++) rk_x[i] = (s16)(256 + i * 24);
+    /* ★ランキングの行は滑らせない(rk_x = 0。上から 1 行ずつ書いた順に出る)。帯ごとに右から滑り込ませていた間は、滑る帯の右側に
+       ページ 3(紋章・スプライトの表)が見え、帯の切り替えが割込みの遅れで文字の上の行に掛かって「0」が「A」に崩れ、画面が
+       乱れて見えた(遊んでの指摘) */
+    for (i = 0; i < RANK_N; i++) rk_x[i] = 0;
     vdp_write_addr17(1, (u16)(0xF800u + PAT_SCAN * 32u)); for (i = 0; i < 32; i++) VDP_DAT = i < 16 ? 0x01 : 0x80;   /* 測定線 */
 }
 
