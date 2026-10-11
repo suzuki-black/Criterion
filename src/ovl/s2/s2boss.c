@@ -173,7 +173,9 @@ static void kg_gen(void) {
     if (++gen_ph >= 24) { gen_ph = 0; gen_k++; }
 }
 
-static void kg_crack(u8 open) { if (open) vdp_set_pal(13, 7, 2, 1); else vdp_set_pal(13, 3, 0, 0); }
+/* 赤道の亀裂は BG の色 7(★前は色 13 を回していたが、8..15 はスプライトと共有で、閉じるたびに 2 面の敵の体の色が暗くなり、
+   衛星が全部まとめて潰れて見えた。遊んでの指摘) */
+static void kg_crack(u8 open) { if (open) vdp_set_pal(7, 7, 2, 1); else vdp_set_pal(7, 3, 0, 0); }
 
 /* 重力レンズの表: 球に近いほど大きく横へずらす(0..7 ドット。R#27 を足す向き)。ずらす量 = 7 i² / 529(★毎フレーム割り算で
    作ると 48 回で約 16 ライン。KILOGRAM の間はスプライトの締め切りを毎フレーム過ぎた) */

@@ -10,7 +10,7 @@
    2..5 は s2.c がパレットを回す(KILOGRAM の間は KILOGRAM の色。そのころには残骸の帯は無い)。
 2. s2_map.bin: 地図(列ごとの短冊の番号、528 列)。区間ごとに天井と床の高さを変える。
 3. s2_data.h: 区間の列の位置、短冊ごとの天井の行数と床の上端の行(自機の当たり)。
-4. kg.bin: KILOGRAM(64x64、4bpp)。黒い球(色 2 / 3)、縁の光(4 / 5)、赤道の亀裂(13)。外は色 1。
+4. kg.bin: KILOGRAM(64x64、4bpp)。黒い球(色 2 / 3)、縁の光(4 / 5)、赤道の亀裂(7。KILOGRAM の間は残骸が無いので残骸の縁の色を借りる)。外は色 1。
    ゲームが ROTOR で縮小した絵を作り、近づいてくる様子にする。
 """
 import math, os, random, sys
@@ -89,7 +89,7 @@ def kilogram(n=64):
             if d > R: continue
             l = (-dx * 0.6 - dy * 0.5) / R                # 左上から光
             if d > R - 2 * k: c = 5 if l > 0.2 else 4
-            elif abs(dy) < 1.5 * k and abs(dx) < R - 4 * k: c = 13 # 赤道の亀裂(弱点)
+            elif abs(dy) < 1.5 * k and abs(dx) < R - 4 * k: c = 7  # 赤道の亀裂(弱点)。★BG の色 7(13 はスプライトと共有で、開閉で回すと敵が暗く潰れて見えた)
             elif l > 0.55: c = 4
             elif l > 0.1: c = 3
             else: c = 2
