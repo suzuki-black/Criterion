@@ -8,13 +8,21 @@ void vdp_wreg(u8 r, u8 v) {
     __asm ei __endasm;
 }
 
-void vdp_set_pal(u8 idx, u8 r, u8 g, u8 b) {
+/* ★パレットは控え(g_pal_sh)を持つ: ボスが傷を受けたときの白い点滅(juice.c)が、点滅の後に元の色へ戻すため。
+   点滅の白は vdp_pal_raw で書いて控えを変えない(点滅の間にほかが vdp_set_pal で書いた色は控えに残り、戻すときに使われる) */
+u8 g_pal_sh[32];                    /* 色ごとに (R << 4 | B, G) */
+void vdp_pal_raw(u8 idx, u8 rb, u8 g) {
     __asm di __endasm;
     VDP_CTRL = idx;
     VDP_CTRL = 0x80 | 16;
-    VDP_PAL  = (u8)((r << 4) | b);
+    VDP_PAL  = rb;
     VDP_PAL  = g;
     __asm ei __endasm;
+}
+void vdp_set_pal(u8 idx, u8 r, u8 g, u8 b) {
+    u8 rb = (u8)((r << 4) | b), *p = g_pal_sh + (u8)((idx & 15) << 1);
+    p[0] = rb; p[1] = g;
+    vdp_pal_raw(idx, rb, g);
 }
 
 void vdp_write_addr17(u8 hi, u16 lo) {

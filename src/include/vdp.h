@@ -21,6 +21,8 @@ __sfr __at(0x9B) VDP_IDAT;
 
 void vdp_wreg(u8 r, u8 v);
 void vdp_set_pal(u8 idx, u8 r, u8 g, u8 b);
+void vdp_pal_raw(u8 idx, u8 rb, u8 g);   /* 控え(g_pal_sh)を変えずに書く(点滅の白) */
+extern u8 g_pal_sh[32];
 
 /* 17bit VRAM 書込みアドレス設定((hi<<16)|lo)。以降 VDP_DAT へ連続書込み。
    ★アドレスカウンタの桁上げは 16KB 境界で R#14 へ伝播しないので、跨ぐときは貼り直すこと。 */
