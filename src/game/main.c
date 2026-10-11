@@ -322,7 +322,9 @@ void main(void) {
             u8 want = (u8)(spr_scheme[g_calib ? OVL_S7 : g_ovl] + g_spr_layout * 3);   /* 割り振りごとに 3 つ(gen_sprites.py) */
             if (g_ovl_ready && want != col_now) { col_now = want; col_done = 0; }
         }
-        if (!g_slow && cc_step) {                              /* 組の範囲が変わった枠の行を、書いた表から先に(上の cc_*) */
+        /* 組の範囲が変わった枠の行を、書いた表から先に(上の cc_*)。★フレームの残りが少なければ次へ(8 面の第 3 形態の入りで、
+           ボスの初期化と重なって遅れた) */
+        if (!g_slow && cc_step && (u16)(sys_timer() - g_frame_t0) < COL_DEADLINE) {
             u8 b = spr_written(), k;
             u16 o = (u16)cc_lo * 16u, n = (u16)(cc_hi - cc_lo) * 16u;
             for (k = 0; k < 2; k++)

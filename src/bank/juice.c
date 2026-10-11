@@ -4,6 +4,7 @@
 #include "game.h"
 #include "vdp.h"
 #include "snd.h"
+#include "bank_int.h"
 
 static const u8 boss_sec[] = { 5, 13, 22, 31, 41, 50, 53, 60, 61 };   /* 1〜6 面のボス、7 面 LIBRA、8 面の第 1・第 2 形態 */
 #define SEC_LAST 62                                                   /* 8 面の第 3 形態(SEC8_BOSS3) */
@@ -80,8 +81,9 @@ void juice_frame(void) {
     if (shard_t && !--shard_t) item_spawn(FX(160), FX(shard_y), 1);
     if (!juice_t) return;
     juice_t--;
-    /* ★面ボスとラスボスは、自機のいない帯のスプライトを 2 倍に(爆発が大きくなる。部分拡大、C5)。境は 96 行 */
-    if (juice_tier >= 2 && juice_t > 8) { u8 py = (u8)(g_pl.y >> 4); if (py >= 96) g_mag = 1; else if (py < 78) g_mag = 2; }
+    /* ★面ボスとラスボスは、自機のいない帯のスプライトを 2 倍に(爆発が大きくなる。部分拡大、C5)。境は 96 行。
+       分身・防壁・残像もいない帯だけ(weap_span) */
+    if (juice_tier >= 2 && juice_t > 8) { weap_span(); if (wy_lo >= 96) g_mag = 1; else if (wy_hi < 78) g_mag = 2; }
     {   /* 揺れ: 段階で幅を変え(±2 / ±4 / ±8)、終わりへ向けて小さく(★毎フレームの経路なので % を使わない) */
         u8 m = (u8)(juice_tier == 1 ? 3 : juice_tier == 2 ? 7 : 15);
         if (juice_t < 10) m >>= 2; else if (juice_t < 20) m >>= 1;
