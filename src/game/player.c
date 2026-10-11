@@ -130,18 +130,10 @@ void player_hit(void) {
 }
 
 void player_draw(void) {
-    u8 i;
     if (g_pl.alive && !(g_pl.invul & 4)) {
         s16 y = (s16)(PX(g_pl.y) + g_pl_dy);
         spr_put(PX(g_pl.x), y, PAT_SHIP_A, G_SHIP_A, 0);
         spr_put(PX(g_pl.x), y, PAT_SHIP_B, G_SHIP_B, 0);           /* OR 合成(CC)= 直前の枠と重ねる */
     }
-    if (g_drops) for (i = PS_SHOTS; i < MAX_PSHOT; i++) {     /* ★爆雷を先に(弾が G_SHOT の 6 枠を超えると、後から置いた爆雷が毎回溢れた) */
-        const Bullet *b = &g_pshot[i];
-        if (b->on) spr_put(PX(b->x) - 8, PX(b->y) - 8, PAT_DROP, G_SHOT, 0);
-    }
-    for (i = 0; i < PS_SHOTS; i++) {
-        const Bullet *b = &g_pshot[i];
-        if (b->on) spr_put(PX(b->x) - 2, PX(b->y) - 8, b->pierce ? PAT_RAY : PAT_SHOT, G_SHOT, 0);
-    }
+    shots_draw();                                             /* 自機弾と爆雷(第 2 バンクの weapon.c) */
 }

@@ -30,7 +30,7 @@ static u8 aeg_lv, aeg_dur, rot, drop_cd, moved, echo_prev, vol;   /* vol: 撃っ
 
 /* ---- 主砲(自機と分身。player.c は呼び口から) ---- */
 static s16 sx0, sy0;                                          /* 撃つ位置 */
-static void shoot(s16 vy, u8 pierce, s16 dy) {
+static Bullet *shoot(s16 vy, u8 pierce, s16 dy) {
     /* ★空きは前の続きから探し、満杯ならそのフレームはもう探さない(ECHO の分身 4 機 × 5WAY が弾の枠を毎回
        頭から探して、撃つフレームが遅れた) */
     Bullet *b = &g_pshot[g_shot_at];
@@ -39,20 +39,200 @@ static void shoot(s16 vy, u8 pierce, s16 dy) {
         b->on = 1; b->pierce = pierce;
         b->x = sx0 + FX(12); b->y = sy0 + FX(8) + dy;         /* 弾の座標は中心 */
         b->vx = FX(8); b->vy = vy;
-        return;
+        return b;
     }
+    return 0;
 }
 
 void pl_fire_from(s16 x, s16 y) {
     sx0 = x; sy0 = y;
     if (g_gauge.ray) {
-        shoot(0, 1, 0);
-        if (g_gauge.ray >= 2) { shoot(0, 1, FX(-4)); shoot(0, 1, FX(4)); }   /* 太さ倍(3 本を束ねる) */
+        Bullet *c = shoot(0, 1, 0);
+        if (g_gauge.ray >= 2) {                               /* 太さ倍(3 本を束ねる)。★3 本そろったら真ん中を 3、横を 2 にして
+                                                                 1 枚(PAT_RAY3)で描く(shots_draw。pierce はどこでも真偽で見る) */
+            Bullet *u = shoot(0, 1, FX(-4)), *d = shoot(0, 1, FX(4));
+            if (c && u && d) { c->pierce = 3; u->pierce = d->pierce = 2; }
+        }
     } else {
         shoot(0, 0, 0);
         if (g_gauge.split >= 1) { shoot(FX(-1) - 8, 0, 0); shoot(FX(1) + 8, 0, 0); }
         if (g_gauge.split >= 2) { shoot(FX(-3), 0, 0); shoot(FX(3), 0, 0); }
     }
+}
+
+#define SHOT_ROW_MAX 3
+#define G_SHOT_N 2                   /* asm 用(spr.h の G_SHOT) */
+/* ★自機弾は 1 ラインに SHOT_ROW_MAX 枚まで(測定: 8 枚を超えた行の約半分が自機弾で、同じ高さの敵・敵弾が消えた)。
+   8 行ごとの区切り(sh_rows)で数え、1 枚が掛かる 3 つの区切りのどこかが満ちていればそのフレームは描かない。描き始めを
+   フレームごとにずらすので、溢れた弾は消えずにちらつく。pierce: 0 = 弾、1 = RAY、2 = 束ねた横(描かない)、3 = 束ねた真ん中(PAT_RAY3)。
+   ★asm(C で書いた版は 1 フレームに約 9 ライン使い、PCM の鳴る場面の遅れを増やした)。IX = 弾、C = 絵、B = x から引く量 */
+static u8 sh_rows[30], sh_rot;     /* ★第 2 バンクの変数は 0 から始まらない(sh_rot は押さえる) */
+void shots_draw(void) __naked {
+    __asm
+        ld   a, (_sh_rot)
+        cp   #PS_SHOTS
+        jr   c, 00001$
+        xor  a
+    00001$:
+        ld   c, a                  ; C = 描き始め
+        inc  a
+        cp   #PS_SHOTS
+        jr   c, 00002$
+        xor  a
+    00002$:
+        ld   (_sh_rot), a
+        ld   hl, #_sh_rows
+        ld   b, #30
+        xor  a
+    00003$:
+        ld   (hl), a
+        inc  hl
+        djnz 00003$
+        push ix
+        ld   a, (_g_drops)         ; 爆雷を先に(後から置くと毎回溢れた)
+        or   a
+        jr   z, 00010$
+        push bc
+        ld   ix, #_g_pshot + PS_SHOTS * 10
+        ld   b, #MAX_PSHOT - PS_SHOTS
+    00004$:
+        push bc
+        ld   a, 8 (ix)
+        or   a
+        ld   c, #PAT_DROP
+        ld   b, #8
+        call nz, 00050$
+        ld   de, #10
+        add  ix, de
+        pop  bc
+        djnz 00004$
+        pop  bc
+    00010$:
+        ld   l, c                  ; IX = g_pshot + C * 10
+        ld   h, #0
+        add  hl, hl
+        ld   d, h
+        ld   e, l
+        add  hl, hl
+        add  hl, hl
+        add  hl, de
+        ld   de, #_g_pshot
+        add  hl, de
+        push hl
+        pop  ix
+        ld   b, #PS_SHOTS
+    00011$:
+        push bc
+        ld   a, 8 (ix)
+        or   a
+        jr   z, 00014$
+        ld   a, 9 (ix)             ; pierce
+        ld   c, #PAT_SHOT
+        or   a
+        jr   z, 00013$
+        ld   c, #PAT_RAY
+        dec  a
+        jr   z, 00013$
+        dec  a
+        jr   z, 00014$             ; 束ねた横: 描かない
+        ld   c, #PAT_RAY3
+    00013$:
+        ld   b, #2
+        call 00050$
+    00014$:
+        pop  bc
+        ld   de, #10
+        add  ix, de
+        inc  c
+        ld   a, c
+        cp   #PS_SHOTS
+        jr   nz, 00015$
+        ld   c, #0
+        ld   ix, #_g_pshot
+    00015$:
+        djnz 00011$
+        pop  ix
+        ret
+        ; ---- 弾 IX を絵 C で置く(x は PX(x) - B、y は PX(y) - 8)。区切りが満ちていれば置かない ----
+    00050$:
+        ld   l, 2 (ix)
+        ld   h, 3 (ix)
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l                     ; HL = PX(y) = 上端 + 8
+        ld   a, h
+        or   a
+        ret  nz                    ; 画面の外
+        ld   a, l
+        cp   #216
+        ret  nc
+        push hl
+        rrca
+        rrca
+        rrca
+        and  #31
+        ld   hl, #_sh_rows
+        add  a, l
+        ld   l, a
+        jr   nc, 00051$
+        inc  h
+    00051$:
+        ld   a, (hl)
+        cp   #SHOT_ROW_MAX
+        jr   nc, 00059$
+        inc  hl
+        ld   a, (hl)
+        cp   #SHOT_ROW_MAX
+        jr   nc, 00059$
+        inc  hl
+        ld   a, (hl)
+        cp   #SHOT_ROW_MAX
+        jr   nc, 00059$
+        inc  (hl)
+        dec  hl
+        inc  (hl)
+        dec  hl
+        inc  (hl)
+        pop  hl
+        ld   de, #-8
+        add  hl, de
+        ex   de, hl                ; DE = 上端
+        ld   l, 0 (ix)
+        ld   h, 1 (ix)
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        ld   a, l
+        sub  b
+        ld   l, a
+        jr   nc, 00052$
+        dec  h
+    00052$:
+        xor  a                     ; spr_put(x, y, 絵, G_SHOT, 0): 引数は 1 バイトずつ cs → group → pat の順に積む
+        push af
+        inc  sp
+        ld   a, #G_SHOT_N
+        push af
+        inc  sp
+        ld   a, c
+        push af
+        inc  sp
+        call _spr_put              ; spr_put が 3 バイト下ろして戻る
+        ret
+    00059$:
+        pop  hl
+        ret
+    __endasm;
 }
 
 /* Scanner の測定線(3・7 面): いちばん高い強化を 1 段奪う */

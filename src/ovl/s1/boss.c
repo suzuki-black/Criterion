@@ -365,7 +365,7 @@ static s16 ring_y(void) { return rg_y(by, cur_fr); }
 
 static void plumb_update(void) {
     if (g_boss_state == BS_ENTER) {
-        if (gen_k < NFRAME) return;                          /* ★絵ができるまで降りてこない(作り切るループで 0.25 秒止まった) */
+        if (gen_k < NFRAME && t < 240) return;               /* ★絵ができるまで降りてこない(作り切るループで 0.25 秒止まった。4 秒で諦める) */
         if (cur_pl == 0) anchor_y += 2;                      /* 2 個のときも吊り元は 1 つの高さ */
         if (anchor_y >= -8) { anchor_y = -8; if (cur_pl == npl - 1) g_boss_state = BS_FIGHT; }
         plumb_pos();
@@ -485,9 +485,10 @@ static void pd_settle(void) {      /* VDP へ出た写しを「写した絵」�
 /* VRAM の窓で毎フレーム(stage.c): 絵を作る段と、PLUMB を写す */
 void boss_vram(void) {
     {   /* ★重いフレームは次へ(強化を積んだ都市後半で遅れが続いた)。PLUMB は絵ができるまで降りてこないので、登場の間は
-           2 フレームに 1 回は必ず進める(★間に合わない分を boss_start で作り切ると 0.25 秒止まった) */
+           締め切りを 200 ラインまで緩める(★2 フレームに 1 回締め切りを無視して作ると、ボスの声の PCM と重なって 3 フレーム続けて
+           遅れた。重いフレームが続いても固まらないよう、plumb_update は 4 秒で待つのをやめる)(★間に合わない分を boss_start で作り切ると 0.25 秒止まった) */
         extern u16 g_frame_t0;
-        if (gen_k < NFRAME && ((u16)(sys_timer() - g_frame_t0) <= 150u * 16u || (g_boss_state == BS_ENTER && !(t & 1)))) boss_vram_gen();
+        if (gen_k < NFRAME && (u16)(sys_timer() - g_frame_t0) <= (g_boss_state == BS_ENTER ? 200u * 16u : 150u * 16u)) boss_vram_gen();
     }
     if (kind != BOSS_PLUMB || gen_k < NFRAME) { gq_pump(0); return; }   /* 絵ができるまでは写さない */
     /* ★1 回の描き替えは最大 20 コマンド(写し 4 + 消し 4 方向 × リングの継ぎ目)。入りきらないときは見送る

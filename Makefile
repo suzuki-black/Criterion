@@ -230,7 +230,7 @@ $(BUILD)/ovl_%.bin: $(BUILD)/ovl_%.ihx tools/gen_ovl.py
 BK_BASE  := 0x8000
 BK_DATA  := 0xBE00
 BK_DEND  := 0xC000
-BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw zako_script zako_update zako_draw zako_killed pl_fire_from gauge_steal lb_draw music_frame juice_frame
+BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw zako_script zako_update zako_draw zako_killed pl_fire_from gauge_steal lb_draw music_frame juice_frame shots_draw
 BK_SIZE_FIRST := infx
 BK_RELS  := $(patsubst src/bank/%.c,$(BUILD)/bk_%.rel,$(wildcard src/bank/*.c))
 $(BUILD)/bk_%.rel: src/bank/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)

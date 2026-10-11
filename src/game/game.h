@@ -166,6 +166,7 @@ void weap_init(void);              /* 出撃・復活: 分身の軌跡を自機�
 void weap_update(void);            /* player_update の終わり(分身・防壁・爆雷) */
 void weap_draw(void);              /* スプライトの段の最後(player_weap_draw) */
 void player_weap_draw(void);
+void shots_draw(void);             /* 自機弾と爆雷(第 2 バンクの weapon.c。player_draw から) */
 void lb_draw(void);                /* LIMIT BREAK の衝撃波(g_lb の間) */
 extern u8 g_fired;                 /* このフレームに自機が撃った(分身も撃つ) */
 extern u8 g_drops;                 /* 生きている DROP の爆雷の数 */

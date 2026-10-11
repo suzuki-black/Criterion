@@ -68,17 +68,21 @@ extern u8 pcm_q, quiet, pcm_opt, pcm_prio, g_snd_room;
 static u8  pcm_bank;
 static u16 pcm_off, pcm_left_src;
 static u8  pcm_last;                          /* 最後に鳴らす予約をした面 */
+/* ★空いた面は 1 フレームに PCM_FILL バイトずつ 2 フレームで詰めてから予約する(1 フレームで 384 バイト写すと約 13 ライン、
+   鳴り始めは両面で約 26 ライン。PCM の鳴る重い場面で遅れた)。面は約 2.9 フレームで鳴り終わるので 2 フレームで間に合う */
+#define PCM_FILL 192
+static u8  fill_on, fill_h;
+static u16 fill_n;
 static u16 pcm_qwait, late_seen;
 
 void pcm_halt(void) {
     pcmx_stop();
     g_pcm_cur = SND_NONE;
-    pcm_left_src = 0;
+    pcm_left_src = 0; fill_on = 0;
 }
 
-static u16 pcm_load(u8 half, u16 max) {
+static u16 pcm_load(u8 *d, u16 max) {
     u16 n = pcm_left_src > max ? max : pcm_left_src, i;
-    u8 *d = PCM_BUF + (half ? PCM_HALF : 0);
     for (i = 0; i < n; i += 64) {                 /* ★64 バイトずつ写して間に PCM を出す(384 バイトを一度に写すと 2ms 途切れた。M7) */
         u16 c = n - i > 64 ? 64 : n - i;
         rom_to_ram(pcm_bank, pcm_off, d + i, c);
@@ -89,17 +93,23 @@ static u16 pcm_load(u8 half, u16 max) {
     return n;
 }
 
+static void fill_step(void) {
+    u16 room = (u16)(PCM_HALF - fill_n);
+    fill_n += pcm_load(PCM_BUF + (fill_h ? PCM_HALF : 0) + fill_n, room > PCM_FILL ? PCM_FILL : room);
+    if (fill_n >= PCM_HALF || !pcm_left_src) { pcmx_queue(PCM_BUF + (fill_h ? PCM_HALF : 0), fill_n); pcm_last = fill_h; fill_on = 0; }
+}
+
 static void pcm_begin(u8 id) {
     g_pcm_cur = id;
     pcm_prio = snd_pcm_prio[id];
     pcm_bank = snd_pcm_bank[id];
     pcm_off = snd_pcm_off[id];
     pcm_left_src = snd_pcm_len[id];
-    /* ★両方の面を詰めてから始める(初めを 128 バイトにしていたら 1 フレームで使い切り、次の面が来るまで止まって
-       遅れが残った。写す間も 64 バイトごとに PCM を出す。M7) */
-    pcmx_play(PCM_BUF, pcm_load(0, PCM_HALF));
-    pcm_last = 0;
-    if (pcm_left_src) { pcmx_queue(PCM_BUF + PCM_HALF, pcm_load(1, PCM_HALF)); pcm_last = 1; }
+    /* ★初めの面は詰め切ってから始め(128 バイトにしていたら 1 フレームで使い切り、次の面が来るまで止まって遅れが残った。M7)、
+       次の面は fill_step で 2 フレームに分けて詰める。写す間も 64 バイトごとに PCM を出す */
+    pcmx_play(PCM_BUF, pcm_load(PCM_BUF, PCM_HALF));
+    pcm_last = 0; fill_on = 0;
+    if (pcm_left_src) { fill_on = 1; fill_h = 1; fill_n = 0; }
     g_pcm_starts++;
 }
 
@@ -114,11 +124,12 @@ void pcm_keep(void) {
         pcm_q = SND_NONE;
         return;
     }
-    if (g_pcm_cur == SND_NONE || pcmx_queued()) return;
+    if (g_pcm_cur == SND_NONE) return;
+    if (fill_on) { fill_step(); return; }
+    if (pcmx_queued()) return;
     if (pcm_left_src) {
-        u8 h = (u8)(pcm_last ^ 1);
-        pcmx_queue(PCM_BUF + (h ? PCM_HALF : 0), pcm_load(h, PCM_HALF));
-        pcm_last = h;
+        fill_on = 1; fill_h = (u8)(pcm_last ^ 1); fill_n = 0;
+        fill_step();
     } else if (!pcmx_left()) {
         pcm_halt();                               /* 鳴り終わった */
     }
