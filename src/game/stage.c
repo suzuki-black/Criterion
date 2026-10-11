@@ -488,6 +488,9 @@ u8 g_poll_n;
 void stage_ev_haze(s16 line, u8 n, u8 *tbl) {
     RasEntry *c;
     if (line < 0) line = 0;
+    if (line >= 96 && !sat_done) sat_entry();                 /* ★下の帯の属性表の切り替えを先に(slot と同じ。差し込まないと切り替えが
+                                                                 表の最後に回って行の順が崩れ、2 面の KILOGRAM の間は画面の下半分の
+                                                                 スプライトが自機ごと消えた。遊んでの指摘) */
     c = &E[K - 1];
     if (line < (s16)c->line + RAS_GAP) line = (s16)(c->line + RAS_GAP);
     {   /* ★下は切り詰める(HUD の項目の手前まで) */
