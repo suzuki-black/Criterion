@@ -285,7 +285,6 @@ void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands �
 void stage_ev_pal(s16 line, const u8 *rgb);
 void stage_ev_ps(s16 line, const u8 *rgb, u16 x);   /* 色 1 と横スクロールを 1 つの項目に */
 void stage_ev_pal_i(s16 line, u8 idx, const u8 *rgb);   /* 色 idx を(1 項目に 1 色)*/
-extern u8 g_poll_n;                  /* 作った表の、画面の上のほうの HR ポーリング帯の行数(stage.c) */
 void stage_ev_haze(s16 line, u8 n, u8 *tbl);  /* HR ポーリング帯(R#27 を毎ライン。tbl は (r26, r27) × n) */
 void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */
 

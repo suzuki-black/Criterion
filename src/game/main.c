@@ -52,8 +52,7 @@ u8 g_slow;
 static u8 slow_next;
 u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
 #define HUD_DEADLINE (150u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
-#define SPR_DEADLINE (100u * 16u)  /* スプライトの段に入る時点でこれを過ぎていたら、そのフレームは描き直さない
-                                      (スプライト・属性表・VRAM の仕事で残り 140 ライン前後かかる) */      /* 1 = 被弾しない(自動テスト用) */
+#define SPR_LIMIT    (245u * 16u)  /* スプライトの段の時点の経過 + 前に描いたフレームの「段からフレームの終わりまで」がこれを越えるなら描き直さない */
 #define SPR_SKIP_MAX 4             /* スプライトを続けて飛ばすのはここまで(それより後は SPR_FORCE まで描く) */
 #define SPR_FORCE    (120u * 16u)
 
@@ -198,21 +197,21 @@ void main(void) {
     for (;;) {
         static u8 demo_end;
         static u8 pat_now, pat_k;
-        static u16 poll_dl;
+        static u16 spr_at, spr_post;   /* 描いたフレームの、スプライトの段の時点の経過 / 段からフレームの終わりまで */
         static u8 spr_skips;     /* スプライトを描き直さなかったフレームが続いた数 */
         static u16 over_t;
         static s8 over_spd;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
         u16 late0 = g_frame_late, idle;
         u8 ph;
         MON(0);
+        if (spr_skips == 0 && spr_at) spr_post = (u16)((u16)(sys_timer() - g_frame_t0) - spr_at);   /* 描いたフレームの残りの仕事 */
         idle = frame_sync(1);
         g_frame_t0 = sys_timer();
         mark_f0 = g_ras_mark;
-        poll_dl = (u16)g_poll_n * 16u;   /* stage_build の前 = 表示中の表のもの */
         MON(12);
         if (g_frame_late != late0) g_stat.late++;
         g_slow = slow_next;
-        slow_next = (u8)(!g_slow && g_phase >= PH_AIR && (g_frame_late != late0 || idle < (g_stat.base >> 2)));
+        slow_next = (u8)(!g_slow && g_phase >= PH_AIR && (g_frame_late != late0 || idle < (g_stat.base >> 3)));
         if (g_slow) g_stat.slow++;
         if (idle < g_stat.idle_min) g_stat.idle_min = idle;
         g_snd_room = (u8)(idle >= (g_stat.base >> 2) + (g_stat.base >> 4));   /* 空き時間が平常の 3 割以上(PCM は約 2 割を使う) */
@@ -287,12 +286,17 @@ void main(void) {
 
         /* ★処理落ちのフレームはスプライトも描き直さない(前のフレームの属性表のまま。敵は動いていないので
            止まって見えるのは同じ。スプライトの段は 1 フレームで 70 ライン前後かかる) */
-        /* ★締め切りは、表示中の表の画面の上のほうの HR ポーリング帯の行数だけ後ろへずらす(その間は割込みが CPU を取る。
-           KILOGRAM の重力レンズの帯で毎フレーム締め切りを過ぎ、フレームは間に合っているのにスプライトが何秒も止まって見えた)。
-           ★続けて SPR_SKIP_MAX フレーム飛ばしたら、締め切りを SPR_FORCE まで延ばす(PCM の送出が 1 フレームに約 60 ライン使い、
-           声や効果音の鳴っている 0.3 秒ほどスプライトが止まった) */
-        if (!g_slow && g_phase >= PH_AIR && (u16)(sys_timer() - g_frame_t0) > (spr_skips < SPR_SKIP_MAX ? SPR_DEADLINE + poll_dl : SPR_FORCE)) {
-            g_slow = 1; g_stat.slow++;   /* ここまでで重かった: スプライトは前のフレームのまま */
+        /* ★飛ばすかは、今の経過に「前に描いたフレームの、段からフレームの終わりまで」を足して決める(spr_post)。前は段の時点で
+           100 ラインを過ぎたら飛ばしていたが、段の手前が重く後ろが軽い場面(3 面の中ボスの手前)で、間に合うのに 4 フレームに 3 回
+           飛ばし、3〜4fps に見えた(遊んでの指摘)。割込みの HR ポーリング帯(KILOGRAM の重力レンズ)や PCM の送出の重さも
+           この長さに入る。★続けて SPR_SKIP_MAX フレーム飛ばしたら、締め切りを SPR_FORCE にする(描き続けた長さが古いまま
+           飛ばし続けないように) */
+        {
+            u16 el = (u16)(sys_timer() - g_frame_t0);
+            if (!g_slow && g_phase >= PH_AIR && (spr_skips < SPR_SKIP_MAX ? (u16)(el + spr_post) > SPR_LIMIT : el > SPR_FORCE)) {
+                g_slow = 1; g_stat.slow++;   /* ここまでで重かった: スプライトは前のフレームのまま */
+            }
+            spr_at = el;
         }
         spr_skips = g_slow ? (u8)(spr_skips + 1) : 0;
         MON(9);

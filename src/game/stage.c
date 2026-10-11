@@ -481,10 +481,7 @@ void stage_ev_scroll(s16 line, u16 x) {
     RasEntry *c = slot(line, RAS_SCROLL);
     if (c) { c->r26 = VDP_R26(x); c->r27 = VDP_R27(x); }
 }
-/* HR ポーリング帯(R#27 だけ毎ライン。tbl は (r26, r27) の組 × n)。前の項目からは RAS_GAP あける。
-   g_poll_n: 画面の POLL_TOP 行より上の帯の行数(その間は割込みが CPU を取るので、本体がスプライトの締め切りをずらす) */
-#define POLL_TOP 100
-u8 g_poll_n;
+/* HR ポーリング帯(R#27 だけ毎ライン。tbl は (r26, r27) の組 × n)。前の項目からは RAS_GAP あける */
 void stage_ev_haze(s16 line, u8 n, u8 *tbl) {
     RasEntry *c;
     if (line < 0) line = 0;
@@ -500,7 +497,6 @@ void stage_ev_haze(s16 line, u8 n, u8 *tbl) {
     }
     c = &E[K++];
     c->line = (u8)line; c->flags = RAS_HAZE | RAS_HAZE_FINE; c->haze = tbl; c->haze_n = n;
-    if (line < POLL_TOP) g_poll_n += (u8)(line + n > POLL_TOP ? POLL_TOP - line : n);
 }
 
 /* 帯の縦スクロール(R#23)。ISR は R#23 の書き込みを覚えて以降の R#19 に足す。★スプライトもその帯では R#23 の差だけ
@@ -568,7 +564,6 @@ void stage_build(void) {
     u16 nx = bg_layer_x(2);
 
     E = ras_back(); K = 1; sat_done = 0; vs_n = 0; vs_bi = bi;
-    g_poll_n = 0;
     sat_regs = regs_b[bi];
     sat_regs[0] = 5; sat_regs[1] = spr_regs.r5b; sat_regs[2] = 11; sat_regs[3] = spr_regs.r11b;
     rt[0] = 5; rt[1] = spr_regs.r5a; rt[2] = 11; rt[3] = spr_regs.r11a;
