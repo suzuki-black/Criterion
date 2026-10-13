@@ -281,6 +281,7 @@ extern u8 g_loop;                           /* 周回(0 = 1 周目) */
 #define RECAL (g_calib || g_loop)           /* ボスの再校正版の動き(7 面の試験と、2 周目以降の 1〜6 面) */
 void calib_begin(u8 k);                     /* 試験 k の始まり(各面の ovl_init から): 開始表示 */
 u8   calib_out(u16 t);                      /* 試験に合格したあと(各面から毎フレーム): 判定文 → 上がって次の試験へ。1 = 頼んだ */
+extern u8 g_far_base, g_far_s0, g_far_s1, g_far_t0, g_far_t1;   /* 遠景の短冊と、使う短冊・s の範囲(stage.c。0 = 使わない) */
 void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */
 void stage_ev_pal(s16 line, const u8 *rgb);
 void stage_ev_ps(s16 line, const u8 *rgb, u16 x);   /* 色 1 と横スクロールを 1 つの項目に */

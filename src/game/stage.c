@@ -116,7 +116,7 @@ void stage_reset_ground(void) {
     strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0; redraw_n = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
     g_wx &= 511u;                                             /* 世界の位置を面ごとに戻す(リングの位置は同じ) */
-    g_bands_all = 0; g_blk_skip = 0; g_blk_base = 0;
+    g_bands_all = 0; g_blk_skip = 0; g_blk_base = 0; g_far_base = 0;
 }
 /* ---- 7 面の試験(過去の面のオーバレイを g_calib で再校正版として読み直す) ---- */
 u8 g_calib, g_loop;
@@ -209,13 +209,21 @@ static u8 strip_of(u16 wcol) {
     if (wcol < w0 || m >= g_maplen) return 0;
     return g_strip_xlat[g_map[m] & 31];
 }
+/* ★遠景(多重スクロール): 短冊が g_far_s0..g_far_s1 の列の、s が g_far_t0..g_far_t1-1 のブロックは、短冊 g_far_base + (列 & 7)
+   (周期 64 ドットの遠景)から写す。面が真ん中の帯をラスターで別の速さにずらす(3 面)。g_far_base = 0 で使わない */
+u8 g_far_base, g_far_s0, g_far_s1, g_far_t0, g_far_t1;
+static u8 far_at(u8 st, s16 s0) { return (u8)(g_far_base && st >= g_far_s0 && st <= g_far_s1 && s0 >= g_far_t0 && s0 < g_far_t1); }
+static u8 src_of(u16 wcol, s16 s0) {
+    u8 st = strip_of(wcol);
+    return far_at(st, s0) ? (u8)(g_far_base + (wcol & 7)) : st;
+}
 
 /* 次のコマンド(c_hmmv = 1 なら HMMV、c_star = 1 なら星を打つ) */
 static u16 c_sx, c_sy, c_dx, c_dy, c_nx, c_ny;
 static u8  c_hmmv, c_star;
 
 static void cmd_ring(u8 c, u8 b, u16 wcol, s16 s0, u8 n) {
-    c_sx = (u16)strip_of(wcol) * 8u; c_sy = (u16)(STRIP_Y + s0);
+    c_sx = (u16)src_of(wcol, s0) * 8u; c_sy = (u16)(STRIP_Y + s0);
     c_dx = (u16)((c & 31) * 8u); c_dy = (u16)(((c & 32) ? 256u : 0u) + b * 8u);
     c_nx = 8; c_ny = (u16)n * 8u; c_hmmv = 0; c_star = 0;
 }
@@ -246,7 +254,11 @@ static u8 next_col_cmd(void) {
             u8 n = 1;
             pcmx_service();                                   /* ★ブロックごとに PCM の送出口(M7) */
             if (col_b == BLK_CONST || t0 < 0 || t0 >= 188 || (u8)(col_b - g_blk_base) < g_blk_skip) { col_b++; continue; }
-            while (n < run_max && col_b + n < NBLK && col_b + n != BLK_CONST && tag[col_b + n] == t0 + n * 8) n++;
+            {   /* 続くブロックは、遠景か地図の短冊かが同じものだけ(1 コマンドは写し元が 1 つ) */
+                u8 st = strip_of(cur_col), f = far_at(st, t0);
+                while (n < run_max && col_b + n < NBLK && col_b + n != BLK_CONST && tag[col_b + n] == t0 + n * 8 &&
+                       far_at(st, (s16)(t0 + n * 8)) == f) n++;
+            }
             cmd_ring((u8)(cur_col & 63), col_b, cur_col, t0, n);
             col_b += n;
             return 1;
@@ -349,7 +361,7 @@ static void job_pick(void) {
         n++;
     } while (js >= 0 && n < RUN_MAX && jb0 + n < NBLK && jb0 + n != BLK_CONST &&
              (w = want_of((u8)(jb0 + n), lo)) == js + n * 8 && w < 188 && (w < 0 ? upper_sky : ready) &&
-             tag[jb0 + n] != tag_of(w));
+             tag[jb0 + n] != tag_of(w) && far_at(g_far_s0, w) == far_at(g_far_s0, js));   /* 遠景の境をまたがない */
     jn = n;
 }
 

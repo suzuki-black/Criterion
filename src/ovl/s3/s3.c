@@ -25,6 +25,8 @@ static u8  bulk_t;
 static u8 scan_got;
 static s16 scan_x;                 /* Scanner の測定線(停止の間) */
 static const u8 inside[3] = { 1, 1, 2 };
+static u16 far_x, far_prev;        /* 遠景の帯の横位置 / 前のフレームの bg の位置(ovl_bands) */
+static s16 far_acc;
 
 /* ---- 隔壁(M7 の後): スプライトの柱で、すき間が 1 ドットずつ滑らかに上下する。★前は地図の列を 1.5 秒ごとに
    書き換えて、すき間がいきなり別の高さへ跳び、予想できなかった。地図の隔壁の列は普通の通路にしてある ---- */
@@ -90,6 +92,8 @@ void ovl_init(void) {
     rom_to_ram(ASSET_S3_MAP_BANK, ASSET_S3_MAP_OFF, g_map, S3_COLS);
     g_maplen = S3_COLS;
     stage_load_strips(ASSET_S3_STRIPS_BANK, ASSET_S3_STRIPS_OFF);
+    g_far_base = 20; g_far_s0 = 6; g_far_s1 = 15; g_far_t0 = 16; g_far_t1 = 168;   /* 遠景(下の ovl_bands。gen_stage3.py) */
+    far_x = far_prev = bg_layer_x(2); far_acc = 0;
     vdp_set_pal(6, 2, 2, 3);                                  /* 壁の影(暗い灰) */
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0; bulk_ph = 0; lit = 0;
     { u8 i; for (i = 0; i < S3_NBULK; i++) g_map[s3_bulk[i]] = 14; }   /* 隔壁の列は通路にして、柱はスプライトで */
@@ -242,7 +246,37 @@ void ovl_draw(void) {
 
 void ovl_vram(void) { b3_vram(); }
 
+/* ★遠景の多重スクロール(遊んでの指摘): チューブの真ん中(s = 16..167。stage.c が遠景の短冊から写す)の帯を、ラスターで半分の
+   速さにずらす。真ん中に壁のある列(入口・停止の隔壁・ボスの広場)が表示リングに入る前後は、ずれを 1/8 ずつ戻して 0 にする
+   (ずれたままだと、その壁が当たりと違う所に見える)。リングの窓は画面の左 g_col_rev 列から 64 列。余裕は進む向きに 48 列
+   (最高速の 6 ドット/フレームで約 64 フレーム = 戻しきる時間)、後ろは 8 列(窓から出た列は次の列に描き替わる) */
+static u8 far_free(void) {
+    s16 lo, hi;
+    if (g_sec < SEC3_ACCEL || g_sec == SEC3_STOP || g_sec >= SEC3_BOSS) return 0;
+    lo = (s16)((s16)col_of_screen() - g_col_rev); hi = (s16)(lo + 64);
+    if (g_scroll_speed < 0) { lo -= 48; hi += 8; } else { lo -= 8; hi += 48; }
+    if (lo < S3_COL_ACCEL || hi > S3_COL_ARENA) return 0;
+    if (lo <= S3_COL_STOP + 6 && hi > S3_COL_STOP) return 0;
+    return 1;
+}
 void ovl_bands(s16 sc, u16 nx) {
-    (void)nx;
+    s16 d = (s16)((nx - far_prev) & 0x3FFF);                  /* bg の位置は 16384 で回る */
+    if (d >= 0x2000) d -= 0x4000;
+    far_prev = nx;
+    if (far_free()) {
+        s16 h;
+        far_acc += d; h = far_acc >> 1; far_x += (u16)h; far_acc -= (s16)(h * 2);   /* 半分の速さ(端数は持ち越す) */
+    } else {
+        s16 e;
+        far_x += (u16)d;
+        e = (s16)((nx - far_x) & 511u);
+        if (e >= 256) e -= 512;
+        far_x += (u16)(e >= 0 ? (e + 7) >> 3 : -((-e + 7) >> 3));
+        far_acc = 0;
+    }
     stage_ev_pal((s16)(0 - sc), inside);
+    if (((nx - far_x) & 511u) && g_sec >= SEC3_ACCEL && g_sec <= SEC3_BOSS) {
+        stage_ev_scroll((s16)(16 - sc), far_x);
+        stage_ev_scroll((s16)(168 - sc), nx);
+    }
 }
