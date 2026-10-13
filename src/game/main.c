@@ -52,6 +52,7 @@ u8 g_slow;
 static u8 slow_next;
 u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
 #define HUD_DEADLINE (150u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
+#define HUD_DEADLINE2 (110u * 16u) /* これを過ぎていたら HUD の文字は 1 行だけ */
 #define SPR_LIMIT    (245u * 16u)  /* スプライトの段の時点の経過 + 前に描いたフレームの「段からフレームの終わりまで」がこれを越えるなら描き直さない */
 #define SPR_SKIP_MAX 3             /* スプライトを続けて飛ばすのはここまで(その次は SPR_FORCE までなら描く) */
 #define SPR_FORCE    (200u * 16u)
@@ -348,7 +349,10 @@ void main(void) {
             rom_to_vram(ASSET_SPR_COL_BANK, src, 1, dst, q ? 112 : 80);
             col_done++;
         }
-        if (g_hud_on && (g_phase < PH_AIR || (u16)(sys_timer() - g_frame_t0) < HUD_DEADLINE)) hud_update();
+        {   /* ★残りが少なければ 1 行だけ(1 行 ≒ 12 ライン、VDP のコマンドと重なるとその倍) */
+            u16 el = (u16)(sys_timer() - g_frame_t0);
+            if (g_hud_on && (g_phase < PH_AIR || el < HUD_DEADLINE)) hud_update(g_phase < PH_AIR || el < HUD_DEADLINE2 ? 2 : 1);
+        }
         if (g_phase <= PH_SORTIE) { title_vram(); title_build(); }
         else { stage_vram(); stage_build(); }
         if (g_phase == PH_LOGO && g_pt == 2) {                 /* 起動ロゴのラスターリストが効いてから表示を戻す */

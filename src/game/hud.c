@@ -96,14 +96,16 @@ static void num_str(char *buf, u16 v, u8 digits) {
     for (i = digits; i > 0; i--) { buf[i - 1] = (char)('0' + v % 10u); v /= 10u; }
 }
 
-/* 変わった項目を待ち行列へ入れ、1 フレームに 2 行ずつ書く */
-void hud_update(void) {
+/* 変わった項目を待ち行列へ入れ、1 フレームに rows 行ずつ書く */
+void hud_update(u8 rows) {
     u8 node = g_gauge.cursor;
     u8 *lv = level_of(node);
     u8 lvv = lv ? *lv : 0;
     char buf[16];
     if (init_stage) { init_step(); return; }
-    if (g_pl.score != shown_score) {
+    /* ★得点は描きかけを描き終えてから次の値を取る(変わるたびに 0 行目から描き直していた間は、ボス戦で毎フレーム得点が
+       入ると上の 2 行だけを書き続け、数字が新旧混ざったまま 1 フレームに 2 行の仕事が続いた。8 面の第 2 形態で遅れた) */
+    if (g_pl.score != shown_score && job[J_SCORE].row >= 8) {
         shown_score = g_pl.score;
         num_str(buf, g_pl.score, 5);
         job_set(J_SCORE, (u8)(TX + 24), HUD_ROW0, 15, buf, 5);
@@ -126,7 +128,7 @@ void hud_update(void) {
             job_set(J_NODE, TX, HUD_ROW2, lvv >= mx ? 14 : 11, buf, 11);
         }
     }
-    jobs_run(2);
+    jobs_run(rows);
 }
 
 void hud_sprites(void) {
