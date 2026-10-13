@@ -77,12 +77,17 @@ void pl_fire_from(s16 x, s16 y) {                             /* 自機(player.c
 }
 
 #define SHOT_ROW_MAX 3
+#define SHOT_BAND_MAX 6              /* G_SHOT の枠の数(spr.c)。帯ごとにこれを越えて置かない(越えると spr.c の窓も顔ぶれを回し、
+                                        下の向きの入れ替えと周期が揃うと同じ弾が出続けないことがある) */
 #define G_SHOT_N 2                   /* asm 用(spr.h の G_SHOT) */
 /* ★自機弾は 1 ラインに SHOT_ROW_MAX 枚まで(測定: 8 枚を超えた行の約半分が自機弾で、同じ高さの敵・敵弾が消えた)。
-   8 行ごとの区切り(sh_rows)で数え、1 枚が掛かる 3 つの区切りのどこかが満ちていればそのフレームは描かない。描き始めを
-   フレームごとにずらすので、溢れた弾は消えずにちらつく。pierce: 0 = 弾、1 = RAY、2 = 束ねた横(描かない)、3 = 束ねた真ん中(PAT_RAY3)。
+   8 行ごとの区切り(sh_rows)で数え、1 枚が掛かる 3 つの区切りのどこかが満ちていればそのフレームは描かない。帯(上 = 上端 < 96、
+   下 = 上端 > 80。spr_put と同じ)ごとにも SHOT_BAND_MAX 枚まで。★描く向きをフレームごとに前から・後ろからと入れ替える
+   (描き始めを 1 つずつずらすだけの間は、並びによって同じ弾が何フレームも続けて描かれず、出ていないように見えた。指摘
+   「速くちらつかせる方がよい」)。溢れた弾は 1 フレームおきに出る。pierce: 0 = 弾、1 = RAY、2 = 束ねた横(描かない)、
+   3 = 束ねた真ん中(PAT_RAY3)。
    ★asm(C で書いた版は 1 フレームに約 9 ライン使い、PCM の鳴る場面の遅れを増やした)。IX = 弾、C = 絵、B = x から引く量 */
-static u8 sh_rows[30], sh_rot;     /* ★第 2 バンクの変数は 0 から始まらない(sh_rot は押さえる) */
+static u8 sh_rows[30], sh_rot, sh_dir, sh_b0, sh_b1;   /* ★第 2 バンクの変数は 0 から始まらない(フレームの頭で押さえる) */
 void shots_draw(void) __naked {
     __asm
         ld   a, (_sh_rot)
@@ -97,6 +102,13 @@ void shots_draw(void) __naked {
         xor  a
     00002$:
         ld   (_sh_rot), a
+        ld   a, (_sh_dir)
+        inc  a
+        and  #1
+        ld   (_sh_dir), a
+        xor  a
+        ld   (_sh_b0), a
+        ld   (_sh_b1), a
         ld   hl, #_sh_rows
         ld   b, #30
         xor  a
@@ -157,7 +169,10 @@ void shots_draw(void) __naked {
         call 00050$
     00014$:
         pop  bc
-        ld   de, #10
+        ld   a, (_sh_dir)
+        or   a
+        jr   nz, 00016$
+        ld   de, #10               ; 前から
         add  ix, de
         inc  c
         ld   a, c
@@ -165,6 +180,17 @@ void shots_draw(void) __naked {
         jr   nz, 00015$
         ld   c, #0
         ld   ix, #_g_pshot
+        jr   00015$
+    00016$:
+        ld   a, c                  ; 後ろから
+        or   a
+        jr   nz, 00017$
+        ld   c, #PS_SHOTS
+        ld   ix, #_g_pshot + PS_SHOTS * 10
+    00017$:
+        dec  c
+        ld   de, #-10
+        add  ix, de
     00015$:
         djnz 00011$
         pop  ix
@@ -187,6 +213,20 @@ void shots_draw(void) __naked {
         ld   a, l
         cp   #216
         ret  nc
+        cp   #(SPR_SPLIT + 8)      ; 上の帯(上端 < 96)の枠が満ちていれば置かない
+        jr   nc, 00053$
+        ld   a, (_sh_b0)
+        cp   #SHOT_BAND_MAX
+        ret  nc
+    00053$:
+        ld   a, l
+        cp   #(SPR_SPLIT - 16 + 8 + 1)   ; 下の帯(上端 > 80)
+        jr   c, 00054$
+        ld   a, (_sh_b1)
+        cp   #SHOT_BAND_MAX
+        ret  nc
+    00054$:
+        ld   a, l
         push hl
         rrca
         rrca
@@ -215,6 +255,20 @@ void shots_draw(void) __naked {
         dec  hl
         inc  (hl)
         pop  hl
+        ld   a, l                  ; 帯の数を足す
+        cp   #(SPR_SPLIT + 8)
+        jr   nc, 00055$
+        ld   a, (_sh_b0)
+        inc  a
+        ld   (_sh_b0), a
+    00055$:
+        ld   a, l
+        cp   #(SPR_SPLIT - 16 + 8 + 1)
+        jr   c, 00056$
+        ld   a, (_sh_b1)
+        inc  a
+        ld   (_sh_b1), a
+    00056$:
         ld   de, #-8
         add  hl, de
         ex   de, hl                ; DE = 上端
