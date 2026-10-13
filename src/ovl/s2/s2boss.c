@@ -131,6 +131,7 @@ static void cw_draw(void) {
 #define BIG     (NFR - 1)          /* 96x96 の段。ページ 2 の x 128..223、64..159 行(2 面では空き。帯の文字は 160 行から) */
 #define BIG_N   96
 static const u16 kg_step[BIG] = { 1707, 1024, 640, 427, 320, 256 };   /* 0.15 .. 1 倍(ROTOR で作る段) */
+static const u8  kg_n[BIG]    = { 16, 32, 64, 64, 64, 64 };              /* 作る大きさ(n/2 x step が 128 ドット未満に収まる。下の kg_gen) */
 static u8  gen_k, gen_ph;
 static u16 cal_t;                  /* 再校正版の重力の替わり目 */
 static u16 src_off;
@@ -142,6 +143,18 @@ u8 b2_lens_tbl_up[48], b2_lens_tbl_dn[48];
 static u16 lens_nx;               /* 表を作ったときの横位置(0xFFFF = まだ。b2_start で) */
 
 void b2_prepare(void) { gen_k = 0; gen_ph = 0; src_off = 0; }
+
+/* ROTOR_DST(64 x 64、2KB)を空の色(1)で埋める */
+static void dst_fill(void) __naked {
+    __asm
+        ld   hl, #0xE000
+        ld   (hl), #0x11
+        ld   de, #0xE001
+        ld   bc, #2047
+        ldir
+        ret
+    __endasm;
+}
 
 /* 絵を作る 1 段(ROM から元 → 4 行ずつ ROTOR → 8 行ずつページ 2 へ) */
 static void kg_gen(void) {
@@ -161,8 +174,19 @@ static void kg_gen(void) {
         return;
     }
     if (gen_ph < 16) {
-        if (gen_ph == 0) rotor_begin(64, 0, kg_step[gen_k], 1);
-        rotor_rows(ROTOR_DST + gen_ph * 128u, 4);
+        /* ★小さい段は真ん中の n x n だけを作り、まわりは空の色(1)で埋める。64 x 64 全体を 0.15 倍・0.25 倍で作ると元の絵の
+           座標が 8.8 固定小数点の ±128 を越えて回り込み、絵がずれて出た(遊んでの指摘「最初の位置だけ大きくずれる」) */
+        u8 n = kg_n[gen_k], r = (u8)(gen_ph * 4), e = (u8)(r + 4);
+        if (gen_ph == 0) {
+            rotor_begin(n, 0, kg_step[gen_k], 1);
+            if (n < 64) dst_fill();
+        }
+        if (e > n) e = n;
+        if (e > r) {
+            u8 h = (u8)(32 - (n >> 1)), *d = ROTOR_DST + (u16)(h + r) * 32u + (h >> 1);
+            e -= r;
+            do { rotor_rows(d, 1); d += 32; } while (--e);
+        }
     } else {
         u8 r, r0 = (u8)((gen_ph - 16) * 8);
         for (r = r0; r < r0 + 8; r++) {
