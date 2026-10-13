@@ -80,7 +80,7 @@ void zako_killed(Enemy *e);        /* 自機に倒された(砂時計の砂な�
 
 typedef struct { s16 x, y, vx, vy; u8 on; u8 pierce; } Bullet;
 #define MAX_PSHOT 16                /* ふつうの弾 12 + DROP の爆雷 4。★20 にするとボスの当たり判定(部品ごとに全部の弾を見る)が
-                                               重くなり、1 周の処理落ちが 2 → 4 になった。分身の弾は枠が空いたときだけ出る */
+                                               重くなり、1 周の処理落ちが 2 → 4 になった。足りない枠は、撃つ機ごとに正面の 1 発を先に取り、拡散は順番を回して分ける(weapon.c) */
 #define MAX_ESHOT 16
 extern Bullet g_pshot[MAX_PSHOT], g_eshot[MAX_ESHOT];
 /* 自機の弾の on: 1 = ふつうの弾(player.c が進める)、2 / 3 = DROP の爆雷の下向き / 上向き(weapon.c が進める) */

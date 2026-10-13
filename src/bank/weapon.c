@@ -44,20 +44,36 @@ static Bullet *shoot(s16 vy, u8 pierce, s16 dy) {
     return 0;
 }
 
-void pl_fire_from(s16 x, s16 y) {
+/* ★撃つのは 2 段: 先に撃つ機(自機と、撃つ番の分身)がそれぞれ正面の 1 発(core)を撃ち、残った枠で拡散・RAY の太さ(fan)を
+   順番を回して撃つ。自機が全部を一度に撃っていた間は、SPLIT の 5 方向で弾の枠(12)が埋まり、分身の弾がほとんど出なかった
+   (指摘「オプションの弾が出ていないときがある」)。分身がいなければ自機だけなのですぐに fan も撃つ */
+static s16 fr_x[1 + ECHO_MAX], fr_y[1 + ECHO_MAX];
+static Bullet *fr_c[1 + ECHO_MAX];
+static u8 fr_n;                                               /* このフレームに撃った機の数(pl_fire_from が 0 から数え直す) */
+static void fire_core(s16 x, s16 y) {
     sx0 = x; sy0 = y;
+    fr_x[fr_n] = x; fr_y[fr_n] = y;
+    fr_c[fr_n] = shoot(0, g_gauge.ray ? 1 : 0, 0);
+    fr_n++;
+}
+static void fire_fan(u8 k) {
+    sx0 = fr_x[k]; sy0 = fr_y[k];
     if (g_gauge.ray) {
-        Bullet *c = shoot(0, 1, 0);
         if (g_gauge.ray >= 2) {                               /* 太さ倍(3 本を束ねる)。★3 本そろったら真ん中を 3、横を 2 にして
                                                                  1 枚(PAT_RAY3)で描く(shots_draw。pierce はどこでも真偽で見る) */
-            Bullet *u = shoot(0, 1, FX(-4)), *d = shoot(0, 1, FX(4));
+            Bullet *c = fr_c[k], *u = shoot(0, 1, FX(-4)), *d = shoot(0, 1, FX(4));
             if (c && u && d) { c->pierce = 3; u->pierce = d->pierce = 2; }
         }
     } else {
-        shoot(0, 0, 0);
         if (g_gauge.split >= 1) { shoot(FX(-1) - 8, 0, 0); shoot(FX(1) + 8, 0, 0); }
         if (g_gauge.split >= 2) { shoot(FX(-3), 0, 0); shoot(FX(3), 0, 0); }
     }
+}
+
+void pl_fire_from(s16 x, s16 y) {                             /* 自機(player.c) */
+    fr_n = 0;
+    fire_core(x, y);
+    if (!g_gauge.echo) fire_fan(0);                           /* 分身がいれば weap_update が分身の core の後に */
 }
 
 #define SHOT_ROW_MAX 3
@@ -373,9 +389,14 @@ void weap_update(void) {
     for (i = 0; i < n; i++) {
         u8 k = echo_at(i);
         s16 ex = tr_x[k], ey = tr_y[k];
-        if (g_fired && ((i ^ vol) & 1)) pl_fire_from(FX(ex), FX(ey));   /* ★分身は 1 回おきに交互に撃つ(弾の枠はどのみち満杯。重かった) */
+        if (g_fired && ((i ^ vol) & 1)) fire_core(FX(ex), FX(ey));   /* ★分身は 1 回おきに交互に撃つ(重かった) */
         if (blink[i]) blink[i]--;
         else target((s16)(ex + 1), (s16)(ey + 1), 14, 14, i);
+    }
+    if (g_fired && n) {                                       /* 拡散・太さは撃った機の順番を回して(上の pl_fire_from) */
+        u8 r = vol, j;
+        while (r >= fr_n) r -= fr_n;
+        for (j = 0; j < fr_n; j++) { fire_fan(r); if (++r == fr_n) r = 0; }
     }
     /* AEGIS: 段階が上がったら耐久を入れ直す(被弾・LIMIT BREAK で下がったら合わせるだけ) */
     if (g_gauge.aegis != aeg_lv) {
