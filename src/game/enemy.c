@@ -196,6 +196,7 @@ void enemy_bullet(s16 x, s16 y, s16 vx, s16 vy) {
 
 /* (x, y)(固定小数点)から自機を狙って 2 ドット/フレーム。★長さは max + min × 3/8 で近似する(縦横の大きい方で
    割ると、斜めの弾が 1.4 倍速くなり、砲台の弾の速さがばらついて見えた。M7 の後) */
+static const u8 shoot_rcp[32] = { 128,124,120,117,114,111,108,105,102,100,98,95,93,91,89,87,85,84,82,80,79,77,76,74,73,72,71,69,68,67,66,65 };   /* round(4096 / m)、m = 32..63 */
 void enemy_shoot(s16 x, s16 y) {
     s16 dx, dy, ax, ay, m;
     if (!g_pl.alive) return;
@@ -205,7 +206,14 @@ void enemy_shoot(s16 x, s16 y) {
     ay = dy < 0 ? -dy : dy;
     m = ax > ay ? (s16)(ax + ((ay * 3) >> 3)) : (s16)(ay + ((ax * 3) >> 3));
     if (m < 8) return;
-    enemy_bullet(x, y, (s16)(dx * 32 / m), (s16)(dy * 32 / m));   /* 固定小数点 32 = 2 ドット */
+    /* ★32 × d / m を割り算なしで(ライブラリの割り算 2 回が、雑魚がまとめて撃つフレームで 1ms 近くかかり、3 面の加速で遅れた):
+       m を 32..63 にそろえ(d も同じだけずらす)、4096 / m の表を掛けて 7 ビット右へ */
+    while (m >= 64) { m >>= 1; dx >>= 1; dy >>= 1; }
+    while (m < 32) { m <<= 1; dx <<= 1; dy <<= 1; }
+    {
+        u8 r = shoot_rcp[m - 32];
+        enemy_bullet(x, y, (s16)((dx * r) >> 7), (s16)((dy * r) >> 7));   /* 固定小数点 32 = 2 ドット */
+    }
 }
 
 static void enemy_fire(const Enemy *e) { enemy_shoot(e->x, e->y); }
