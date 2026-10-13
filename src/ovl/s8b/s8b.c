@@ -44,11 +44,14 @@ static void shots_prepare(void) {
         shx[nsh] = (u8)x; shy[nsh] = (u8)y; shi[nsh] = i; nsh++;
     }
 }
+/* ★比較は 8 ビットの引き算 1 回ずつ((u8)(弾 - x) < w。x が画面の少し外でも 256 で回るので同じ。16 ビットで 4 回比べていた間は
+   砲台 12 基 × 弾で第 3 形態の 1 フレームの 3% を使い、m7 の遅れが固まった) */
 static u8 shot_rect(s16 x, s16 y, u8 w, u8 h) {
-    u8 k, n = 0;
-    for (k = 0; k < nsh; k++) {
+    u8 k, n = 0, x8 = (u8)x, y8 = (u8)y;
+    const u8 *px = shx, *py = shy;
+    for (k = 0; k < nsh; k++, px++, py++) {
         Bullet *b;
-        if ((s16)shx[k] < x || (s16)shx[k] >= x + w || (s16)shy[k] < y || (s16)shy[k] >= y + h) continue;
+        if ((u8)(*px - x8) >= w || (u8)(*py - y8) >= h) continue;
         b = &g_pshot[shi[k]];
         if (!b->on) continue;
         if (!b->pierce) b->on = 0;
@@ -213,9 +216,12 @@ static u8  ra, msg;
 static u8  tt_hp[NT];
 static const char *const msgs[4] = { "MEASURING...", "VALUE: 9999999", "VALUE OUT OF RANGE", "~" };   /* ~ は ∞(font.c) */
 static s16 tpx[NT], tpy[NT];       /* 砲台の位置(1 フレームに 1 回求める) */
+static u8  pos_ra;
+static s16 pos_r;                  /* ring_pos で求めたときの角度と半径(変わったときだけ求め直す) */
 static void ring_pos(void) {
     u8 k;
     s16 r = rr >> 2;
+    pos_ra = ra; pos_r = r;
     for (k = 0; k < NT; k++) {
         tpx[k] = (s16)(CX + ((g_sin64[(u8)(ra + k * 5 + 16) & 63] * r) >> 7));
         tpy[k] = (s16)(CY + ((g_sin64[(u8)(ra + k * 5) & 63] * r) >> 7));
@@ -248,7 +254,8 @@ static void ring_update(void) {
     u8 k, left = 0;
     if (!(t & 7)) ra++;
     if (rr > 48 * 4) rr--;                                    /* 縮む(測り取ろうとする) */
-    if (t & 1) ring_pos();                                    /* 位置は 2 フレームに 1 回(掛け算 24 回) */
+    if (ra != pos_ra || (rr >> 2) != pos_r) ring_pos();      /* ★位置は角度か半径が変わったときだけ(掛け算 24 回。角度は 8 フレーム、
+                                                                 半径は 4 フレームに 1 回変わる。前は 2 フレームに 1 回求め、m7 の遅れが固まった) */
     g_boss_aim = -1;
     for (k = 0; k < NT; k++) {
         s16 x = tpx[k], y = tpy[k];
@@ -272,16 +279,23 @@ static void ring_draw(void) {
     u8 k;
     for (k = 0; k < NT; k++) if (tt_hp[k]) spr_put(tpx[k] - 8, tpy[k] - 8, PAT_DIG, G_ENEMY, 0);
 }
-/* リングの 12 角形(砲台を順に結ぶ。指示書 5.8 の目盛りの環)。16 フレームに 1 回、消す(1 フレーム目)と描く(2..4 フレーム目に
-   4 辺ずつ)を分ける。★12 角形を 4 フレームごとに消して描くと LINE の命令 1 つ 0.3ms × 28 本で毎フレーム遅れたので、
-   周期を延ばして 1 フレームあたりの本数を 6 角形のときと同じにした */
+/* リングの 12 角形(砲台を順に結ぶ。指示書 5.8 の目盛りの環)。16 フレームに 1 回、消す(1..4 フレーム目に 4 分の 1 ずつ)と
+   描く(5..10 フレーム目に 2 辺ずつ)を分ける。★12 角形を 4 フレームごとに消して描くと LINE の命令 1 つ 0.3ms × 28 本で毎フレーム
+   遅れたので、周期を延ばした。★前は 1 フレーム目に全部を消し、3 フレームで 4 辺ずつ描いていたが、そのフレームがスプライトや
+   PCM と重なって m7 の遅れが固まったので、さらに細かく分けた */
+static u8 le_k, le_n;              /* 消す線の次の番号 / 1 フレームに消す本数 */
 static void ring_vram(void) {
-    u8 k;
+    u8 k, e;
     u8 ph = (u8)(t & 15), k0;
-    if (ph == 0) { line_erase(); return; }
-    if (ph > 3 || gq_free() < 10 || g_boss_state != BS_FIGHT) return;
-    k0 = (u8)((ph - 1) * 4);
-    for (k = k0; k < k0 + 4; k++) {
+    if (ph < 4) {
+        if (ph == 0) { le_k = 0; le_n = (u8)((ln + 3) >> 2); }
+        for (e = le_n; e && le_k < ln; e--, le_k++) gq_line((u16)lx[le_k], (u8)(ly[le_k] + g_vscroll), ldx[le_k], ldy[le_k], 1);
+        if (ph == 3) ln = 0;
+        return;
+    }
+    if (ph > 9 || gq_free() < 10 || g_boss_state != BS_FIGHT) return;
+    k0 = (u8)((ph - 4) * 2);
+    for (k = k0; k < k0 + 2; k++) {
         u8 j = k == NT - 1 ? 0 : (u8)(k + 1);
         line_add(tpx[k], tpy[k], tpx[j], tpy[j], 15);
     }
