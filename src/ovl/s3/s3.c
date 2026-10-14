@@ -26,6 +26,7 @@ static u8 scan_got;
 static s16 scan_x;                 /* Scanner の測定線(停止の間) */
 static const u8 inside[3] = { 1, 1, 2 };
 static u16 far_x, far_prev;        /* 遠景の帯の横位置 / 前のフレームの bg の位置(ovl_bands) */
+u8 s3_far_zero;                    /* 遠景のずれが 0(ボスの盤を写してよい。s3boss.c) */
 static s16 far_acc;
 
 /* ---- 隔壁(M7 の後): スプライトの柱で、すき間が 1 ドットずつ滑らかに上下する。★前は地図の列を 1.5 秒ごとに
@@ -78,7 +79,8 @@ static void enter(u8 sec) {
     if (sec == SEC3_MID) { g_col_rev = 16; b3_start(B3_MET); }   /* 振り子で前後: 窓は左右に半分ずつ */
     if (sec == SEC3_TOP) {
         g_col_rev = 0; g_scroll_speed = g_calib ? 4 : 24; set_streak(!g_calib);
-        g_map[S3_COL_STOP + 2] = 17; g_map[S3_COL_STOP + 6] = 16;   /* 停止の隔壁は開いている(まだ窓の外) */
+        g_map[S3_COL_STOP + 2] = 14; g_map[S3_COL_STOP + 6] = 14;   /* 停止の隔壁は開いて無くなる(まだ窓の外)。★前は開いた隔壁の BG に
+                                                                 していたが、真ん中に壁がある間は遠景を止めることになるので通路に */
         if (!g_calib) b3_load_dial();
     }
     if (sec == SEC3_BOSS) { g_col_rev = 16; b3_start(B3_TACHO); }  /* 突進で前後するので窓は左右に */
@@ -93,7 +95,7 @@ void ovl_init(void) {
     g_maplen = S3_COLS;
     stage_load_strips(ASSET_S3_STRIPS_BANK, ASSET_S3_STRIPS_OFF);
     g_far_base = 20; g_far_s0 = 6; g_far_s1 = 15; g_far_t0 = 16; g_far_t1 = 168;   /* 遠景(下の ovl_bands。gen_stage3.py) */
-    far_x = far_prev = bg_layer_x(2); far_acc = 0;
+    far_x = far_prev = bg_layer_x(2); far_acc = 0; s3_far_zero = 1;
     vdp_set_pal(6, 2, 2, 3);                                  /* 壁の影(暗い灰) */
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0; bulk_ph = 0; lit = 0;
     { u8 i; for (i = 0; i < S3_NBULK; i++) g_map[s3_bulk[i]] = 14; }   /* 隔壁の列は通路にして、柱はスプライトで */
@@ -251,11 +253,13 @@ void ovl_vram(void) { b3_vram(); }
    (ずれたままだと、その壁が当たりと違う所に見える)。リングの窓は画面の左 g_col_rev 列から 64 列。余裕は進む向きに 48 列
    (最高速の 6 ドット/フレームで約 64 フレーム = 戻しきる時間)、後ろは 8 列(窓から出た列は次の列に描き替わる) */
 static u8 far_free(void) {
-    s16 lo, hi;
+    s16 lo, hi, m;
+    s8 sp = g_scroll_speed;
     if (g_sec < SEC3_ACCEL || g_sec == SEC3_STOP || g_sec >= SEC3_BOSS) return 0;
     lo = (s16)((s16)col_of_screen() - g_col_rev); hi = (s16)(lo + 64);
-    if (g_scroll_speed < 0) { lo -= 48; hi += 8; } else { lo -= 8; hi += 48; }
-    if (lo < S3_COL_ACCEL || hi > S3_COL_ARENA) return 0;
+    m = (s16)(8 + 2 * (sp < 0 ? -sp : sp));                  /* 進む向きの余裕: 戻しきる約 64 フレームに進む列(速さは 1/4 ドット) */
+    if (sp < 0) { lo -= m; hi += 8; } else { lo -= 8; hi += m; }
+    if (lo < S3_COL_ACCEL) return 0;
     if (lo <= S3_COL_STOP + 6 && hi > S3_COL_STOP) return 0;
     return 1;
 }
@@ -275,7 +279,8 @@ void ovl_bands(s16 sc, u16 nx) {
         far_acc = 0;
     }
     stage_ev_pal((s16)(0 - sc), inside);
-    if (((nx - far_x) & 511u) && g_sec >= SEC3_ACCEL && g_sec <= SEC3_BOSS) {
+    s3_far_zero = (u8)!((nx - far_x) & 511u);
+    if (!s3_far_zero && g_sec >= SEC3_ACCEL && g_sec <= SEC3_BOSS) {
         stage_ev_scroll((s16)(16 - sc), far_x);
         stage_ev_scroll((s16)(168 - sc), nx);
     }

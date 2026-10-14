@@ -275,7 +275,7 @@ void b3_vram(void) {
         if (dial_clean >= 16) { dial_drawn = 0; dial_clean = 0; }
     }
     if (kind == B3_TACHO && g_boss_state != BS_NONE) {
-        if (dial_drawn < 4 && g_boss_state == BS_ENTER && !g_scroll_speed && !stage_busy() && gq_free() >= 8) {
+        if (dial_drawn < 4 && g_boss_state == BS_ENTER && !g_scroll_speed && s3_far_zero && !stage_busy() && gq_free() >= 8) {   /* ★遠景のずれが 0 に戻ってから(s3.c) */
             /* 盤を表示リングへ(32 行ずつ 4 回。128x128 を 1 回で写すと VDP が 50ms 塞がり、CPU の VRAM の書き込みも遅れた)。
                ★列の流し込みが追いついてから(最高速の区間で遅れていた列が、写した盤の上に描かれて消えた) */
             ring_cmd(0, (u16)(512u + dial_drawn * 32u), DIAL_SX, (s16)(DIAL_Y + dial_drawn * 32), 128, 32, 0, 0);

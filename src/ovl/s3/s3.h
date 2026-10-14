@@ -12,4 +12,5 @@ void b3_draw(void);
 void b3_vram(void);
 void b3_load_dial(void);            /* 回転計の盤をページ 2 へ読み始める */
 
+extern u8 s3_far_zero;              /* 遠景のずれが 0(s3.c。ボスの盤はこのときだけ写す) */
 #endif /* S3_H */
