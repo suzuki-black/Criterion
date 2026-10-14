@@ -19,6 +19,8 @@
 #include "spr.h"
 #include "sprite_data.h"
 #include "assets.h"
+
+extern u16 g_frame_t0;
 #include "s8_data.h"
 #include "font.h"
 
@@ -200,6 +202,7 @@ static void rod_vram(void) {
     /* ★向きと長さは 4 フレームに 1 回しか変わらない。前は 2 フレームごとに同じ線を消して描き直し、LINE のコマンドが
        スプライトと重なって m6 で遅れた */
     if (ln && g_boss_state == BS_FIGHT && ex == rod_ex && ey == rod_ey) return;
+    if ((u16)(sys_timer() - g_frame_t0) > 150u * 16u) return;   /* ★残りが少なければ次のフレームへ(線 10 本で約 2ms。m6 で遅れた) */
     line_erase();
     if (g_boss_state != BS_FIGHT) return;
     rod_ex = ex; rod_ey = ey;
@@ -394,7 +397,6 @@ void ovl_draw(void) {
     }
 }
 void ovl_vram(void) {
-    extern u16 g_frame_t0;
     u8 late = (u16)(sys_timer() - g_frame_t0) > 150u * 16u;   /* ★重いフレームは絵の転送・文字を次へ回す(形態の替わり目に
                                                                  重なって 1 周の遅れが増えた) */
     if (!late) rot_vram();
