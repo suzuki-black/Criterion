@@ -440,3 +440,59 @@ SONGS.append(Song('M08C', 72, {
     'FM2': '@9 v8 ' + pad(m08c, 2, 62),
     'FM3': '@14 v10 ' + pad(m08c, 0, 36),
 }, loop=False, user=STRINGS))
+
+
+# ================================================================ PSG で厚みを足す(全曲)
+# ★遊んでの指摘(ドラムがポコポコ、メロディーに厚みがない)。M01 で 4 案を聴き比べて決めた形を、旋律(FM0)とリズム(RHY)から作る:
+#   PSG B = 旋律を同じ高さで重ねる(D2 = 周期 +2 で少し低く、FM とうならせる。音量は 4 段下げる)。やまびこのアルペジオ(B)は替わる
+#   PSG C = ノイズのスネア(v13、8 刻み)と閉じたハイハット(v9、3 刻み)。バスドラム・シンバル・タムは FM のまま
+#   PSG C は効果音と取り合う(鳴っている間は曲の側が抜ける。了承済み)。PSG だけの曲(J02)・C のノイズを自分で使う曲は触らない
+import re as _re
+
+def _psg_double(mml, env=0, drop=4, oct=0):
+    """env: PSG のエンベロープ(snd.c の env_rate。減衰する FM 音色に合わせる)、drop: 音量を下げる段、oct: 重ねる高さ(オクターブ)"""
+    s = _re.sub(r'P\w+', '', mml)                 # PCM の合図は FM0 の側だけ
+    s = _re.sub(r'T\d+', '', s)                   # テンポも
+    s = _re.sub(r'@\d+', '@%d' % env, s)
+    s = _re.sub(r'v(\d+)', lambda m: 'v%d' % max(0, int(m.group(1)) - drop), s)
+    if oct:
+        s = 'o%d ' % (4 + oct) + _re.sub(r'o(\d)', lambda m: 'o%d' % (int(m.group(1)) + oct), s)
+    return 'D2 @%d ' % env + s
+
+# 曲ごとの重ね方(無い曲は既定: 減衰なし・4 段下げ・同じ高さ)。聴き比べで決めた:
+#   M09 = ハープシコードはすぐ減衰するので、PSG も 3 フレームに 1 段ずつ下げる(減衰なしでは PSG だけが鳴り残った)
+#   M10 = 旋律が低く小さい(o4・v11)ので、下げるのは 1 段だけ(4 段では埋もれて変わって聞こえなかった)
+PSG_DOUBLE = {'M09': {'env': 6}, 'M10': {'drop': 1}}
+
+_RT = _re.compile(r'\s+|\||([bstch]+)(%\d+|\d+)?(\.*)|(r)(%\d+|\d+)?(\.*)|(L)|v(\d+)|P(\w+)|T(\d+)')
+def _ticks(num, dots):
+    t = int(num[1:]) if num and num.startswith('%') else (96 // int(num) if num else 24)
+    a = t
+    for _ in range(dots):
+        a //= 2; t += a
+    return t
+
+def _psg_drums(rhy):
+    out, i, hits = [], 0, 0
+    while i < len(rhy):
+        m = _RT.match(rhy, i)
+        if not m or m.end() == i:
+            raise ValueError('リズムが読めない: ' + rhy[i:i + 20])
+        i = m.end(); g = m.groups()
+        if g[0]:
+            t = _ticks(g[1], len(g[2]))
+            if 's' in g[0]: out.append('q%d v13 o4e%%%d' % (max(0, t - 8), t)); hits += 1
+            elif 'h' in g[0]: out.append('q%d v9 o5d+%%%d' % (max(0, t - 3), t)); hits += 1
+            else: out.append('r%%%d' % t)
+        elif g[3]: out.append('r%%%d' % _ticks(g[4], len(g[5])))
+        elif g[6]: out.append('L')
+    return 'N1 @1 ' + ' '.join(out) if hits else None
+
+for _s in SONGS:
+    if _s.id == 'M01' or 'FM0' not in _s.ch or not _s.ch['FM0'].strip():
+        continue                                   # M01 は手で書いた / J02 は PSG だけの曲
+    _s.ch['PSGB'] = _psg_double(_s.ch['FM0'], **PSG_DOUBLE.get(_s.id, {}))
+    if 'RHY' in _s.ch and 'PSGC' not in _s.ch:
+        _d = _psg_drums(_s.ch['RHY'])
+        if _d:
+            _s.ch['PSGC'] = _d
