@@ -166,17 +166,45 @@ static void hang_draw(void) {
 }
 
 /* ======== HANGAR DECK ======== */
-#define LIFT_MAX 52                /* 板は格納庫の底(s 68)から甲板の上(s 16)まで昇る(★甲板より下は自機の弾が届かない) */
+/* ★遊んでの指摘(何を壊せばいいのかわからない)で作り直した: 板(48x4 の細い棒)を、危険の縞と赤いランプの付いた台(48x12)にし、
+   Notch を載せて昇る。当たると台が白く光り(絵を白い版に替える。8..15 はスプライトと共有なのでパレットでは光らせない)、
+   体力が減るほどランプの点滅が速くなって火花が出る。上で止まる時間は 0.5 → 1.5 秒。扉が開くときに帯で TARGET を出す */
+#define LIFT_W   48
+#define LIFT_H   12
+#define LIFT_MAX 44                /* 台の上端は格納庫の底(s 60。台の下端が床の 72)から甲板の上(s 16)まで(★甲板より下は自機の弾が届かない) */
+#define LIFT_IMG 128               /* ページ 2 の 128..139 行・x 0..47 に台の絵(白い点滅とランプの消灯は上から塗る) */
 static u8 door_n;                  /* 書き換えた扉の列 */
 static u8 door_w;                  /* 開いた幅(中央から片側。0..32 ドット) */
-static u8 lift, lift_drawn, lift_ph, lift_wait;
+static u8 lift, lift_drawn, lift_ph, lift_wait, lift_v, lift_vd, lift_img, lift_fl, lamp_t;
 static u8 boss_t;
-static s16 lift_s(void) { return (s16)(S5_DECK + 28 - lift); }
-void b5_hangar_start(void) { door_n = 0; door_w = 0; lift = 0; lift_drawn = 0xFF; lift_ph = 0; lift_wait = 60; g_boss_state = BS_ENTER; g_boss_hp = 30; boss_t = 0; }
+static s16 lift_s(void) { return (s16)(S5_DECK + 20 - lift); }
+void b5_hangar_start(void) {
+    door_n = 0; door_w = 0; lift = 0; lift_drawn = 0xFF; lift_ph = 0; lift_wait = 60; lift_vd = 0xFF; lift_img = 0; lift_fl = 0; lamp_t = 0;
+    g_boss_state = BS_ENTER; g_boss_hp = 30; boss_t = 0;
+    stage_banner_c("TARGET: ELEVATOR", 13);
+}
+/* 台の絵のドット */
+static u8 lift_px(u8 x, u8 y) {
+    if (y == 0) return 14;
+    if (y == LIFT_H - 1) return 2;
+    if (y <= 2 || y >= LIFT_H - 3) return (u8)((((x + y) >> 2) & 1) ? 12 : 0);   /* 危険の縞(黄と黒) */
+    if (x < 2 || x >= LIFT_W - 2) return 14;
+    if (x >= 18 && x < 30 && y >= 4 && y <= 7) return (u8)(y == 4 && x < 22 ? 15 : 13);   /* ランプ */
+    if (y == 5 && (x == 6 || x == LIFT_W - 7)) return 14;     /* 鋲 */
+    return 9;
+}
+static void lift_sheet(u8 y0) {    /* 48x12 をページ 2 へ、y0 から 3 行(★1 フレームで 12 行書くと 2 フレーム遅れた) */
+    u8 x, y;
+    for (y = y0; y < y0 + 3; y++) {
+        vdp_write_addr17(1, (u16)((LIFT_IMG + y) * 128u));
+        for (x = 0; x < LIFT_W; x += 2) VDP_DAT = (u8)((lift_px(x, y) << 4) | lift_px((u8)(x + 1), y));
+    }
+}
+static void spark(s16 x, s16 y) { fx_spawn(FX(x + 8 + (rnd8() & 31)), FX(y)); }
 static void hangar_update(void) {
     s16 x = s5_sx(S5_COL_DOOR) + 8, y;
     if (g_boss_state == BS_ENTER) {                           /* 扉を開ける(描くのは hangar_vram。開き終えたら地図も格納庫の中に) */
-        if (door_w > 32 && !stage_busy()) {
+        if (door_w > 32 && lift_img >= LIFT_H && !stage_busy()) {
             for (door_n = 0; door_n < 8; door_n++) g_map[S5_COL_DOOR + door_n] = 20;
             g_boss_state = BS_FIGHT;
         }
@@ -191,19 +219,32 @@ static void hangar_update(void) {
         }
         return;
     }
-    /* エレベーター: 昇る → Notch を射出 → 降りる */
+    /* エレベーター: Notch を載せて昇る → 射出して 1.5 秒止まる → 降りる */
     if (lift_wait) lift_wait--;
     else if (!(t & 1)) {
-        if (lift_ph == 0) { lift += 2; if (lift >= LIFT_MAX) { lift = LIFT_MAX; lift_ph = 1; lift_wait = 30; enemy_spawn_notch(FX(x + 24), FX(s5_sy(lift_s() - 8))); } }
+        if (lift_ph == 0) { lift += 2; if (lift >= LIFT_MAX) { lift = LIFT_MAX; lift_ph = 1; lift_wait = 90; enemy_spawn_notch(FX(x + 24), FX(s5_sy(lift_s() - 8))); } }
         else { lift -= 2; if (lift == 0) { lift_ph = 0; lift_wait = 40; } }
     }
     y = s5_sy(lift_s());
-    g_boss_aim = (s16)(y + 2);
-    if (shot_rect(x, y - 6, 48, 14)) {
+    g_boss_aim = (s16)(y + 6);
+    if (lift_fl) lift_fl--;
+    if (shot_rect(x, y - 4, LIFT_W, LIFT_H + 4)) {
+        lift_fl = 4;
         if (g_boss_hp) g_boss_hp--;
+        if (!(g_boss_hp & 3)) spark(x, (s16)(y + 4));          /* 火花 */
         if (!g_boss_hp) { g_boss_state = BS_DYING; boss_t = 0; score_add(2000); }
     }
+    if (g_boss_hp <= 10 && !(t & 15)) spark(x, (s16)(y + 2));   /* 壊れかけ: 火花が続く */
+    {   /* ランプ: 体力が減るほど速く */
+        u8 m = (u8)(g_boss_hp > 20 ? 16 : g_boss_hp > 10 ? 8 : 4);
+        lamp_t++;
+        lift_v = (u8)(lift_fl ? 2 : (lamp_t & m) ? 1 : 0);
+    }
     shot_rect(x - 8, s5_sy(S5_DECK), 64, 34);                 /* 格納庫の中は弾を止める */
+}
+static void hangar_draw(void) {    /* 昇る間は Notch を台に載せて見せる(上で射出する本物と同じ位置) */
+    s16 x = s5_sx(S5_COL_DOOR) + 8;
+    if (g_boss_state == BS_FIGHT && lift_ph == 0) spr_put((s16)(x + 16), (s16)(s5_sy(lift_s()) - 16), PAT_NOTCH, G_PAIR, 0);
 }
 /* ★地形のアニメ(M7 の後、C6): 扉は中央から左右へ 2 ドットずつ引き込む。開いた所は格納庫の暗がり、動く縁は白く光る。
    開き終えたら床(色 9)を引く。描いた絵は短冊 20(格納庫の中)と同じなので、地図は書き換えるだけで描き直さない */
@@ -216,19 +257,32 @@ static void door_vram(void) {
     } else ring_cmd(0, 0, cx - 32, y + 32, 64, 2, 1, 0x99);
     door_w += 2;
 }
-
+/* 台の跡を消す(s0 から n 行: 甲板より上は空、下は格納庫の暗がり) */
+static void lift_erase(s16 x, s16 s0, u8 n) {
+    s16 k = (s16)(S5_DECK - s0);                              /* 甲板より上の行数 */
+    if (k < 0) k = 0; else if (k > n) k = n;
+    if (k) ring_cmd(0, 0, x, s5_sy(s0), LIFT_W, (u8)k, 1, 0x11);
+    if (n > (u8)k) ring_cmd(0, 0, x, s5_sy((s16)(s0 + k)), LIFT_W, (u8)(n - (u8)k), 1, 0x22);
+}
 static void hangar_vram(void) {
-    s16 x = s5_sx(S5_COL_DOOR) + 8;
-    if (g_boss_state == BS_ENTER) { door_vram(); return; }
-    if (g_boss_state != BS_FIGHT || lift_drawn == lift || gq_free() < 6) return;
-    if (lift_drawn != 0xFF) {                                 /* 前の位置を消す: 甲板より上は空、下は格納庫の暗がり */
-        s16 os = (s16)(S5_DECK + 28 - lift_drawn);
-        if (os + 4 <= S5_DECK) ring_cmd(0, 0, x, s5_sy(os), 48, 4, 1, 0x11);
-        else if (os >= S5_DECK) ring_cmd(0, 0, x, s5_sy(os), 48, 4, 1, 0x22);
-        else { ring_cmd(0, 0, x, s5_sy(os), 48, (u8)(S5_DECK - os), 1, 0x11); ring_cmd(0, 0, x, s5_sy(S5_DECK), 48, (u8)(os + 4 - S5_DECK), 1, 0x22); }
+    s16 x = s5_sx(S5_COL_DOOR) + 8, ns;
+    if (g_boss_state == BS_ENTER) {
+        if (lift_img < LIFT_H) { lift_sheet(lift_img); lift_img += 3; }
+        door_vram(); return;
     }
-    ring_cmd(0, 0, x, s5_sy(lift_s()), 48, 4, 1, 0x99);
-    lift_drawn = lift;
+    if (g_boss_state != BS_FIGHT || (lift_drawn == lift && lift_vd == lift_v) || gq_free() < 6) return;
+    ns = lift_s();
+    if (lift_drawn != 0xFF && lift_drawn != lift) {           /* 空いた行を消す(動きは 1 回 2 ドット) */
+        s16 os = (s16)(S5_DECK + 20 - lift_drawn), d = (s16)(ns - os);
+        if (d < 0) { d = -d; if (d > LIFT_H) d = LIFT_H; lift_erase(x, (s16)(os + LIFT_H - d), (u8)d); }
+        else { if (d > LIFT_H) d = LIFT_H; lift_erase(x, os, (u8)d); }
+    }
+    if (lift_v == 2) ring_cmd(0, 0, x, s5_sy(ns), LIFT_W, LIFT_H, 1, 0xFF);   /* 当たった: 白 */
+    else {
+        ring_cmd(0, (u16)(512u + LIFT_IMG), x, s5_sy(ns), LIFT_W, LIFT_H, 0, 0);
+        if (lift_v) ring_cmd(0, 0, (s16)(x + 18), (s16)(s5_sy(ns) + 4), 12, 4, 1, 0x22);   /* ランプが消える */
+    }
+    lift_drawn = lift; lift_vd = lift_v;
 }
 
 /* ======== GAUGE BLOCK ======== */
@@ -338,6 +392,7 @@ void b5_update(void) {
 void b5_draw(void) {
     if (g_sec >= SEC5_BOW && g_sec <= SEC5_HANGAR) aa_draw();
     if (g_sec == SEC5_UNDER || g_sec == SEC5_HANGAR) hang_draw();
+    if (g_sec == SEC5_HANGAR) hangar_draw();
 }
 
 void b5_vram(void) {

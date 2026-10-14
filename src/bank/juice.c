@@ -25,7 +25,7 @@ static const u16 fl_mask[] = {
     B(6) | B(13) | B(14),                   /* 22 TACHOMETER */
     B(14),                                  /* 29 VERNIER */
     B(2) | B(3) | B(4) | B(5) | B(6) | B(7),/* 31 STRATUM */
-    B(2),                                   /* 38 HANGAR DECK */
+    0,                                      /* 38 HANGAR DECK(台の絵を白い版に替えて光らせる。s5boss.c) */
     B(2) | B(12) | B(14),                   /* 41 GAUGE BLOCK */
     B(3) | B(5) | B(7),                     /* 48 HOURGLASS */
     B(2) | B(5),                            /* 50 GNOMON */
