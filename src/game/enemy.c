@@ -505,7 +505,7 @@ void enemy_update(void) {
         else { b->vx += (s16)((g_gcx - PX(b->x)) >> 5); b->vy += (s16)((g_gcy - PX(b->y)) >> 5); }
     }
     es_plx = plx; es_ply = ply; es_alive = g_pl.alive;
-    if (eshot_move()) player_hit();                           /* 動かして、画面の外は消し、自機に当たったものを消す(asm) */
+    if (eshot_move() && g_dbg_invul != 2) player_hit();       /* 動かして、画面の外は消し、自機に当たったものを消す(asm)。2 = 敵弾だけ無敵(隠しコンフィグ) */
 
     /* 自機のショット × 敵: 画面座標を先に 8 ビットの配列へ変換し、内側は 8 ビットの比較だけにする
        (構造体の固定小数点を毎回変換する二重ループは 1 フレームの 1/3 を使っていた。M1)。探すのは asm(hit_next)。

@@ -93,7 +93,7 @@ static void cf_build(void) {
     u8 i;
     for (i = 0; i < 19; i++) cf_line[i] = ' ';
     cf_line[19] = 0;
-    if (cf_item == CF_INV) { cf_put("INVINCIBLE", 1); cf_put(g_dbg_invul ? "ON" : "OFF", 14); }
+    if (cf_item == CF_INV) { cf_put("INVINCIBLE", 1); cf_put(g_dbg_invul == 1 ? "ALL" : g_dbg_invul ? "BULLET" : "OFF", 12); }   /* ALL = 何にも / BULLET = 敵弾だけ */
     else if (cf_item == CF_STAGE) { cf_put("STAGE", 1); cf_line[14] = (char)('0' + (g_start_stage ? g_start_stage : 1)); }
     else if (cf_item == CF_BGM) { cf_put("BGM", 1); cf_put(cf_song[cf_bgm], 14); }
     else if (cf_item == CF_SE) { cf_put("SE", 1); cf_line[14] = (char)('0' + (cf_se + 1) / 10); cf_line[15] = (char)('0' + (cf_se + 1) % 10); }
@@ -117,7 +117,7 @@ static u8 cf_update(void) {
     if (g_in_edge & IN_DOWN) { cf_item = (u8)(cf_item + 1 < CF_N ? cf_item + 1 : 0); cf_dirty |= 1; if (cf_cur == 1) cf_dirty |= 0x10; }
     if (g_in_edge & (IN_LEFT | IN_RIGHT)) {
         u8 r = (u8)(g_in_edge & IN_RIGHT);
-        if (cf_item == CF_INV) g_dbg_invul = (u8)!g_dbg_invul;
+        if (cf_item == CF_INV) g_dbg_invul = r ? (u8)(g_dbg_invul < 2 ? g_dbg_invul + 1 : 0) : (u8)(g_dbg_invul ? g_dbg_invul - 1 : 2);   /* OFF → ALL → BULLET */
         else if (cf_item == CF_STAGE) {
             u8 s = g_start_stage ? g_start_stage : 1;
             s = r ? (u8)(s < 8 ? s + 1 : 1) : (u8)(s > 1 ? s - 1 : 8);

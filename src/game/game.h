@@ -275,7 +275,7 @@ void stage_banner_c(const char *text, u8 fg);   /* 文字の色つき */
 extern u8 g_hall;                           /* 1 = 高い空を 7 面の測定空間(白い方眼)、2 = 8 面の縦穴(左右の壁)にする */
 void stage_sky_redraw(void);                /* 高い空のブロックを全部描き直させる */
 extern u8 g_start_stage;                    /* 隠しコンフィグの面セレクト(0 / 1 = 1 面から) */
-extern volatile u8 g_dbg_invul;             /* 無敵(隠しコンフィグ・検証) */
+extern volatile u8 g_dbg_invul;             /* 無敵(隠しコンフィグ・検証): 1 = 何にも当たらない、2 = 敵弾だけ当たらない(地形・ボス・体当たりは本来どおり) */
 extern u8 g_calib;                          /* 7 面の試験(0 = 普通の面、1..6 = 過去の面のボスの再校正版、7 = LIBRA) */
 extern u8 g_loop;                           /* 周回(0 = 1 周目) */
 #define RECAL (g_calib || g_loop)           /* ボスの再校正版の動き(7 面の試験と、2 周目以降の 1〜6 面) */

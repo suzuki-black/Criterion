@@ -251,7 +251,7 @@ void main(void) {
         if (g_phase >= PH_AIR) stage_update();   /* 敵(砲台)が世界の位置を使うので、敵より先に */
         if (g_infx_mode) infx_update();                       /* ★第 2 バンクは仕事のあるときだけ呼ぶ(毎フレームの呼び出しで重い場面が遅れた) */
         if (ph >= PH_SORTIE && state == ST_PLAY) {
-            if (g_dbg_invul || g_demo) g_pl.invul = 2;
+            if (g_dbg_invul == 1 || g_demo) g_pl.invul = 2;   /* 2 = 敵弾だけ無敵(enemy.c) */
             player_update();
             if (ph >= PH_AIR) { stage_pump_nb(); if (!g_slow) { enemy_update(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_logic(); } }
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) { state = ST_OVER; over_t = 0; over_spd = g_scroll_speed; }
