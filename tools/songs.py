@@ -139,6 +139,13 @@ SONGS.append(Song('M01', 92, {
     'FM5': '@1 v9 r1 r1 o3d1& d1 L r1 r1 r1 r1 r1 r1 r1 r1',
     'RHY': 'r1 r1 r1 r1 L PP01 b4 h8 h8 bs8 h8 h8 h8 | ' + rep('b4 h8 h8 bs8 h8 h8 h8', 6) + ' | b8 b8 s8 s8 bs8 s8 sc4',
     'PSGA': '@2 v9 q2 r1 r1 r1 r1 L ' + arp(m01_prog, 62, 12, (0, 1, 2, 1)),
+    # ★PSG で厚みを足す(遊んでの指摘「ドラムがポコポコ、メロディーに厚みがない」。聴き比べで C 案に決めた):
+    #   B = 旋律を同じ高さで重ねる(D2 = 周期 +2 で少し低く、FM の金管とうならせる)、C = ノイズのスネア(v13、約 9 フレーム)と
+    #   閉じたハイハット(v9、約 4 フレーム)。シンバルは FM のまま。★C は効果音と取り合うので、ゲーム中の曲では置き場を考える
+    'PSGB': 'r1 r1 r1 r1 L @0 v9 q2 D2 o4d4 a4 o5d4 e4 | f2 e4 d4 | e4. c8 o4g4 o5c4 | d1 | '
+            'o4d4 a4 o5d4 e4 | a2 g4 f4 | e2. c+4 | e1',
+    'PSGC': 'r1 r1 r1 r1 L N1 @1 ' + rep('r4 q9 v9 o5d+8 q9 v9 o5d+8 q4 v13 o4e8 q9 v9 o5d+8 q9 v9 o5d+8 q9 v9 o5d+8', 7) +
+            ' r8 r8 q4 v13 o4e8 o4e8 o4e8 o4e8 q8 o4e4',
 }, user=BRASS))
 
 # ---- M02 Sortie(出撃 6 秒): 音声 → Infinitas の動機の短いファンファーレ → オケヒ 3 連 → 空中戦へ ----
