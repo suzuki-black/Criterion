@@ -191,13 +191,18 @@ static void rod_update(void) {
         if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(5000); }
     }
 }
+static s16 rod_ex, rod_ey;          /* 描いてある棒の向き(変わったときだけ描き直す) */
 static void rod_vram(void) {
     s16 ex, ey, qx, qy;
     u8 k;
     if ((t & 1) || gq_free() < 20) return;
+    ex = (s16)((rlen * rcs) >> 7); ey = (s16)((rlen * rsn) >> 7);
+    /* ★向きと長さは 4 フレームに 1 回しか変わらない。前は 2 フレームごとに同じ線を消して描き直し、LINE のコマンドが
+       スプライトと重なって m6 で遅れた */
+    if (ln && g_boss_state == BS_FIGHT && ex == rod_ex && ey == rod_ey) return;
     line_erase();
     if (g_boss_state != BS_FIGHT) return;
-    ex = (s16)((rlen * rcs) >> 7); ey = (s16)((rlen * rsn) >> 7);
+    rod_ex = ex; rod_ey = ey;
     qx = (s16)(-rsn >> 4); qy = (s16)(rcs >> 4);              /* 横の向き × 8 */
     for (k = 0; k < 3; k++) {
         s8 o = (s8)(k - 1);
