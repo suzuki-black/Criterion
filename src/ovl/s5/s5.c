@@ -166,12 +166,15 @@ void ovl_update(void) {
         if (s5_col_at(160) >= S5_COL_DOOR + 4) { g_scroll_speed = 0; enter(SEC5_HANGAR); }   /* 扉が画面の右寄りで止まる */
         break;
     case SEC5_HANGAR:
+        /* ★誘爆が始まったら艦底の眺めへ下ろし始める(穴が開く頃に下を通る余裕ができる)。前は穴を抜けるか 5 秒たつまで甲板の
+           眺めのままで、船底の下に通る余裕が無いので「上の側」にされ、穴から下へ行こうとすると押し戻された(遊んでの指摘
+           「上にいていいのか下にいていいのかわからない」) */
+        if (g_boss_state == BS_DYING) cam_to = 0;
         if (sec_t == 5400) g_boss_state = BS_DONE;
-        if (g_boss_state == BS_DONE) { g_boss_state = BS_NONE; g_scroll_speed = 4; enter(SEC5_UNDER); }
+        if (g_boss_state == BS_DONE) { g_boss_state = BS_NONE; g_scroll_speed = 4; enter(SEC5_UNDER); stage_banner_c("DIVE UNDER THE HULL", 13); }
         break;
     case SEC5_UNDER:
-        c = s5_col_at(PX(g_pl.x));
-        if (c > S5_COL_DOOR + 8 || sec_t > 300) cam_to = 0;  /* 穴を抜けたら艦底の眺め */
+        cam_to = 0;                                           /* 艦底の眺め */
         if (col_of_screen() >= S5_COL_ENGINE + 1) { g_scroll_speed = 3; enter(SEC5_ENGINE); }
         break;
     case SEC5_ENGINE:
