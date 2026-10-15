@@ -21,6 +21,9 @@
 #define S_TOP    (-192)
 
 static u16 sec_wx, sec_t;
+static FarCfg far_cfg;             /* 遠景(下の ovl_bands) */
+static u8 far_rst;
+u8 s2_far_zero;
 static const u8 space[3] = { 0, 0, 1 };
 
 /* ---- 渦(重力・中心の区間。M7 の後): 地図に固定した 3 つの渦。近づいたときだけ引く(player.c の GRAV_CENTER)。
@@ -93,6 +96,13 @@ void ovl_init(void) {
     g_maplen = S2_COLS;
     stage_load_strips(ASSET_S2_STRIPS_BANK, ASSET_S2_STRIPS_OFF);
     g_boss_state = BS_NONE;
+    {   /* 遠景の短冊(地図で使わない 6 本。表の 7・8 本目は 1・2 本目と同じ絵) */
+        static const u8 fs[8] = { 11, 14, 15, 27, 30, 31, 11, 14 };
+        for (i = 0; i < 8; i++) far_cfg.strip[i] = fs[i];
+        far_cfg.s0 = 0; far_cfg.s1 = 31; far_cfg.t0 = 40; far_cfg.t1 = 144;
+        g_far = g_calib ? 0 : &far_cfg;                       /* 試験の白い空間では使わない */
+        far_rst = 1; s2_far_zero = 1;
+    }
     if (g_calib) {                                            /* 7 面の試験 02: 白い空間から中心の区間の終わりへ沈んで KILOGRAM */
         g_w0 = (u16)((g_wx >> 3) - (S2_COL_ARENA2 - 8 - 48));
         b2_prepare();
@@ -211,10 +221,20 @@ static void beam_vram(void) {
 void ovl_vram(void) { b2_vram(); beam_vram(); }
 
 /* 地面の帯: 宇宙の色(色 1)と、KILOGRAM の重力レンズ(球の上と下の HR ポーリング帯) */
+/* ★遠景(多重スクロール。遊んでの指摘): 残骸の帯の真ん中(s = 40..143。どの列も宇宙だけ)を半分の速さに(gen_stage2.py の短冊、
+   第 2 バンクの far_step)。KILOGRAM の広場ではずれを 0 に戻してから球を描く(s2_far_zero)。画面が縦に一周する間は帯を出さない */
 void ovl_bands(s16 sc, u16 nx) {
     s16 lt, lb;
-    (void)nx;
-    if (!g_calib) stage_ev_pal((s16)(0 - sc), space);         /* 試験では測定空間の白のまま */
+    if (g_far && g_sec >= SEC2_SINK) {                        /* ★空中戦(地面が無い)の間は呼ばない */
+        u16 m = FAR_LOCK, fx;
+        if (far_rst) m = FAR_RESET;
+        else if (g_sec <= SEC2_CENTER) m = FAR_FREE;
+        fx = far_step(nx | m);
+        far_rst = 0;
+        s2_far_zero = (u8)!((nx - fx) & 511u);
+        if (!g_calib) stage_ev_pal((s16)(0 - sc), space);
+        if (!s2_far_zero && !g_roll) { stage_ev_scroll((s16)(40 - sc), fx); stage_ev_scroll((s16)(144 - sc), nx); }
+    } else if (!g_calib) stage_ev_pal((s16)(0 - sc), space);  /* 試験では測定空間の白のまま */
     if (b2_lens(&lt, &lb)) {
         stage_ev_haze(lt, 24, b2_lens_tbl_up);
         stage_ev_haze(lb, 24, b2_lens_tbl_dn);

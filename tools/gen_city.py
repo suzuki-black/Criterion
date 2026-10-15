@@ -86,8 +86,7 @@ RUIN = [strip(f'ruin{t}', (lambda kk, t=t: building(kk, t, 'W', jag=12, holes=0.
 def antenna(kk):
     building(kk, 40, 'W')
     x0 = kk * 8
-    for y in range(26, 40): put(x0 + 3, y, GRAY)
-    put(x0 + 3, 25, RED)
+    put(x0 + 3, 41, RED); put(x0 + 4, 41, RED)               # ★屋上の赤い灯だけ(25..39 行へ伸びる柱は外した: 遠景の帯 16..39 に入る)
 ANTENNA = strip('antenna', antenna, 40)
 
 ROAD_Y = 118
@@ -114,6 +113,19 @@ RUBBLE = strip('rubble', rubble)
 LOWRUIN = [strip('lowruin', lambda kk: building(kk, 135, 'W', jag=8, holes=0.4), 140) for _ in range(2)]
 while len(STRIPS) < 32: strip('spare', None)
 assert len(STRIPS) == 32
+
+# ★遠景(多重スクロール。遊んでの指摘): 予備の短冊 27..31 の 16..39 行(雲の底の下で、どのビルより上)に、遠い雲の筋を描く。
+#   s1.c は短冊の表を 27, 28, 29, 30, 31, 27, 28, 29 にするので、筋は 1 本(8 ドット)の中に収める。地図の乱数は使わない
+FAR_Y0, FAR_Y1 = 16, 40
+fr = random.Random(1010)
+for k in range(27, 32):
+    x0 = k * 8
+    for y in range(FAR_Y0, FAR_Y1):
+        for x in range(8): put(x0 + x, y, SKY)
+    for i in range(fr.randrange(1, 3)):
+        n = fr.randrange(3, 9); cx = fr.randrange(0, 8 - n + 1); cy = fr.randrange(FAR_Y0 + 2, FAR_Y1 - 3)
+        for x in range(cx, cx + n): put(x0 + x, cy, 4)
+        for x in range(cx + 1, cx + n - 1): put(x0 + x, cy + 1, 3)
 
 # ---- 地図 ----
 cmap = []

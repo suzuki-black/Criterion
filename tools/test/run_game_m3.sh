@@ -88,7 +88,8 @@ for W in range((wx + 8 + 7) >> 3, (wx + 248) >> 3):
     for s in range(150):
         r = (188 + s) & 255
         got = v[page * 0x8000 + r * 128 + xb: page * 0x8000 + r * 128 + xb + 4]
-        exp = v[0x18000 + s * 128 + k * 4: 0x18000 + s * 128 + k * 4 + 4]
+        kk = (27, 28, 29, 30, 31, 27, 28, 29)[W & 7] if 16 <= s < 40 and k <= 26 else k   # ★遠景の行は遠景の短冊(bank/far.c の FAR_CITY)
+        exp = v[0x18000 + s * 128 + kk * 4: 0x18000 + s * 128 + kk * 4 + 4]
         if got != exp: bad += 1
 check('city_ring', d['scam'] == 0 and bad == 0 and cols >= 28, f"列={cols} 違う 4 バイト={bad} (wx={wx} scam={d['scam']} 区間={d['sec']})")
 # 2. LEGION

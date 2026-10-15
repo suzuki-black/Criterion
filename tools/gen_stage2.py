@@ -55,6 +55,24 @@ for v in range(2):
             STRIPS.append((t, H - b))
 assert len(STRIPS) == 32
 
+# ★遠景(多重スクロール。遊んでの指摘): 地図で使わない短冊 11, 14, 15, 27, 30, 31 の 40..143 行(どの列も宇宙だけの行)に、遠い残骸と
+#   星を描く。s2.c は短冊の表を 11, 14, 15, 27, 30, 31, 11, 14 にするので、絵は 1 本(8 ドット)の中に収め、境をまたがない。
+#   ★地図の乱数(rnd)を進めないよう、別の乱数で描く
+FAR = [11, 14, 15, 27, 30, 31]
+FAR_Y0, FAR_Y1 = 40, 144
+fr = random.Random(2020)
+for k in FAR:
+    x0 = k * 8
+    for y in range(FAR_Y0, FAR_Y1):
+        for x in range(8): img[y][x0 + x] = 1
+    if fr.random() < 0.7:                                  # 遠い残骸(1 本に 0〜1 個、高さはばらばらに。暗い影 6 と、上の縁だけ青灰 9)
+        w, h = fr.randrange(2, 7), fr.randrange(2, 6)
+        cx, cy = fr.randrange(0, 8 - w + 1), fr.randrange(FAR_Y0 + 2, FAR_Y1 - 2 - h)
+        for y in range(cy, cy + h):
+            for x in range(cx, cx + w): img[y][x0 + x] = 9 if y == cy else 6
+    for i in range(4):                                     # 遠い星(瞬く 3..5)
+        img[fr.randrange(FAR_Y0 + 2, FAR_Y1 - 2)][x0 + fr.randrange(0, 8)] = 3 + fr.randrange(3)
+
 def sid(ti, bi, v): return v * 16 + ti * 4 + bi
 
 cmap = []

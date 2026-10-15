@@ -170,12 +170,13 @@ OVL_s8b_HDR    := stage
 OVL_ed_RELS    := $(patsubst src/ovl/ed/%.c,$(BUILD)/ov_ed_%.rel,$(wildcard src/ovl/ed/*.c))
 OVL_ed_HDR     := stage
 OVL_s1_HDR     := stage
+OVL_SIZE_FIRST := s1_s1 s1_boss   # 1 面のオーバレイの空き(遠景。重い経路の pawn.c は速さのまま)
 OVL_BINS := $(OVLS:%=$(BUILD)/ovl_%.bin)
 
 $(BUILD)/ov_title_%.rel: src/ovl/title/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 $(BUILD)/ov_s1_%.rel: src/ovl/s1/%.c src/ovl/s1/s1.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(OVL_SIZE_FIRST),s1_$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ov_s2_%.rel: src/ovl/s2/%.c src/ovl/s2/s2.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
@@ -230,7 +231,7 @@ $(BUILD)/ovl_%.bin: $(BUILD)/ovl_%.ihx tools/gen_ovl.py
 BK_BASE  := 0x8000
 BK_DATA  := 0xBE00
 BK_DEND  := 0xC000
-BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw zako_script zako_update zako_draw zako_killed pl_fire_from gauge_steal lb_draw music_frame juice_frame shots_draw
+BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw zako_script zako_update zako_draw zako_killed pl_fire_from gauge_steal lb_draw music_frame juice_frame shots_draw far_step
 BK_SIZE_FIRST := infx
 BK_RELS  := $(patsubst src/bank/%.c,$(BUILD)/bk_%.rel,$(wildcard src/bank/*.c))
 $(BUILD)/bk_%.rel: src/bank/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)

@@ -18,6 +18,7 @@
 
 static u16 sec_wx, sec_t;
 static u8  turret_i;
+static FarCfg far_cfg;             /* 遠景(第 2 バンクの far_step の FAR_CITY。gen_city.py の短冊 27..31) */
 
 static const u8 city_sky[6][3] = { { 2, 1, 2 }, { 3, 1, 3 }, { 4, 1, 3 }, { 5, 2, 3 }, { 6, 3, 3 }, { 7, 4, 2 } };
 static const u8 city_sky_s[6] = { 0, 14, 40, 70, 100, 130 };
@@ -62,6 +63,7 @@ void ovl_init(void) {
     stage_load_strips(ASSET_CITY_STRIPS_BANK, ASSET_CITY_STRIPS_OFF);
     pawn_sheet_load(); pawn_reset(); boss_reset();
     turret_i = 0;
+    far_cfg.t1 = 0; g_far = &far_cfg;                         /* 遠景(雲の底の下)。t1 = 0 = まだ(第 2 バンクが書く) */
     enter(SEC_AIR1);
 }
 
@@ -129,13 +131,17 @@ void ovl_draw(void) {
 void ovl_vram(void) { boss_vram(); }
 
 /* 都市の空の帯と、LEGION の揺れの帯(横のずれ)を行の順に混ぜる */
+/* ★遠景(多重スクロール。遊んでの指摘): 都市の前半・後半の間、雲の底の下の帯(14..39 行。空の色の帯 14・40 行の項目にまとめる)を
+   半分の速さに(第 2 バンクの far_step の FAR_CITY。広場(LEGION・PLUMB は BG)の手前でずれを 0 に戻す) */
 void ovl_bands(s16 sc, u16 nx) {
     s16 bl[5]; s8 bo[5];
     u8 i, nb = boss_bands(bl, bo), kb = 0;
+    u16 fx = g_far ? far_step(nx | FAR_CITY) : nx;
     for (i = 0; i < 6; i++) {
         s16 l = (s16)(city_sky_s[i] - sc);
         while (kb < nb && bl[kb] < l) { stage_ev_scroll(bl[kb], (u16)(nx - bo[kb])); kb++; }
         stage_ev_pal(l, city_sky[i]);
+        if ((nx - fx) & 511u) { if (i == 1) stage_ev_scroll(l, fx); else if (i == 2) stage_ev_scroll(l, nx); }
     }
     while (kb < nb) { stage_ev_scroll(bl[kb], (u16)(nx - bo[kb])); kb++; }
 }

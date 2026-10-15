@@ -14,4 +14,5 @@ void b2_vram(void);
 u8   b2_lens(s16 *top, s16 *bot);   /* 重力レンズの帯(上の帯の始まり・下の帯の始まり)。無ければ 0 */
 extern u8 b2_lens_tbl_up[48], b2_lens_tbl_dn[48];
 
+extern u8 s2_far_zero;              /* 遠景のずれが 0(s2.c。KILOGRAM の絵はこのときだけ写す) */
 #endif /* S2_H */

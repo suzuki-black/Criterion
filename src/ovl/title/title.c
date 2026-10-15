@@ -642,6 +642,7 @@ void title_start(void) {
     u8 a = g_after_over;
     cf_on = 0; cf_k = 0; cf_dirty = 0; cf_keys = 0; cf_bgm = 0; cf_se = 0; cf_pcm = 0; loop_keep = 0; cf_row = 0; cf_cur = 0; tm = TM_TITLE; g_title_mode = 0;
     g_after_over = AO_BOOT;
+    g_far = 0;                                                /* 遠景を外す(前の面のオーバレイの変数を指したまま。本体の常駐に空きが無いのでここで) */
     rank_init();
     if (a == AO_OVER) scene(g_last_score > g_rank_sc[RANK_N - 1] ? TM_NAME : TM_REWIND);   /* ゲームオーバー → ネームエントリー → 巻き戻し */
     else if (a == AO_DEMO) scene(TM_RANK);                                                  /* デモの後はランキング */

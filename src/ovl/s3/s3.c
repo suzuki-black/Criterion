@@ -26,7 +26,8 @@ static u8 scan_got;
 static s16 scan_x;                 /* Scanner の測定線(停止の間) */
 static const u8 inside[3] = { 1, 1, 2 };
 static u16 far_x, far_prev;        /* 遠景の帯の横位置 / 前のフレームの bg の位置(ovl_bands) */
-u8 s3_far_zero;                    /* 遠景のずれが 0(ボスの盤を写してよい。s3boss.c) */
+u8 s3_far_zero;
+static FarCfg far_cfg;                    /* 遠景のずれが 0(ボスの盤を写してよい。s3boss.c) */
 static s16 far_acc;
 
 /* ---- 隔壁(M7 の後): スプライトの柱で、すき間が 1 ドットずつ滑らかに上下する。★前は地図の列を 1.5 秒ごとに
@@ -94,7 +95,9 @@ void ovl_init(void) {
     rom_to_ram(ASSET_S3_MAP_BANK, ASSET_S3_MAP_OFF, g_map, S3_COLS);
     g_maplen = S3_COLS;
     stage_load_strips(ASSET_S3_STRIPS_BANK, ASSET_S3_STRIPS_OFF);
-    g_far_base = 20; g_far_s0 = 6; g_far_s1 = 15; g_far_t0 = 16; g_far_t1 = 168;   /* 遠景(下の ovl_bands。gen_stage3.py) */
+    far_cfg.s0 = 6; far_cfg.s1 = 15; far_cfg.t0 = 16; far_cfg.t1 = 168;   /* 遠景(下の ovl_bands。gen_stage3.py) */
+    { u8 i; for (i = 0; i < 8; i++) far_cfg.strip[i] = (u8)(20 + i); }
+    g_far = &far_cfg;
     far_x = far_prev = bg_layer_x(2); far_acc = 0; s3_far_zero = 1;
     vdp_set_pal(6, 2, 2, 3);                                  /* 壁の影(暗い灰) */
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0; bulk_ph = 0; lit = 0;

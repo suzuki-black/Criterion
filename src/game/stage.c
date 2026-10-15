@@ -116,7 +116,7 @@ void stage_reset_ground(void) {
     strip_off = 0xFFFF; col_b = NBLK; jn = 0; pick_at = 0x7FFF; g_maplen = 0; redraw_n = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
     g_wx &= 511u;                                             /* 世界の位置を面ごとに戻す(リングの位置は同じ) */
-    g_bands_all = 0; g_blk_skip = 0; g_blk_base = 0; g_far_base = 0;
+    g_bands_all = 0; g_blk_skip = 0; g_blk_base = 0; g_far = 0;
 }
 /* ---- 7 面の試験(過去の面のオーバレイを g_calib で再校正版として読み直す) ---- */
 u8 g_calib, g_loop;
@@ -209,13 +209,15 @@ static u8 strip_of(u16 wcol) {
     if (wcol < w0 || m >= g_maplen) return 0;
     return g_strip_xlat[g_map[m] & 31];
 }
-/* ★遠景(多重スクロール): 短冊が g_far_s0..g_far_s1 の列の、s が g_far_t0..g_far_t1-1 のブロックは、短冊 g_far_base + (列 & 7)
-   (周期 64 ドットの遠景)から写す。面が真ん中の帯をラスターで別の速さにずらす(3 面)。g_far_base = 0 で使わない */
-u8 g_far_base, g_far_s0, g_far_s1, g_far_t0, g_far_t1;
-static u8 far_at(u8 st, s16 s0) { return (u8)(g_far_base && st >= g_far_s0 && st <= g_far_s1 && s0 >= g_far_t0 && s0 < g_far_t1); }
+/* ★遠景(多重スクロール): 短冊が s0..s1 の列の、s が t0..t1-1 のブロックは、短冊 strip[列 & 7](周期 64 ドットの遠景)から
+   写す。面が真ん中の帯をラスターで別の速さにずらす(1・2・3 面。帯の横位置は第 2 バンクの far_step)。g_far = 0 で使わない。
+   ★g_far はオーバレイの変数(RAM)を指す(本体の変数の領域に空きが無い。次の面のコードを読む間も変数の領域は残り、
+   次の面の ovl_init の stage_reset_ground で外す。オーバレイのコードの中の const を指すと、読み込みで壊れる) */
+FarCfg *g_far;
+static u8 far_at(u8 st, s16 s0) { const FarCfg *f = g_far; return (u8)(f && st >= f->s0 && st <= f->s1 && s0 >= f->t0 && s0 < f->t1); }
 static u8 src_of(u16 wcol, s16 s0) {
     u8 st = strip_of(wcol);
-    return far_at(st, s0) ? (u8)(g_far_base + (wcol & 7)) : st;
+    return far_at(st, s0) ? g_far->strip[wcol & 7] : st;
 }
 
 /* 次のコマンド(c_hmmv = 1 なら HMMV、c_star = 1 なら星を打つ) */
@@ -361,7 +363,7 @@ static void job_pick(void) {
         n++;
     } while (js >= 0 && n < RUN_MAX && jb0 + n < NBLK && jb0 + n != BLK_CONST &&
              (w = want_of((u8)(jb0 + n), lo)) == js + n * 8 && w < 188 && (w < 0 ? upper_sky : ready) &&
-             tag[jb0 + n] != tag_of(w) && far_at(g_far_s0, w) == far_at(g_far_s0, js));   /* 遠景の境をまたがない */
+             tag[jb0 + n] != tag_of(w) && far_at(0xFF, w) == far_at(0xFF, js));   /* 遠景の境をまたがない(短冊は問わない: 0xFF は s0..s1 の外) */
     jn = n;
 }
 
