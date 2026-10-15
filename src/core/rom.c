@@ -140,17 +140,24 @@ void rom_to_ram(u8 bank, u16 off, u8 *dst, u16 len) {
 /* ---- 第 2 バンク(bank.h) ---- */
 #include "bank.h"
 
-/* 呼び口から: call _bk_call / .db 番号 × 3。戻り番地(呼び口の .db)から番号を読み、セグメントを 6 にして JP 表へ。
-   A・HL・DE・BC は呼び出し元の値のまま渡し、戻り値(A / DE / HL)もそのまま返す。 */
+/* 呼び口から: call _bk_call / .db 番号 × 3。戻り番地(呼び口の .db)から番号を読み、セグメントを 6(番号の最上位ビットが 1 なら
+   7 = 第 3 バンク)にして JP 表へ。A・HL・DE・BC は呼び出し元の値のまま渡し、戻り値(A / DE / HL)もそのまま返す。 */
 void bk_call(void) __naked {
     __asm
         ex   (sp), hl              ; HL = 番号の番地、(sp) = 元の HL
         push af
         ld   a, (hl)
-        ld   (00002$ + 1), a       ; JP 表の下位(RAM なので書き換えてよい)
+        rlca                       ; CF = 最上位ビット(第 3 バンク)
+        ld   a, #BK_SEG
+        adc  a, #0
+        ld   (00003$ + 1), a       ; セグメント(RAM なので書き換えてよい)
+        ld   a, (hl)
+        and  #0x7F
+        ld   (00002$ + 1), a       ; JP 表の下位
         pop  af
         pop  hl                    ; 元の HL。スタックの先頭は呼び出し元への戻り番地
         push af
+    00003$:
         ld   a, #BK_SEG
         out  (0xFE), a
         pop  af
@@ -165,7 +172,8 @@ void bk_call(void) __naked {
     __endasm;
 }
 
-/* 0xD800 の 2KB をセグメント 6 の 0x8000 + off へ(HL = off)。★起動時だけ(0xD800 は ROTOR の元の置き場) */
+/* 0xD800 の 2KB をセグメント bk_seg の 0x8000 + off へ(HL = off)。★起動時だけ(0xD800 は ROTOR の元の置き場) */
+static u8 bk_seg;
 static void bk_put(u16 off) __naked {
     (void)off;
     __asm
@@ -175,7 +183,7 @@ static void bk_put(u16 off) __naked {
         ld   hl, #0xD800
         ld   bc, #0x0800
         di
-        ld   a, #BK_SEG
+        ld   a, (_bk_seg)
         out  (0xFE), a
         ldir
         ld   a, #BK_SEG_A
@@ -187,8 +195,9 @@ static void bk_put(u16 off) __naked {
 
 void bk_load(void) {
     u16 off;
-    for (off = 0; off < BK_LEN; off += 0x800) {
-        rom_to_ram(BK_ROM, off, (u8 *)0xD800, 0x800);
-        bk_put(off);
-    }
+    for (bk_seg = BK_SEG; bk_seg <= BK3_SEG; bk_seg++)
+        for (off = 0; off < BK_LEN; off += 0x800) {
+            rom_to_ram(bk_seg == BK_SEG ? BK_ROM : BK3_ROM, off, (u8 *)0xD800, 0x800);
+            bk_put(off);
+        }
 }

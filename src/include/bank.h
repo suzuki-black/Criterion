@@ -1,4 +1,4 @@
-/* bank.h — 第 2 バンク(src/bank)。マッパーのセグメント 6 をページ 2(0x8000-0xBFFF)へ一時的に出して、本体の
+/* bank.h — 第 2 バンク(src/bank)と第 3 バンク(src/bank3。セグメント 7、同じ作り。呼び口の番号に 0x80 を足す)。マッパーのセグメント 6 をページ 2(0x8000-0xBFFF)へ一時的に出して、本体の
    ページ 2(セグメント 5)の代わりに実行する。常駐の 32KB があふれたので、増える機能はこちらへ置く。
    ・本体からは呼び口(gen_ovl.py bkstubs が作る同じ名前の関数)を呼ぶ。呼び口は rom.c の bk_call で
      セグメントを 6 にして第 2 バンクの先頭の JP 表へ飛び、戻ったら 5 へ戻す。
@@ -15,10 +15,12 @@
 #include "types.h"
 
 #define BK_SEG      6                  /* 第 2 バンクのセグメント */
+#define BK3_SEG     7                  /* 第 3 バンク(src/bank3)のセグメント。★BK_SEG + 1(bk_call が呼び口の番号の最上位ビットを足す) */
+#define BK3_ROM     102                /* 第 3 バンクの ROM の置き場(102..103、16KB) */
 #define BK_SEG_A    5                  /* 本体のページ 2 のセグメント(sys.c の RAMX_SEG2) */
 #define BK_ROM      126                /* ROM の置き場(126..127、16KB) */
 #define BK_LEN      0x4000             /* 写す長さ(コード 0x8000-0xBDFF、変数 0xBE00-0xBFFF。Makefile の BK_DATA) */
 
-void bk_load(void);                    /* 起動時に ROM からセグメント 6 へ(sys_ram_exec の後) */
+void bk_load(void);                    /* 起動時に ROM からセグメント 6・7 へ(sys_ram_exec の後) */
 
 #endif /* BANK_H */

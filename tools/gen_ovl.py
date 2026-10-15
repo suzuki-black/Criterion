@@ -8,7 +8,9 @@
   gen_ovl.py resident_bk <game.noi> <out.s> <除く名前...>
                                                    第 2 バンク用: 同じく、ただしページ 2(0x8000-0xBFFF)の記号と _bk_ で始まる
                                                    記号を除く(第 2 バンクを出している間、本体のページ 2 は見えない)
-  gen_ovl.py bkstubs <out.s> <名前...>             本体側: 第 2 バンクの関数の呼び口(call _bk_call / .db 番号 × 3)
+  gen_ovl.py bkstubs <out.s> <名前...> [-- <名前...>]
+                                                   本体側: 第 2(と第 3)バンクの関数の呼び口(call _bk_call / .db 番号 × 3。
+                                                   第 3 バンクは番号に 0x80 を足す)
   gen_ovl.py bin <in.ihx> <in.map> <out.bin> <base> <end> <data_base> <data_end>
                                                    .ihx の base..end をバイナリに。範囲外・初期値つき変数・データの
                                                    はみ出しを検査する
@@ -43,12 +45,15 @@ def resident(noi, out, exclude, bank=False):
         for n, v in syms: f.write(f'{n} == 0x{v:04X}\n')
 
 def bkstubs(out, names):
+    """名前... [-- 第 3 バンクの名前...]。番号の最上位ビットが 0 なら第 2 バンク、1 なら第 3 バンク(rom.c の bk_call)"""
+    b2, b3 = (names[:names.index('--')], names[names.index('--') + 1:]) if '--' in names else (names, [])
     with open(out, 'w') as f:
-        f.write('; gen_ovl.py が生成(第 2 バンクの関数の呼び口。rom.c の bk_call が番号の JP 表へ飛ぶ)\n'
+        f.write('; gen_ovl.py が生成(第 2・第 3 バンクの関数の呼び口。rom.c の bk_call が番号の JP 表へ飛ぶ)\n'
                 '\t.module bkstubs\n\t.area _CODE\n\t.globl _bk_call\n')
-        if len(names) > 85: sys.exit('ERROR: 第 2 バンクの入口が多すぎる(85 まで)')
-        for i, n in enumerate(names):
-            f.write(f'_{n}::\n\tcall _bk_call\n\t.db {3 * i}\n')
+        for names_, base, what in ((b2, 0, '第 2'), (b3, 0x80, '第 3')):
+            if len(names_) > 42: sys.exit(f'ERROR: {what}バンクの入口が多すぎる(42 まで)')
+            for i, n in enumerate(names_):
+                f.write(f'_{n}::\n\tcall _bk_call\n\t.db {base + 3 * i}\n')
 
 def binary(ihx, mapf, out, base, end, dbase, dend):
     base, end, dbase, dend = (int(x, 0) for x in (base, end, dbase, dend))

@@ -233,15 +233,32 @@ BK_DATA  := 0xBE00
 BK_DEND  := 0xC000
 BK_EXPORTS := infx_start infx_title infx_reset infx_update infx_vram infx_draw banner_vram weap_init weap_update weap_draw zako_script zako_update zako_draw zako_killed pl_fire_from gauge_steal lb_draw music_frame juice_frame shots_draw far_step
 BK_SIZE_FIRST := infx
+# ---- 第 3 バンク(src/bank3): セグメント 7。第 2 バンクと同じ作り(ROM はバンク 102..103)。★互いの呼び口は使えない(入れ子) ----
+BK3_EXPORTS := hud_init hud_update hud_sprites
+BK3_RELS := $(patsubst src/bank3/%.c,$(BUILD)/b3_%.rel,$(wildcard src/bank3/*.c))
+$(BUILD)/b3_%.rel: src/bank3/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+$(BUILD)/b3hdr.s: tools/gen_ovl.py Makefile | $(BUILD)
+	python3 tools/gen_ovl.py hdr $@ $(BK3_EXPORTS)
+$(BUILD)/resident_b3.s: $(BUILD)/game.ihx tools/gen_ovl.py
+	python3 tools/gen_ovl.py resident_bk $(BUILD)/game.noi $@ $(BK3_EXPORTS) $(BK_EXPORTS)
+$(BUILD)/bank3.ihx: $(BUILD)/b3hdr.rel $(BK3_RELS) $(BUILD)/resident_b3.rel tools/check_bank.py
+	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(BK_BASE) --data-loc $(BK_DATA) \
+	    $(BUILD)/b3hdr.rel $(BK3_RELS) $(BUILD)/resident_b3.rel -o $@
+	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
+	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 第 3 バンクの未定義シンボル(本体のページ 2・第 2 バンクのものは呼べない。bank.h)"; rm -f $@; exit 1; fi
+	@python3 tools/check_bank.py $(BUILD)/game.map $(BUILD)/game.noi $(BK3_RELS:.rel=.lst) || { rm -f $@; exit 1; }
+$(BUILD)/bank3.bin: $(BUILD)/bank3.ihx tools/gen_ovl.py
+	python3 tools/gen_ovl.py bin $< $(<:.ihx=.map) $@ $(BK_BASE) $(BK_DATA) $(BK_DATA) $(BK_DEND)
 BK_RELS  := $(patsubst src/bank/%.c,$(BUILD)/bk_%.rel,$(wildcard src/bank/*.c))
 $(BUILD)/bk_%.rel: src/bank/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(BK_SIZE_FIRST),$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 $(BUILD)/bkhdr.s: tools/gen_ovl.py Makefile | $(BUILD)
 	python3 tools/gen_ovl.py hdr $@ $(BK_EXPORTS)
 $(BUILD)/bkstubs.s: tools/gen_ovl.py Makefile | $(BUILD)
-	python3 tools/gen_ovl.py bkstubs $@ $(BK_EXPORTS)
+	python3 tools/gen_ovl.py bkstubs $@ $(BK_EXPORTS) -- $(BK3_EXPORTS)
 $(BUILD)/resident_bk.s: $(BUILD)/game.ihx tools/gen_ovl.py
-	python3 tools/gen_ovl.py resident_bk $(BUILD)/game.noi $@ $(BK_EXPORTS)
+	python3 tools/gen_ovl.py resident_bk $(BUILD)/game.noi $@ $(BK_EXPORTS) $(BK3_EXPORTS)
 $(BUILD)/bank.ihx: $(BUILD)/bkhdr.rel $(BK_RELS) $(BUILD)/resident_bk.rel tools/check_bank.py
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(BK_BASE) --data-loc $(BK_DATA) \
 	    $(BUILD)/bkhdr.rel $(BK_RELS) $(BUILD)/resident_bk.rel -o $@
@@ -268,9 +285,9 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/r
 	        echo "ERROR: $$S=$$A がページ 1(0x8000 未満)に無い。ROM を読む間に壊れる(rom.c)"; rm -f $@; exit 1; fi; \
 	done
 
-GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/snd.bin $(OVL_BINS) $(BUILD)/bank.bin tools/rompack.mjs
+GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/snd.bin $(OVL_BINS) $(BUILD)/bank.bin $(BUILD)/bank3.bin tools/rompack.mjs
 	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 64 $(BUILD)/snd.bin \
-	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin --asset 126 $(BUILD)/bank.bin
+	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin --asset 102 $(BUILD)/bank3.bin --asset 126 $(BUILD)/bank.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。
