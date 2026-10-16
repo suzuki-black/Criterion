@@ -323,7 +323,7 @@ void weap_init(void) {
 static u8 echo_at(u8 i) { return (u8)((tr_h - (u8)((i + 1) * ECHO_GAP)) & (TRAIL - 1)); }
 
 /* 自機・分身・防壁・残像の上下の範囲(画面の y、スプライトの上端)。撃破の部分拡大がこれらの無い帯を選ぶ(juice.c。自機だけを
-   見ていた間は、離れた分身が拡大の帯に入って 2 倍に見えた。指摘)。見るのは描く所だけ(echo_draw・weap_draw の残像) */
+   見ていた間は、離れた分身が拡大の帯に入って 2 倍に見えた。指摘)。見るのは描く所だけ(echo_draw・weap_draw の残像)と、飛んでいる自機の弾・爆雷 */
 u8 wy_lo, wy_hi;
 static void span_at(u8 k) { u8 y = tr_y[k]; if (y < wy_lo) wy_lo = y; if (y > wy_hi) wy_hi = y; }
 void weap_span(void) {
@@ -332,6 +332,17 @@ void weap_span(void) {
     for (i = 0; i < n; i++) span_at(echo_at(i));
     if (t) { span_at((u8)((tr_h - (u8)(t * 2)) & (TRAIL - 1))); span_at((u8)((tr_h - (u8)(t * 4)) & (TRAIL - 1))); }
     if (aeg_lv) { wy_lo = wy_lo > 22 ? (u8)(wy_lo - 22) : 0; wy_hi += 22; }
+    {   /* ★自機の弾と DROP の爆雷も(床・天井を這う爆雷が自機から離れた拡大の帯に入り、2 倍に見えた。遊んでの指摘) */
+        const Bullet *b = g_pshot;
+        for (i = 0; i < MAX_PSHOT; i++, b++) {
+            s16 y;
+            if (!b->on) continue;
+            y = (s16)(PX(b->y) - 8);                          /* 弾の座標は中心、スプライトは上端 */
+            if (y < 0) y = 0; else if (y > 255) y = 255;
+            if ((u8)y < wy_lo) wy_lo = (u8)y;
+            if ((u8)y > wy_hi) wy_hi = (u8)y;
+        }
+    }
 }
 
 /* 敵弾を吸う的: 左上 (x, y)・幅 w・高さ h(画面のドット、8 ビット)。who = 分身の番号 / AEGIS は ECHO_MAX */
