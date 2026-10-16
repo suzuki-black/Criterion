@@ -206,7 +206,10 @@ static u8 run_max = RUN_MAX;       /* 流している列のコマンドの最大
 
 static u8 strip_of(u16 wcol) {
     u16 m = (u16)(wcol - w0);
-    if (wcol < w0 || m >= g_maplen) return 0;
+    /* ★差だけで見る(地図より手前の列は差が 65536 で回って maplen 以上になる)。試験では g_w0 が「今の列 - 広場までの列」で
+       負に回る(g_wx は面ごとに 0..511 へ戻す)ので、wcol < w0 で外にしていた間は試験の地形が全部短冊 0 になり、5 面の試験の
+       GAUGE BLOCK が空に浮いて見えた(遊んでの指摘) */
+    if (m >= g_maplen) return 0;
     return g_strip_xlat[g_map[m] & 31];
 }
 /* ★遠景(多重スクロール): 短冊が s0..s1 の列の、s が t0..t1-1 のブロックは、短冊 strip[列 & 7](周期 64 ドットの遠景)から
@@ -610,9 +613,11 @@ void stage_build(void) {
             s16 l = (s16)(S_AIR2 + i * 24 - sc);
             if (l + 24 <= 0 && i < 7) continue;                       /* 画面の上の外で終わる帯は出さない(0 行へまとまるだけ) */
             stage_ev_pal(l, hs_cur[i]);
-            if (i == 0) stage_ev_scroll(l, nx >> 2);                  /* 星の 3 層: 遠い・中・近い */
-            else if (i == 3) stage_ev_scroll(l, nx >> 1);
-            else if (i == 6) stage_ev_scroll(l, nx);
+            /* 星の 3 層: 遠い・中・近い。★測定空間(g_hall)は 1 層(7 面の LIBRA は BG を画面 = リングの位置で描くので、上の 2 層では
+               支柱と竿が横にずれて見えなかった。遊んでの指摘「どこが弱点かわからない」) */
+            if (i == 0) stage_ev_scroll(l, g_hall ? nx : nx >> 2);
+            else if (i == 3 && !g_hall) stage_ev_scroll(l, nx >> 1);
+            else if (i == 6 && !g_hall) stage_ev_scroll(l, nx);
         }
     }
     /* s >= 0: 地面(面のオーバレイが帯を出す) */

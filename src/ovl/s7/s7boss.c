@@ -78,7 +78,10 @@ void b7_update(void) {
     g_boss_aim = -1;
     if (g_sec != SEC7_LIBRA || g_boss_state == BS_NONE || g_boss_state == BS_DONE) return;
     if (g_boss_state == BS_ENTER) {                           /* 画面がページ 0 にそろうまで流してから止める */
-        if ((g_wx & 511u) < 4) { g_scroll_speed = 0; if ((g_wx & 511u) == 0 && post) g_boss_state = BS_FIGHT; }
+        if ((g_wx & 511u) < 4) {
+            g_scroll_speed = 0;
+            if ((g_wx & 511u) == 0 && post) { g_boss_state = BS_FIGHT; stage_banner_c("HINT: USE LIMIT BREAK", 13); }   /* ★倒し方の合図 */
+        }
         g_boss_dmg = 0;
         return;
     }
@@ -99,7 +102,10 @@ void b7_update(void) {
             if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(8000); return; }
         }
         if (!expose) wy = 0;                                  /* 分銅が戻る */
-    } else tilt_to = (s8)(-(s8)lv * 3);                       /* 段階が高いほど自機の側(左)が下 */
+    } else {
+        tilt_to = (s8)(-(s8)lv * 3);                          /* 段階が高いほど自機の側(左)が下 */
+        if (!(t & 511)) item_spawn(FX(CX + ARM), FX(CY + tilt), 1);   /* ★分銅の皿から Infinity Shard(∞が無いと核が出せず詰んだ) */
+    }
     if (tilt < tilt_to) tilt++; else if (tilt > tilt_to) tilt--;
     shot_rect(CX - ARM - 10, CY - tilt + 14, 20, 8);          /* 皿は弾を止める(皿の厚みだけ。支点の核へ撃てるように) */
     shot_rect(CX + ARM - 10, CY + tilt + 14, 20, 8);
@@ -135,15 +141,23 @@ void b7_vram(void) {
         spr_loaded = 1;
     }
     if (g_sec != SEC7_LIBRA || gq_free() < 10) { gq_pump(0); return; }
-    if (g_boss_state == BS_ENTER && !post && !g_scroll_speed && (g_wx & 511u) == 0) {
+    /* ★支柱はカメラが測定空間の高さに着き、空の描き替えが終わってから(試験 06 から来ると、カメラが上がる途中で描いた支柱の
+       上が、空の描き直しで消えた。遊んでの指摘「どこが弱点かわからない」で見つけた) */
+    if (g_boss_state == BS_ENTER && !post && !g_scroll_speed && (g_wx & 511u) == 0 && g_scam_q <= -192 * 16 && !stage_busy()) {
         ring_cmd(0, 0, CX - 4, CY, 8, 80, 1, 0x99);           /* 支柱 */
         ring_cmd(0, 0, CX - 24, CY + 80, 48, 6, 1, 0x55);
         post = 1;
     }
     if (g_boss_state == BS_FIGHT || g_boss_state == BS_DYING) {
-        if (tilt != tilt_drawn && !(t & 1)) {
+        /* ★64 フレームごとに支柱と竿を描き直す(7 面に戻ると空の方眼を何秒もかけて描き直し、その途中で描いた支柱の上と竿が
+           上書きされて見えなかった。stage_busy はブロックの合間に 0 を返すので待てない。遊んでの指摘で見つけた) */
+        if (g_boss_state == BS_FIGHT && !(t & 63) && drawn) {
+            ring_cmd(0, 0, CX - 4, CY, 8, 80, 1, 0x99);
+            ring_cmd(0, 0, CX - 24, CY + 80, 48, 6, 1, 0x55);
+            beam(tilt_drawn, 9);
+        } else if (tilt != tilt_drawn && !(t & 1)) {
             if (drawn) beam(tilt_drawn, 1);
-            beam(tilt, 2);
+            beam(tilt, 9);                                    /* ★支柱と同じ青灰(色 2 は測定空間の白と同じで見えなかった) */
             ring_cmd(0, 0, CX - 6, CY - 6, 12, 12, 1, 0xDD);  /* 支点 */
             tilt_drawn = tilt; drawn = 1;
         }
