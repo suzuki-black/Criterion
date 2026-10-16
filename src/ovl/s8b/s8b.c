@@ -220,7 +220,7 @@ static void rod_vram(void) {
 /* ======== 第 3 形態: 絶対尺度(目盛りのリング) ======== */
 #define NT 12
 static s16 rr;                     /* 半径(× 4) */
-static u8  ra, msg;
+static u8  ra, msg, hint_t;
 static u8  tt_hp[NT];
 static const char *const msgs[4] = { "MEASURING...", "VALUE: 9999999", "VALUE OUT OF RANGE", "~" };   /* ~ は ∞(font.c) */
 static s16 tpx[NT], tpy[NT];       /* 砲台の位置(1 フレームに 1 回求める) */
@@ -275,7 +275,11 @@ static void ring_update(void) {
     }
     g_boss_hp = (u8)(left * 3 + 1);
     if (left <= 8) ring_msg(1);
-    if (!left) { ring_msg(2); g_boss_aim = CY; }
+    if (!left) {
+        /* ★とどめは LIMIT BREAK だけ(遊んでの指摘「倒し方がわからない」)。帯は 1 秒後(判定文の書き込みと重なって遅れた) */
+        if (hint_t < 60 && ++hint_t == 60) stage_banner_c("HINT: USE LIMIT BREAK", 13);
+        ring_msg(2); g_boss_aim = CY;
+    }
     if (!(t & 511)) item_spawn(FX(CX), FX(CY), 1);            /* Infinity Shard(∞ゲージを合わせる余裕) */
     if (g_boss_dmg && !left) {                                /* とどめは LIMIT BREAK だけ */
         g_boss_dmg = 0; ring_msg(3);
@@ -315,7 +319,7 @@ static void boss_form(u8 sec) {
     g_boss_state = BS_FIGHT; g_boss_hp = 40;
     if (sec == SEC8_BOSS3) {
         u8 k;
-        rr = 120 * 4; ra = 0; msg = 0xFF; msg_drawn = 0xFF; msg_row = 8; ring_pos();
+        rr = 120 * 4; ra = 0; msg = 0xFF; msg_drawn = 0xFF; msg_row = 8; hint_t = 0; ring_pos();
         for (k = 0; k < NT; k++) tt_hp[k] = 3;
         ring_msg(0);
     }
