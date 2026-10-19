@@ -609,6 +609,7 @@ void title_build(void) {
             rb[0] = 5; rb[1] = spr_regs.r5b; rb[2] = 11; rb[3] = 3;
             b->flags |= RAS_REGS; b->haze = rb; b->haze_n = 2;
         }
+        if ((i & 3) == 3) pcmx_service();                        /* ★PCM の送出口(この関数だけで 1ms 近く止めていた) */
         k++;
     }
     /* 128 行: 表示リング(雲)に戻す。色 0 も黒へ戻す */

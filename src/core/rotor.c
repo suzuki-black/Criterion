@@ -6,6 +6,7 @@
    ★asm は IX = u、IY = v、裏レジスタの BC' / DE' に増分を持つ(割込み処理は裏レジスタを使わない約束)。
      sdasz80 は IXh / IYh を書けないので命令のバイトを直に置く(R800 は正式に持つ命令)。 */
 #include "rotor.h"
+#include "snd.h"
 
 extern const s8 g_sin64[64];
 
@@ -29,6 +30,11 @@ static void rotor_row(void) __naked {
         ld   a, (_rot_pairs)
         ld   b, a
     00001$:
+        ld   a, b
+        and  #3
+        call z, _pcmx_service      ; ★4 組(8 ドット、約 0.1ms)ごとに PCM の送出口(A とフラグだけ壊す)。PCM は 0.125ms ごとに
+                                   ;   出すので、それより長く空くと前の値が続いて高い音が削られる(タイトルの ∞ の回転の間、
+                                   ;   標本の 4 割が抜けてシンバルがこもった)
         call 00010$                ; 左のドット(上位 4 ビット)
         rlca
         rlca
@@ -160,6 +166,7 @@ static void rotor1_row(void) __naked {
         ld   a, (_rot1_bytes)
     00001$:
         push af
+        call _pcmx_service         ; ★1 バイト(8 ドット、約 80us)ごとに PCM の送出口(A とフラグだけ壊す。1 行 4 バイトで 0.33ms)
         ld   b, #8
     00002$:
         .db  0xFD, 0x7C            ; ld a, iyh(v)
