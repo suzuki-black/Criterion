@@ -84,7 +84,7 @@ void music_frame(u8 over) {
     else if (g_calib && g_calib < 7) w = motif_t ? stage_song[g_calib - 1] : SONG_M10;   /* 7 面の試験 01..06(頭でその面の曲を挟む) */
     else {
         w = sec_song[sec];
-        if (w == A_) w = SONG_M03;
+        if (w == A_) w = st == 7 ? SONG_M10X : SONG_M03;   /* ★8 面の空中戦は 7 面の曲の豪華版(遊んでの頼み。M03 の +8 は高すぎた) */
         else if (w == S_) w = stage_song[st];
         else if (w == MI) w = SONG_M12;
         else if (w == BO) w = SONG_M13;

@@ -356,17 +356,31 @@ SONGS.append(Song('M14B', 152, {
 }, bar=B74, user=BRASS))
 
 m14c = ['D', 'A', 'Bm', 'G', 'D', 'A', 'G', 'A', 'Bm', 'G', 'D', 'A', 'G', 'A', 'D', 'D']
+
+def m14c_top(prog):
+    """FM5: 2 小節ひと組。1 小節目は弦で和音の 3 度を旋律の上で伸ばし、2 小節目は弦の半分のあと金管が和音を 8 分で駆け上がる"""
+    out = []
+    for a, b in zip(prog[0::2], prog[1::2]):
+        up = tones(b, 67)
+        out.append('@1 v12 ' + nn(tones(a, 74)[1], '1'))
+        out.append('@1 v12 ' + nn(tones(b, 74)[1], '2') + ' @7 v12 ' + ' '.join(nn(n, '8') for n in (up[0], up[1], up[2], up[0] + 12)))
+    return ' | '.join(out)
+
+# ★遊んでの指摘「音程高すぎ」で旋律を 1 オクターブ下げ、音色をトランペット(TPT)に。「もう少し豪華に」で 6 本目(m14c_top)と
+#   ドラムを足した(聴き比べの B3)
 SONGS.append(Song('M14C', 168, {
-    'FM0': 'PP01 L @0 v14 q2 o4d4 a4 o5d4 e4 | a2 g4 f+4 | f+4. e8 d4 c+4 | d2 r2 | '
-           'o4d4 a4 o5d4 e4 | a2 b4 o6c+4 | d4. c+8 o5b4 a4 | a2 r2 | '
-           'o5b4 a4 f+4 d4 | g2 b4 o6d4 | f+4. e8 d4 c+4 | e2 r2 | o5b4 o6d4 g4 f+4 | e2 c+4 e4 | d4 a4 o7d4 e4 | a1',
+    'FM0': 'PP01 L @0 v14 q2 o3d4 a4 o4d4 e4 | a2 g4 f+4 | f+4. e8 d4 c+4 | d2 r2 | '
+           'o3d4 a4 o4d4 e4 | a2 b4 o5c+4 | d4. c+8 o4b4 a4 | a2 r2 | '
+           'o4b4 a4 f+4 d4 | g2 b4 o5d4 | f+4. e8 d4 c+4 | e2 r2 | o4b4 o5d4 g4 f+4 | e2 c+4 e4 | d4 a4 o6d4 e4 | a1',
     'FM1': 'L @1 v10 ' + pad(m14c, 1, 60),
     'FM2': 'L @1 v10 ' + pad(m14c, 2, 62),
     'FM3': 'L @7 v10 q2 ' + stab(m14c, 66, (0,)),
     'FM4': 'L @13 v13 q2 ' + bass(m14c, 2, (0, 0, 12, 0), 6),
-    'RHY': 'L ' + ' '.join(['PP01 ' + rep('bh8 h8 sh8 h8', 7) + ' bc8 s8 s16 s16 s8'] * 4),
-    'PSGA': 'L @1 v9 ' + arp(m14c, 66, 6, (0, 1, 2, 3)),
-}, user=BRASS))
+    'RHY': 'L ' + ' '.join([p + ' bc8 h8 sh8 h8 ' + rep('bh8 h8 sh8 h8', 6) + ' bc8 s16 s16 s16 s16 s16 s16'
+                            for p in ('PP01', '', 'PP01', '')]),          # 4 小節ごとに頭のシンバル・終わりのスネアの連打。オケヒは 1・3 段落
+    'FM5': 'L ' + m14c_top(m14c),
+    'PSGA': 'L @1 v9 ' + arp(m14c, 59, 6, (0, 1, 2, 3)),
+}, user=TPT))
 
 # ---- M15 Escape Velocity(脱出): E 長調 180 ----
 m15 = ['E', 'B', 'C#m', 'A', 'E', 'B', 'A', 'B7']
@@ -442,6 +456,21 @@ SONGS.append(Song('M08C', 72, {
 }, loop=False, user=STRINGS))
 
 
+# ---- M10X Calibration Overdrive(8 面の空中戦。遊んでの頼み「7 面の空中戦の曲の豪華版に」): M10 の刻み・鐘・ベースはそのまま、
+#      弦のパッド(鐘の和音の 5 度上)・オーボエの対旋律(半音で上がる長い音)・4 小節ごとのシンバルとスネアの連打を足す ----
+SONGS.append(Song('M10X', 140, {
+    'FM0': 'L @0 v11 q2 ' + rep(cal, 8),
+    'FM1': 'L @12 v10 q4 o5c2 f+2 | r1 | c+2 g2 | r1 | o4b2 f2 | r1 | c+2 g2 | o5c1',
+    'FM2': 'L @1 v8 o4g1 | g1 | g+1 | g+1 | f+1 | f+1 | g+1 | g1',
+    'FM3': 'L @13 v12 q3 ' + rep('o2c8 c8 c8 c8 c8 c8 c8 o1b8 ', 8),
+    'FM4': 'L @6 v11 o5c2. c+4 | f+1 | c+2. d4 | g1 | o4b2. o5c4 | f1 | c+2 d+4 e4 | f+1',
+    'RHY': 'L ' + rep('h16 h16 h16 h16 bh16 h16 h16 h16 h16 h16 h16 h16 sh16 h16 h16 h16', 3)
+           + ' bc16 h16 h16 h16 bh16 h16 s16 s16 b16 s16 s16 s16 s16 s16 s16 s16 | '
+           + rep('h16 h16 h16 h16 bh16 h16 h16 h16 h16 h16 h16 h16 sh16 h16 h16 h16', 3)
+           + ' bc16 h16 h16 h16 bh16 h16 s16 s16 b16 s16 s16 s16 s16 s16 s16 s16',
+    'PSGA': 'L @1 v9 ' + rep('o6c16 r16 r8 f+16 r16 r8 r4 c+16 r16 g16 r16 ', 8),
+}, user=GLASS))
+
 # ================================================================ PSG で厚みを足す(全曲)
 # ★遊んでの指摘(ドラムがポコポコ、メロディーに厚みがない)。M01 で 4 案を聴き比べて決めた形を、旋律(FM0)とリズム(RHY)から作る:
 #   PSG B = 旋律を同じ高さで重ねる(D2 = 周期 +2 で少し低く、FM とうならせる。音量は 4 段下げる)。やまびこのアルペジオ(B)は替わる
@@ -449,20 +478,24 @@ SONGS.append(Song('M08C', 72, {
 #   PSG C は効果音と取り合う(鳴っている間は曲の側が抜ける。了承済み)。PSG だけの曲(J02)・C のノイズを自分で使う曲は触らない
 import re as _re
 
-def _psg_double(mml, env=0, drop=4, oct=0):
-    """env: PSG のエンベロープ(snd.c の env_rate。減衰する FM 音色に合わせる)、drop: 音量を下げる段、oct: 重ねる高さ(オクターブ)"""
+def _psg_double(mml, env=0, drop=4, oct=0, tune=False):
+    """env: PSG のエンベロープ(snd.c の env_rate。減衰する FM 音色に合わせる)、drop: 音量を下げる段、oct: 重ねる高さ(オクターブ)、
+    tune: デチューンを高さで変える(周期に足すので高い音ほどずれが大きく、o6 では 4 分の 1 音外れて聞こえた。o4 以下 2、o5 1、o6 以上 0。
+    ★聴き比べで、ほかの曲は D2 のままがよいとなったので、高い旋律の曲だけ)"""
     s = _re.sub(r'P\w+', '', mml)                 # PCM の合図は FM0 の側だけ
     s = _re.sub(r'T\d+', '', s)                   # テンポも
     s = _re.sub(r'@\d+', '@%d' % env, s)
     s = _re.sub(r'v(\d+)', lambda m: 'v%d' % max(0, int(m.group(1)) - drop), s)
     if oct:
         s = 'o%d ' % (4 + oct) + _re.sub(r'o(\d)', lambda m: 'o%d' % (int(m.group(1)) + oct), s)
+    if tune:
+        s = _re.sub(r'o(\d)', lambda m: 'o%s D%d' % (m.group(1), 2 if int(m.group(1)) <= 4 else 1 if m.group(1) == '5' else 0), s)
     return 'D2 @%d ' % env + s
 
 # 曲ごとの重ね方(無い曲は既定: 減衰なし・4 段下げ・同じ高さ)。聴き比べで決めた:
 #   M09 = ハープシコードはすぐ減衰するので、PSG も 3 フレームに 1 段ずつ下げる(減衰なしでは PSG だけが鳴り残った)
 #   M10 = 旋律が低く小さい(o4・v11)ので、下げるのは 1 段だけ(4 段では埋もれて変わって聞こえなかった)
-PSG_DOUBLE = {'M09': {'env': 6}, 'M10': {'drop': 1}}
+PSG_DOUBLE = {'M09': {'env': 6}, 'M10': {'drop': 1}, 'M10X': {'drop': 1}, 'M14C': {'tune': True}}
 
 _RT = _re.compile(r'\s+|\||([bstch]+)(%\d+|\d+)?(\.*)|(r)(%\d+|\d+)?(\.*)|(L)|v(\d+)|P(\w+)|T(\d+)')
 def _ticks(num, dots):
