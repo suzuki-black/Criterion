@@ -6,7 +6,7 @@
 #      2 周目の 1 面(0)
 #   2. 7 面の試験 01..06 と LIBRA を倒す(試験ごとの体力が 0)。8 面の TOLERANCE、PROTOTYPE ZERO の 3 形態を倒す
 #      (第 3 形態は LIMIT BREAK で砕ける = 状態 DYING)
-#   3. 終幕で地球の帯(帰線の 244 行で SCREEN 12)が出る。2 周目(g_loop = 1)
+#   3. 終幕で地球の帯(下の枠の行(213 行〜)で SCREEN 12 へ)が出る。2 周目(g_loop = 1)
 #   4. 暗転なし・遅れたフレーム 0(起動から終幕の最後の区間 68 に入るまで。2 周目へ移る雲の描き直しは数えない)
 # throttle off で流す(時刻はエミュレータの時刻)。画面を数枚撮る(m6_*.png)。
 #   usage: tools/test/run_game_m6.sh <作業ディレクトリ>
@@ -64,7 +64,7 @@ proc watch {} {
       set p [rd16 $RFRONT]; set n [rd $RN]
       for {set i 0} {\$i < \$n} {incr i} {
         binary scan [debug read_block memory [expr {\$p + \$i * 10}] 10] cucucucucucucucusu line fl r26 r27 pi rb g hn hp
-        if {\$line == 244 && (\$fl & 16)} { binary scan [debug read_block memory \$hp 2] cucu r0 v0; if {\$r0 == 0 && \$v0 == 0x1E} { set ::g7 1 } }
+        if {\$line >= 213 && (\$fl & 16)} { binary scan [debug read_block memory \$hp 2] cucu r0 v0; if {\$r0 == 0 && \$v0 == 0x1E} { set ::g7 1 } }
       }
     }
     # LIMIT BREAK(LIBRA と第 3 形態)
@@ -105,7 +105,7 @@ proc finish {} {
   check zero_1 [expr {\$::minhp(60) == 0}] "二重の鐘=\$::minhp(60)"
   check zero_2 [expr {\$::minhp(61) == 0}] "原器=\$::minhp(61)"
   check zero_3 [expr {\$::z3}] "絶対尺度が LIMIT BREAK で砕けた"
-  check ending_earth [expr {\$::g7}] "終幕の地球の帯(244 行で SCREEN 12)"
+  check ending_earth [expr {\$::g7}] "終幕の地球の帯(下の枠の行で SCREEN 12)"
   check loop2 [expr {[rd $LOOP] == 1 && [rd [expr {$ST+14}]] == 3}] "g_loop=[rd $LOOP]"
   check no_blackout [expr {\$::blank == 0 && \$::stall == 0}] "表示が切れた回数=\$::blank 止まった回数=\$::stall"
   set nl 0; foreach e \$::late_at { if {[regexp {\(\+(\d+)} \$e - k]} { incr nl \$k } }

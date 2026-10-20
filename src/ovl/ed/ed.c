@@ -27,7 +27,11 @@ static u16 sec_t;
 static u8  yrow, split;
 static u8  regs_top[2][16], regs_n[2][14];
 static u8  next_line, roll_row;    /* 次に書く名前、その文字の行 */
+static u8  done_line;              /* 画面の上へ抜けて消した名前の数 */
+static u16 fill_row;
+static u8  const_done;             /* リングの 184..191 行(全列共通のブロック 23)を空にした */               /* スタッフロールの空を塗った行(リングのページ 0、256 で終わり) */
 static const u8 black[3] = { 0, 0, 0 };
+static const u8 night[3] = { 0, 0, 1 };
 
 static const char *const roll[] = {
     "CRITERION", "", "", "STAFF", "", "GAME DESIGN", "TDF", "", "PROGRAM", "TDF", "", "GRAPHICS", "TDF", "",
@@ -42,8 +46,8 @@ void ovl_init(void) {
     stage_reset_ground();
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; g_hall = 0; g_sky_t = 16;
     enemy_waves(WAVES_NONE);
-    yrow = 0; split = 0; next_line = 0; roll_row = 0;
-    g_blk_base = YJK_ROW / 8; g_blk_skip = YJK_H / 8;         /* リングの 64..119 行 = 地球 */
+    yrow = 0; split = 0; next_line = 0; roll_row = 0; done_line = 0; fill_row = 0; const_done = 0;
+    g_blk_base = 0; g_blk_skip = 0;                           /* リングの 64..119 行(地球)はカメラが着いてから外す */
     stage_sky_redraw();                                       /* 8 面の縦穴の壁を星空に */
     enter(SECE_SPACE);
 }
@@ -54,7 +58,12 @@ void ovl_update(void) {
     switch (g_sec) {
     case SECE_SPACE:                                          /* 宇宙へ: カメラを地球の帯の高さへ */
         if (g_scam_q > CAM_EARTH * 16) g_scam_q -= 16;
-        else if (yrow >= YJK_H * 2) { g_bands_all = 1; enter(SECE_EARTH); }
+        else {
+            /* ★地球の行(リングの 64..119 行)を描き替えから外すのは、この高さに着いてから(終幕に入ってすぐ外していた間は、
+               上がっていく途中でその行が画面を通り、夜空に黒い帯が出た) */
+            g_blk_base = YJK_ROW / 8; g_blk_skip = YJK_H / 8;
+            if (yrow >= YJK_H * 2) { g_bands_all = 1; enter(SECE_EARTH); }
+        }
         break;
     case SECE_EARTH:                                          /* 地球を見下ろす(帯が伸び、止まり、縮む) */
         if (sec_t < 300) { if (split < YJK_H) split = (u8)(split < 8 ? 8 : split + 2); }
@@ -66,8 +75,11 @@ void ovl_update(void) {
         }
         break;
     case SECE_ROLL:                                           /* スタッフロール: 暗転して高く飛び、下へ流す */
-        if (sec_t == 1) { u8 i; for (i = 2; i < 16; i++) vdp_set_pal(i, 0, 0, 0); g_scam_q = CAM_ROLL0 * 16; }
-        if (sec_t == 49 && stage_busy()) sec_t = 48;          /* 高く飛んだ先の空が描き終わるまで暗いまま */
+        /* ★スタッフロールの間はリングをこの場面で預かる: 空のブロックの描き替えを全部外し(g_blk_skip)、暗いうちに空の色で塗って
+           星を打ち、名前は画面に入る前に書いて、上へ抜けたら消す。描き替えと取り合っていた間は、書いた名前が後から来た描き替えに
+           消され(前半の名前が出なかった)、リングが 1 周して前の名前が下からまた出た(遊んでの指摘「スタッフロールが壊れている」) */
+        if (sec_t == 1) { u8 i; for (i = 2; i < 16; i++) vdp_set_pal(i, 0, 0, 0); g_scam_q = CAM_ROLL0 * 16; g_blk_base = 0; g_blk_skip = 32; g_bands_all = 1; }
+        if (sec_t == 49 && fill_row < 256) sec_t = 48;        /* 空を塗り終わるまで暗いまま */
         if (sec_t == 50) { u8 i; for (i = 2; i < 9; i++) vdp_set_pal(i, 1, 1, 2); vdp_set_pal(9, 2, 3, 5); vdp_set_pal(14, 4, 4, 5); vdp_set_pal(15, 7, 7, 7); vdp_set_pal(10, 2, 6, 7); vdp_set_pal(11, 6, 7, 7); vdp_set_pal(12, 6, 5, 2); vdp_set_pal(13, 6, 3, 2); }
         if (sec_t > 50 && (sec_t & 1) && g_scam_q < CAM_ROLL1 * 16) g_scam_q += 16;
         if (g_scam_q >= CAM_ROLL1 * 16) { infx_start(128, 120); enter(SECE_FINAL); }
@@ -93,6 +105,9 @@ void ovl_draw(void) { }
 
 void ovl_vram(void) {
     extern u16 g_frame_t0;
+    /* ★ブロック 23(リングの 184..191 行)は地面の短冊の共通の行で、空の描き替えから外れている。8 面の地面の絵が残り、宇宙へ
+       上がると紫の筋に見えたので、終幕に入ったら空の色で塗る(2 周目は地面の列が描き直す) */
+    if (!const_done) { vdp_cmd_wait(); vdp_hmmv(0, 184, 256, 8, 0x11); vdp_cmd_wait(); vdp_hmmv(0, 256 + 184, 256, 8, 0x11); const_done = 1; return; }
     if (g_sec == SECE_SPACE && yrow < YJK_H * 2 && g_scam == CAM_EARTH && (u16)(sys_timer() - g_frame_t0) < 150u * 16u) {
         u8 n;
         for (n = 0; n < 2 && yrow < YJK_H * 2; n++, yrow++) {   /* 偶数バイト → ページ 0、奇数 → ページ 2 */
@@ -112,12 +127,41 @@ void ovl_vram(void) {
             if (!n || ++roll_row == 8) { roll_row = 0; next_line++; }
         }
     }
+    if (g_sec == SECE_ROLL && fill_row < 256) {               /* 空を塗る(1 フレームに 16 行)と星 */
+        u8 r = (u8)fill_row, k;
+        vdp_cmd_wait(); vdp_hmmv(0, r, 256, 16, 0x11); vdp_cmd_wait();
+        for (k = 0; k < 6; k++) {
+            u8 x = rnd8(), y = (u8)(r + (rnd8() & 15)), c = (u8)((rnd8() & 3) == 0 ? 15 : (rnd8() & 1) ? 14 : 9);
+            vdp_write_addr17(0, (u16)((u16)y * 128u + (x >> 1)));
+            VDP_DAT = (x & 1) ? (u8)(0x10 | c) : (u8)((c << 4) | 1);
+        }
+        fill_row += 16;
+    }
+    /* 画面の上へ抜けた名前の行は消す(リングは 256 行で回るので、残すと下から同じ名前がまた出た。2 周目の空にも残った) */
+    if (g_sec >= SECE_ROLL && done_line < next_line && (s16)(ROLL_S0 + done_line * 16 + 8) <= g_scam) {
+        if (roll[done_line][0]) { vdp_cmd_wait(); vdp_hmmv(0, (u8)(ROLL_S0 + done_line * 16 + 188), 256, 8, 0x11); }
+        done_line++;
+    }
+    /* 終幕の最後(画面が黒い間): まだ残っている名前の行を空の色で消す(2 周目の空は名前の行を描き直さない) */
+    if (g_sec == SECE_FINAL && sec_t > 240) {
+        u8 k = 0;
+        while (done_line < next_line && k < 3) {
+            if (roll[done_line][0]) { vdp_cmd_wait(); vdp_hmmv(0, (u8)(ROLL_S0 + done_line * 16 + 188), 256, 8, 0x11); k++; }
+            done_line++;
+        }
+    }
 }
 
 void ovl_bands(s16 sc, u16 nx) {
     u8 bi = ras_back_index(), n = split;
     RasEntry *e;
     (void)sc;
+    /* ★スタッフロールの間は空を 1 色、横位置 0 に(高い空の星の層は帯ごとに横へずれ、ページ 0 に書いた名前が画面の外へ出て
+       前半が見えず、塗っていないページ 1 の前の絵が棒になって見えた) */
+    if (g_sec >= SECE_ROLL) { stage_ev_pal(0, night); stage_ev_scroll(0, 0); return; }
+    /* ★宇宙へ抜ける間(g_bands_all = 0)は高い空の帯の後ろから呼ばれるので、0 行の項目を足さない(前の帯に混ざるか 6 行下へ
+       ずれて差し込まれ、夜空の途中に黒い帯が段になって出た。遊んでの指摘「最終ステージクリア後のあれはゴミにしか見えない」) */
+    if (!g_bands_all) return;
     stage_ev_pal(0, black);
     stage_ev_scroll(0, nx);
     if (!n) return;
@@ -125,7 +169,9 @@ void ovl_bands(s16 sc, u16 nx) {
         u8 *rt = regs_top[bi], *rn = regs_n[bi];
         rt[0] = 0; rt[1] = 0x1E; rt[2] = 25; rt[3] = 0x0A; rt[4] = 2; rt[5] = 0x1F;
         rt[6] = 8; rt[7] = 0x2A; rt[8] = 23; rt[9] = YJK_ROW; rt[10] = 5; rt[11] = spr_regs.r5a; rt[12] = 11; rt[13] = 3; rt[14] = 18; rt[15] = R18_G7;
-        e = stage_ev_raw(244, RAS_REGS | RAS_SCROLL);
+        /* ★地球の帯へ切り替えるのは下の枠の 236 行(244 では R#19 = 240 + 128 = 112 になり、帯の終わり(R#19 = n - 4 + 64)と値が
+           6 未満に近づくと割込みが「続けて適用」して 3 行で帯を閉じ、帯が 52 行より伸びると地球が消えた) */
+        e = stage_ev_raw(236, RAS_REGS | RAS_SCROLL);
         if (e) { e->haze = rt; e->haze_n = 8; e->r26 = (u8)(VDP_R26(sec_t >> 3) & 31); e->r27 = VDP_R27(sec_t >> 3); }
         rn[0] = 0; rn[1] = 0x16; rn[2] = 25; rn[3] = 0x03; rn[4] = 8; rn[5] = 0x28;
         rn[6] = 2; rn[7] = 0x3F; rn[8] = 23; rn[9] = (u8)(g_vscroll + g_roll); rn[10] = 5; rn[11] = spr_regs.r5a; rn[12] = 18; rn[13] = R18_SAVE;
