@@ -261,7 +261,9 @@ void title_draw(void) {
 void title_vram(void) {
     if (tm) { scene_vram(); return; }
     /* タイトルの文字(この時点ではまだ分割していない)。1 フレームに 1 行(まとめるとフレームが落ちた) */
-    if (g_phase == PH_TITLE && g_pt == 1) font_text(HUD_PAGE, 72, HUD_ROW1, 11, 0, "PUSH SPACE KEY");
+    /* ★HUD 帯の 1 行目は場面ごとに長さの違う文字を書くので、空白で埋めて x 48..207 を覆う(短い文字を上書きしていた間は、前の場面の
+       文字の端が残って「SIPUSH SPACE KEY:K」「SPACE REWIND} BACK」と崩れた。遊んでの指摘) */
+    if (g_phase == PH_TITLE && g_pt == 1) font_text(HUD_PAGE, 48, HUD_ROW1, 11, 0, "   PUSH SPACE KEY   ");
     if (g_phase == PH_TITLE && g_pt == 2) font_text(HUD_PAGE, 52, HUD_ROW2, 14, 0, CF_COPY);
     if (g_phase == PH_TITLE && cf_dirty) {                    /* 隠しコンフィグ。★1 フレームに文字の 1 ドット行ずつ(72 バイト、約 0.6ms)。
                                                                  1 行(576 バイト、約 5ms)をまとめて書くと終わりが上の帯(SCREEN 12)の
@@ -328,10 +330,15 @@ enum { TM_TITLE, TM_NAME, TM_REWIND, TM_RANK };
 #define SC_LINE 32
 #define SC_R23  96                /* 画面の 32 行 = ページ 2|3 の 128 行(★40 から始めると 10 位の行が雲海の切り替えに掛かった) */
 #define SC_END  120
+/* ★ネームエントリーの文字盤はページ 2|3 の 130..137 行(画面の 34..41 行)。文字盤の帯だけ横にずらし、横位置を 0 に戻す項目は
+   46 行に離して置く(帯の切り替えは割込みの遅れで 1〜2 行前後する。文字盤の 8 行のすぐ下の 40 行で戻していた間は、
+   文字の下の 2 行が横位置 0 で出て点々に崩れ、読めなかった。遊んでの指摘) */
+#define NM_DIAL 130
+#define NM_X0   46
 static u8 sel, nm[3], nm_pos, nm_drawn, vjob, rep;
 static u16 tm_t, dial_x;
 static s16 rk_x[RANK_N];
-static u8 regs_s0[2][12], regs_s1[2][4], regs_s2[2][4], regs_se[2][4];
+static u8 regs_s0[2][12], regs_s1[2][4], regs_s2[2][4], regs_se[2][4], regs_s3[2][2];
 static char sc_buf[20];
 static const char dial_ch[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.- 012";
 static const u8 rainbow[8][3] = { { 7, 0, 0 }, { 7, 4, 0 }, { 7, 7, 0 }, { 0, 7, 0 }, { 0, 7, 7 }, { 0, 2, 7 }, { 5, 0, 7 }, { 7, 0, 5 } };
@@ -434,7 +441,7 @@ static void scene_vram(void) {
     if (!j) {
         if (tm == TM_NAME && nm_drawn != nm_pos) {           /* 名前の 3 字 */
             sc_buf[0] = nm[0]; sc_buf[1] = ' '; sc_buf[2] = nm[1]; sc_buf[3] = ' '; sc_buf[4] = nm[2]; sc_buf[5] = 0;
-            vdp_cmd_wait(); font_text(2, 108, 176, 15, 0, sc_buf); nm_drawn = nm_pos;
+            vdp_cmd_wait(); font_text(2, 108, (u8)(NM_DIAL + 54), 15, 0, sc_buf); nm_drawn = nm_pos;
         }
         return;
     }
@@ -449,19 +456,19 @@ static void scene_vram(void) {
                 static char dl[33];
                 for (i = 0; i < 16; i++) { dl[i * 2] = dial_ch[b + i]; dl[i * 2 + 1] = ' '; }
                 dl[32] = 0;
-                font_text((u8)(j - 1), 0, 128, 11, 0, dl);
+                font_text((u8)(j - 1), 0, NM_DIAL, 11, 0, dl);
             }
             return;
         }
-        if (j == 5) { font_text(2, 120, 136, 13, 0, "--"); return; }   /* 選んでいる字の下線(文字盤の中央。★スプライトは文字盤の帯と
+        if (j == 5) { font_text(2, 120, (u8)(NM_DIAL + 16), 13, 0, "--"); return; }   /* 選んでいる字の下線(文字盤の中央。★スプライトは文字盤の帯と
                                                                  雲海で R#23 が違い、雲海のほうに出た) */
-        if (j == 8) { font_text(2, 68, 144, 15, 0, "ENTER YOUR NAME"); return; }
+        if (j == 8) { font_text(2, 68, (u8)(NM_DIAL + 24), 15, 0, "ENTER YOUR NAME"); return; }
         if (j == 6) {
             sc_buf[0] = 'S'; sc_buf[1] = 'C'; sc_buf[2] = 'O'; sc_buf[3] = 'R'; sc_buf[4] = 'E'; sc_buf[5] = ' '; sc_buf[6] = ' ';
             score6(sc_buf + 7, g_last_score); sc_buf[13] = 0;
-            font_text(2, 76, 160, 14, 0, sc_buf); return;
+            font_text(2, 76, (u8)(NM_DIAL + 38), 14, 0, sc_buf); return;
         }
-        if (j == 7) { font_text(HUD_PAGE, 60, HUD_ROW1, 11, 0, "SPACE SET  B BACK"); return; }
+        if (j == 7) { font_text(HUD_PAGE, 48, HUD_ROW1, 11, 0, "  SPACE SET  B BACK "); return; }
     } else if (tm == TM_RANK) {
         if (j <= 12) {
             u8 k = (u8)(j - 3);
@@ -472,9 +479,9 @@ static void scene_vram(void) {
             font_text(2, 68, (u8)(128 + k * 8), k ? (k < 3 ? 11 : 15) : 9, 0, sc_buf);
             return;
         }
-        if (j == 13) { font_text(HUD_PAGE, 52, HUD_ROW1, 11, 0, "TOP 10 MEASUREMENTS"); return; }
+        if (j == 13) { font_text(HUD_PAGE, 48, HUD_ROW1, 11, 0, " TOP 10 MEASUREMENTS"); return; }
     } else {
-        if (j == 3) { font_text(HUD_PAGE, 104, HUD_ROW1, 13, 0, "REWIND"); return; }
+        if (j == 3) { font_text(HUD_PAGE, 48, HUD_ROW1, 13, 0, "       REWIND       "); return; }
     }
     vjob = 0;
 }
@@ -483,10 +490,13 @@ static void scene_vram(void) {
 static void scene_build(void) {
     RasEntry *e = ras_back();
     u8 bi = ras_back_index(), k = 0, i;
-    u8 *r0 = regs_s0[bi], *r1 = regs_s1[bi], *r2 = regs_s2[bi], *re = regs_se[bi];
+    u8 *r0 = regs_s0[bi], *r1 = regs_s1[bi], *r2 = regs_s2[bi], *re = regs_se[bi], *r3 = regs_s3[bi];
     u16 bx = bg_layer_x(1);
+    /* ★上の帯はリングの 64 行から先(空)を見せる。リングの 0..63 行(ページ 0)にはタイトルの地平線の YJK の偶数バイトが入っていて、
+       そのまま見せると巻き戻しで流したときに色の縦じまに、ネームエントリーでは右上の四角に見えた(遊んでの指摘「壊れている」) */
     r0[0] = 0; r0[1] = R0_G4; r0[2] = 25; r0[3] = R25_G4; r0[4] = 8; r0[5] = R8_SPR;
-    r0[6] = 2; r0[7] = 0x3F; r0[8] = 23; r0[9] = g_vscroll; r0[10] = 5; r0[11] = spr_regs.r5a;
+    r0[6] = 2; r0[7] = 0x3F; r0[8] = 23; r0[9] = (u8)(g_vscroll + 64); r0[10] = 5; r0[11] = spr_regs.r5a;
+    r3[0] = 23; r3[1] = g_vscroll;
     put_e(&e[k], 0, RAS_REGS | RAS_SCROLL | RAS_PAL); e[k].haze = r0; e[k].haze_n = 6;
     e[k].r26 = VDP_R26(bx); e[k].r27 = VDP_R27(bx); sky_pal(&e[k], 0); k++;    /* 空(色 1)は夜の色 */
     r2[0] = 5; r2[1] = spr_regs.r5b; r2[2] = 11; r2[3] = 3;   /* 96 行: 下の帯の属性表 */
@@ -498,11 +508,18 @@ static void scene_build(void) {
             put_e(&e[k], l, RAS_SCROLL | RAS_PAL); e[k].r26 = VDP_R26(x); e[k].r27 = VDP_R27(x);
             sky_pal(&e[k], (u8)(l / 26));
             if (rnd8() < 40) { u8 f = (u8)(4 + (rnd8() & 3)); e[k].prb = (u8)((f << 4) | f); e[k].pg = f; }
+            if (l == 72) { e[k].flags |= RAS_REGS; e[k].haze = r3; e[k].haze_n = 1; }   /* 72 行から元の縦位置(リングの 72 行〜) */
             if (l == 96) { e[k].flags |= RAS_REGS; e[k].haze = r2; e[k].haze_n = 2; }
             k++;
         }
     } else {
         r1[0] = 2; r1[1] = 0x7F; r1[2] = 23; r1[3] = SC_R23;
+        if (tm == TM_NAME) {                                   /* 文字盤の帯(32 行)、横位置を戻す(46 行)、下の帯の属性表(96 行) */
+            put_e(&e[k], SC_LINE, RAS_SCROLL | RAS_REGS); e[k].r26 = VDP_R26(dial_x); e[k].r27 = VDP_R27(dial_x);
+            e[k].haze = r1; e[k].haze_n = 2; k++;
+            put_e(&e[k], NM_X0, RAS_SCROLL); e[k].r26 = 0; e[k].r27 = 0; k++;
+            put_e(&e[k], 96, RAS_SCROLL | RAS_REGS); e[k].r26 = 0; e[k].r27 = 0; e[k].haze = r2; e[k].haze_n = 2; k++;
+        } else
         for (i = 0; i < RANK_N; i++) {                         /* 32..111 行: ページ 2|3 の 8 行ずつの帯 */
             u16 x = tm == TM_RANK ? (u16)rk_x[i] : (i == 0 ? dial_x : 0);
             put_e(&e[k], (u8)(SC_LINE + i * 8), RAS_SCROLL); e[k].r26 = VDP_R26(x); e[k].r27 = VDP_R27(x);
