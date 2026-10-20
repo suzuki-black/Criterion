@@ -174,8 +174,10 @@ void ovl_bands(s16 sc, u16 nx) {
         e = stage_ev_raw(236, RAS_REGS | RAS_SCROLL);
         if (e) { e->haze = rt; e->haze_n = 8; e->r26 = (u8)(VDP_R26(sec_t >> 3) & 31); e->r27 = VDP_R27(sec_t >> 3); }
         rn[0] = 0; rn[1] = 0x16; rn[2] = 25; rn[3] = 0x03; rn[4] = 8; rn[5] = 0x28;
-        rn[6] = 2; rn[7] = 0x3F; rn[8] = 23; rn[9] = (u8)(g_vscroll + g_roll); rn[10] = 5; rn[11] = spr_regs.r5a; rn[12] = 18; rn[13] = R18_SAVE;
-        e = stage_ev_raw(n, RAS_REGS | RAS_SCROLL | RAS_PAL | RAS_MARK);
+        rn[6] = 2; rn[7] = 0x3F; rn[8] = 23; rn[9] = (u8)(g_vscroll + g_roll); rn[10] = 18; rn[11] = R18_SAVE;   /* R#5 は上の帯と同じ値 */
+        mag_pair(rn + 12, 0);                                 /* 最後の組は R#1(RAS_BLANK が戻す値) */
+        /* ★境の行は表示を消して切り替える(6 面と同じ。行の途中で画面モードが替わり、境に点々の行が出ていた) */
+        e = stage_ev_raw(n, RAS_REGS | RAS_SCROLL | RAS_PAL | RAS_MARK | RAS_BLANK | RAS_BLANK_ALL);
         if (e) { e->haze = rn; e->haze_n = 7; e->r26 = VDP_R26(nx); e->r27 = VDP_R27(nx); e->pidx = 1; e->prb = 0; e->pg = 0; }
     }
 }

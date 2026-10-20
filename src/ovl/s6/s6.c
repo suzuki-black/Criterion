@@ -27,7 +27,7 @@ static u8  yjk_row;                /* 読んだ YJK の行(0..95: 偶数バイ�
 static u16 yjk_x;                  /* 惑星の横位置(1/8 ドット) */
 static u8  yjk_stop;
 s16 s6_shadow_a, s6_shadow_b;
-static u8  regs_top[2][16], regs_n[2][14];
+static u8  regs_top[2][16], regs_n[2][16];
 
 static const u8 sky[3] = { 1, 1, 3 };
 /* 影の中の暗い組(色 1 空 / 4・5・7 外壁 / 12 敵の体) */
@@ -196,8 +196,11 @@ void ovl_bands(s16 sc, u16 nx) {
         if (e) { e->haze = rt; e->haze_n = 8; e->r26 = (u8)(VDP_R26(yx) & 31); e->r27 = VDP_R27(yx); }
         /* n 行: SCREEN 5 の表示リングへ戻す(ここから VRAM の窓) */
         rn[0] = 0; rn[1] = 0x16; rn[2] = 25; rn[3] = 0x03; rn[4] = 8; rn[5] = 0x28;
-        rn[6] = 2; rn[7] = 0x3F; rn[8] = 23; rn[9] = (u8)(g_vscroll + g_roll); rn[10] = 5; rn[11] = spr_regs.r5a; rn[12] = 18; rn[13] = R18_SAVE;
-        e = stage_ev_raw(n, RAS_REGS | RAS_SCROLL | RAS_PAL | RAS_MARK);
+        rn[6] = 2; rn[7] = 0x3F; rn[8] = 23; rn[9] = (u8)(g_vscroll + g_roll); rn[10] = 18; rn[11] = R18_SAVE;   /* R#5 は上の帯と同じ値 */
+        mag_pair(rn + 12, g_mag & 1);                         /* 最後の組は R#1(RAS_BLANK が戻す値) */
+        /* ★境の行は表示を消して切り替える(HUD 帯と同じ RAS_BLANK)。行の途中で画面モードが替わり、境に点々の行が毎フレーム出ていた
+           (遊んでの指摘「走査線の境目付近のゴミ」) */
+        e = stage_ev_raw(n, RAS_REGS | RAS_SCROLL | RAS_PAL | RAS_MARK | RAS_BLANK | RAS_BLANK_ALL);
         if (e) {
             e->haze = rn; e->haze_n = 7; e->r26 = VDP_R26(nx); e->r27 = VDP_R27(nx);
             e->pidx = 1; e->prb = (u8)((sky[0] << 4) | sky[2]); e->pg = sky[1];
@@ -208,6 +211,9 @@ void ovl_bands(s16 sc, u16 nx) {
     if (s6_shadow_b > s6_shadow_a) {                          /* ★分割の行(n)より上へは並べられない */
         u8 i;
         s16 lim = (s16)(n + RAS_GAP);
+        /* ★影より上が空いていれば、上端で明るい色に戻す(影の下端が画面の下を越えると戻す項目が HUD の手前で切られ、暗い色が
+           次のフレームに残って、影が抜けた後も外壁と敵が中ボスまで暗いままだった) */
+        if (s6_shadow_a >= lim + 30) for (i = 0; i < 5; i++) stage_ev_pal_i((s16)(lim + i * 6), sh_idx[i], sh_lit[i]);
         for (i = 0; i < 5; i++) { s16 l = (s16)(s6_shadow_a + i * 6); stage_ev_pal_i(l < lim ? lim : l, sh_idx[i], sh_dark[i]); }
         for (i = 0; i < 5; i++) { s16 l = (s16)(s6_shadow_b + i * 6); stage_ev_pal_i(l < lim ? lim : l, sh_idx[i], sh_lit[i]); }
     }

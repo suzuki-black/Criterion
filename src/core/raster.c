@@ -568,6 +568,8 @@ void ras_apply_next(void) __naked {
         inc  hl
         inc  hl
         inc  hl
+        bit  3, d
+        jr   nz, 00048$            ; RAS_BLANK_ALL: 全部の組を消している間に書く(画面モードの切り替え)
         ld   a, e
         sub  #3
         jr   z, 00048$
