@@ -236,7 +236,7 @@ void ovl_bands(s16 sc, u16 nx) {
         if (!s2_far_zero && !g_roll) { stage_ev_scroll((s16)(40 - sc), fx); stage_ev_scroll((s16)(144 - sc), nx); }
     } else if (!g_calib) stage_ev_pal((s16)(0 - sc), space);  /* 試験では測定空間の白のまま */
     if (b2_lens(&lt, &lb)) {
-        stage_ev_haze(lt, 24, b2_lens_tbl_up);
+        stage_ev_haze(lt, 25, b2_lens_tbl_up);
         stage_ev_haze(lb, 24, b2_lens_tbl_dn);
     }
 }

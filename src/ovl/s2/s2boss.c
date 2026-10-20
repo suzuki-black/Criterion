@@ -139,7 +139,7 @@ static u8  fr, fr_drawn;
 static u8  sat_hp[NSAT], sat_t[NSAT];
 static s8  orb_x[64], orb_y[64];   /* 小衛星の軌道(b2_start で作る。★毎フレーム掛け算で出すと 8 個 × 2 回で重かった) */
 static u16 open_t;                 /* 吸い込みの周期(0..239 閉じている、240..359 開いて吸い込む) */
-u8 b2_lens_tbl_up[48], b2_lens_tbl_dn[48];
+u8 b2_lens_tbl_up[50], b2_lens_tbl_dn[48];
 static u16 lens_nx;               /* 表を作ったときの横位置(0xFFFF = まだ。b2_start で) */
 
 void b2_prepare(void) { gen_k = 0; gen_ph = 0; src_off = 0; }
@@ -212,6 +212,9 @@ static void lens_tables(u16 nx) {
         *pu++ = r26; *pu++ = a > 7 ? 7 : a;
         *pd++ = r26; *pd++ = c > 7 ? 7 : c;
     }
+    *pu++ = r26; *pu = b;                                     /* ★上の帯の最後の行(球の上端)でずれを 0 に戻す(最後の行の 7 ドットの
+                                                                 ずれが球の本体の行に残り、戦い始めると球が右へ 3 ドット跳んで縁取りと
+                                                                 ずれて見えた。遊んでの指摘「拡大する際の位置がずれる」) */
     lens_nx = nx;
 }
 
