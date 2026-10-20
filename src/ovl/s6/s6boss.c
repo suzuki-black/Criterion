@@ -145,22 +145,6 @@ static void mite_draw(void) {
         spr_put(x - 4, s6_sy(34) - 16, PAT_MITE, G_ENEMY, 0);
     }
 }
-static void eyes_draw(void) {      /* 影の帯の中の敵に目(色 8 は暗くしない) */
-    u8 i;
-    if (s6_shadow_b <= s6_shadow_a) return;
-    for (i = 0; i < MAX_ENEMY; i++) {
-        const Enemy *e = &g_enemy[i];
-        s16 y;
-        if (!e->type) continue;
-        y = PX(e->y);
-        if (y + 8 >= s6_shadow_a + 12 && y + 8 < s6_shadow_b) spr_put(PX(e->x), y, PAT_EYES, G_EBUL, 0);
-    }
-    for (i = 0; i < S6_NMITE; i++) {
-        s16 x = s6_sx(s6_mite[i]), y = s6_sy(34) - 16;
-        if (mt_hp[i] && x > -16 && x < 256 && y + 8 >= s6_shadow_a + 12 && y + 8 < s6_shadow_b) spr_put(x - 4, y, PAT_EYES, G_EBUL, 0);
-    }
-}
-
 /* ======== 数字の砲台 ======== */
 static const char *const num_str[12] = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII" };
 static const u8 num_len[12] = { 1, 2, 3, 2, 1, 2, 3, 4, 2, 1, 2, 3 };
@@ -203,10 +187,11 @@ static void num_vram(void) {       /* 1 フレーム 1 個(CPU で VRAM を書�
 /* ======== HOURGLASS ======== */
 #define HG_X  112                  /* 画面の左上(リングの見えない半分から寄せず、止めた画面に描く。中心は 160) */
 #define HG_S  (-68)                /* 上端の行(空の行。ブロック 23 と YJK の行を避ける) */
-static u8  hg_f, hg_shown, hg_chunk, hg_ph;
+static u8  hg_f, hg_shown, hg_chunk, hg_ph, hg_drawing, hg_hit;
 static u16 hg_t;
 static u8  b_t;
-void b6_mid_start(void) { hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_ph = 0; hg_t = 0; g_boss_state = BS_ENTER; g_boss_hp = 16; b_t = 0; }
+static const s8 hg_ring[8][2] = { { 24, 0 }, { 17, 17 }, { 0, 24 }, { -17, 17 }, { -24, 0 }, { -17, -17 }, { 0, -24 }, { 17, -17 } };
+void b6_mid_start(void) { hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_drawing = 0; hg_hit = 0; hg_ph = 0; hg_t = 0; g_boss_state = BS_ENTER; g_boss_hp = 16; b_t = 0; }
 static void hg_update(void) {
     s16 cy = s6_sy(HG_S + HG_N / 2), cx = HG_X + HG_N / 2;
     if (g_boss_state == BS_ENTER) { if (rj >= RJ_END && hg_shown == 0) g_boss_state = BS_FIGHT; return; }
@@ -217,18 +202,26 @@ static void hg_update(void) {
         return;
     }
     hg_t++;
-    if (hg_ph == 0) {                                         /* 止まっている: 括れから砂がこぼれる */
-        if (hg_t < 100 && !(hg_t & 7)) enemy_bullet(FX(cx - 2 + (rnd8() & 3)), FX(cy + 4), (s16)((s16)(rnd8() & 15) - 8), 20 + (rnd8() & 7));
+    if (hg_hit) hg_hit--;
+    if (hg_ph == 0) {                                         /* 止まっている: 括れから砂がこぼれ、上下の膨らみから自機を狙う */
+        /* ★真下に砂を落とすだけだった(遊んでの指摘「ずっと真下に球を吐いている」)。砂は前半だけ、狙い撃ちと回り終わりの 8 方向を足す */
+        if (hg_t < 64 && !(hg_t & 15)) enemy_bullet(FX(cx - 2 + (rnd8() & 3)), FX(cy + 4), (s16)((s16)(rnd8() & 15) - 8), 20 + (rnd8() & 7));
+        if (hg_t == 30 || hg_t == 80) { enemy_shoot(FX(cx), FX(cy - 28)); enemy_shoot(FX(cx), FX(cy + 28)); }
         if (hg_t >= 120) { hg_ph = 1; hg_t = 0; }
     } else {                                                  /* 180° 回る(コマ 1..4、13 フレームずつ)→ 0 */
         u8 f = 1;
         u16 tt = hg_t;
         while (tt >= 13) { tt -= 13; f++; }                   /* hg_t / 13(割り算はライブラリ呼び出し) */
-        if (f >= HG_NF) { f = 0; hg_ph = 0; hg_t = 0; }
+        if (f >= HG_NF) {                                     /* 回り終わり: 括れから 8 方向へ砂を散らす */
+            u8 k;
+            f = 0; hg_ph = 0; hg_t = 0;
+            for (k = 0; k < 8; k++) enemy_bullet(FX(cx), FX(cy), hg_ring[k][0], hg_ring[k][1]);
+        }
         hg_f = f;
         if (f >= 2 && f <= 3) {                               /* 括れ(弱点)が横を向いている(73°・107°。26 フレーム) */
             g_boss_aim = cy;
             if (shot_rect(cx - 12, cy - 12, 24, 24)) {
+                hg_hit = 4;                                   /* ★当たった印(当てても光らなかった。遊んでの指摘) */
                 if (g_boss_hp) g_boss_hp--;
                 if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(3000); return; }
             }
@@ -245,6 +238,10 @@ static void hg_vram(void) {        /* コマが替わったら 16 行ずつ 6 �
         return;
     }
     if (hg_shown == f && hg_chunk == 0) return;
+    /* ★写している途中でコマが替わったら頭から写し直す(続きの行だけ次のコマで写し、上の行が前のコマのまま残って、
+       立っている砂時計と回った砂時計が重なって見えた。遊んでの指摘) */
+    if (hg_chunk && f != hg_drawing) hg_chunk = 0;
+    hg_drawing = f;
     hg_slot((u8)(f * 6 + hg_chunk));
     ring_cmd(hg_sx, hg_sy, HG_X, (s16)(s6_sy(HG_S) + hg_chunk * 16), HG_N, 16, 0, 0);
     if (++hg_chunk >= HG_N / 16) { hg_chunk = 0; hg_shown = f; }
@@ -265,7 +262,7 @@ static const u8 gn_len[2] = { GN_R, 64 };
 static s16 old_x[6], old_y[6], old_dx[6], old_dy[6];
 static u8  old_n;
 void b6_boss_start(void) {
-    gn_a[0] = 0x3000; gn_a[1] = 0x1000; gn_spd = 48; gn_turn = 0; gn_lap = 0; old_n = 0;
+    gn_a[0] = 0x3000; gn_a[1] = 0x1000; gn_spd = 48; gn_turn = 0; gn_lap = 0; old_n = 0; hg_hit = 0;
     gn_nh = RECAL ? 2 : 1;                                  /* 再校正版: 長針と短針 */
     g_boss_state = BS_ENTER; g_boss_hp = 40; b_t = 0;
 }
@@ -302,7 +299,9 @@ static void gn_update(void) {
     }
     /* 根元: 弱点。針の向きへ撃つ */
     g_boss_aim = GN_CY;
+    if (hg_hit) hg_hit--;
     if (shot_rect(GN_CX - 9, GN_CY - 9, 18, 18)) {
+        hg_hit = 4;                                           /* 当たった印(火花は b6_draw) */
         if (g_boss_hp) g_boss_hp--;
         if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(6000); return; }
     }
@@ -324,7 +323,8 @@ static void gn_hand(u8 h) {        /* 針 h を平行線で(長針 2 本・短�
         s16 x0 = GN_CX, y0 = GN_CY;
         if ((cs < 0 ? -cs : cs) > (sn < 0 ? -sn : sn)) y0 += o; else x0 += o;
         if (y0 + ey < GN_Y0 || y0 + ey > GN_Y1 || x0 + ex < 0 || x0 + ex > 255) continue;
-        gq_line((u16)x0, (u16)(y0 + 68), ex, ey, h ? 13 : 2);     /* リングの行 = 画面の行 + 68(ページ 0) */
+        gq_line((u16)x0, (u16)(y0 + 68), ex, ey, h ? 13 : 7);     /* リングの行 = 画面の行 + 68(ページ 0)。★長針は明るい色 7(色 2 は
+                                                                     紺の空にほぼ溶けて、触れると死ぬ針が見えなかった) */
         old_x[old_n] = x0; old_y[old_n] = y0; old_dx[old_n] = ex; old_dy[old_n] = ey; old_n++;
     }
 }
@@ -367,7 +367,9 @@ void b6_update(void) {
 }
 
 void b6_draw(void) {
-    if (g_sec == SEC6_WALL || g_sec == SEC6_SHADOW) { mite_draw(); eyes_draw(); }
+    if (g_sec == SEC6_BOSS && hg_hit) spr_put(GN_CX - 8, GN_CY - 8, PAT_EXPL1, G_MISC, CS_EXPL);   /* 根元に当たった火花 */
+    if (g_sec == SEC6_MID && hg_hit) spr_put(HG_X + HG_N / 2 - 8, (s16)(s6_sy(HG_S + HG_N / 2) - 8), PAT_EXPL1, G_MISC, CS_EXPL);   /* 括れに当たった火花 */
+    if (g_sec == SEC6_WALL || g_sec == SEC6_SHADOW) mite_draw();   /* ★影の中の敵を目だけにする演出はやめた(敵が消えたように見えた。遊んでの指摘) */
 }
 
 void b6_vram(void) {

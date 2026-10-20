@@ -1,6 +1,6 @@
 /* s6.c — 6 面「日時計要塞」のオーバレイ: 区間・画面分割・影・当たり(指示書 5.6)。
    宇宙 → 衛星の上へ(カメラ s = -120)。上 48 ラインを SCREEN 12(YJK の惑星、ゆっくり横へ)、下を SCREEN 5 の
-   プレイエリアに分割する → 外壁(歯車・砂粒虫)→ 影の区間(影の帯の中は色を暗い組に替え、敵は目だけが光る)→
+   プレイエリアに分割する → 外壁(歯車・砂粒虫)→ 影の区間(影の帯の中は空と外壁の面を暗くする)→
    中ボス HOURGLASS → 文字盤(数字の砲台)→ ボス GNOMON(針を LINE で毎フレーム描き替え)→ 時刻が止まる。
    ・分割(タイトルと同じ): 帰線の 244 行で SCREEN 12 へ、48 行で SCREEN 5 へ戻す(RAS_MARK)。★上の帯の間は CPU の
      VRAM の書き込みも VDP のコマンドも化けるので、VRAM の仕事は 48 行より後(main.c の wait_vram_window)だけ。
@@ -30,10 +30,13 @@ s16 s6_shadow_a, s6_shadow_b;
 static u8  regs_top[2][16], regs_n[2][16];
 
 static const u8 sky[3] = { 1, 1, 3 };
-/* 影の中の暗い組(色 1 空 / 4・5・7 外壁 / 12 敵の体) */
-static const u8 sh_idx[5] = { 1, 4, 5, 7, 12 };
-static const u8 sh_dark[5][3] = { { 0, 0, 1 }, { 1, 1, 1 }, { 2, 1, 1 }, { 2, 2, 1 }, { 0, 0, 0 } };
-static const u8 sh_lit[5][3] = { { 1, 1, 3 }, { 5, 4, 2 }, { 6, 5, 3 }, { 7, 7, 5 }, { 6, 5, 2 } };
+/* 影の中の暗い組(色 1 空 / 5 外壁の面)。★敵の色は変えない(体を黒にして目だけ光らせていた間は、敵が消えて弾だけ見えた)。
+   差し替える色を 2 つにした(5 色を 6 行ずつずらして替えていた間は、項目が表の上限に届いて HUD 帯の切り替えが崩れ、
+   中ボスの前の数秒、HUD 帯がゴミになった。背景も部分的に黒くなったり戻ったりした。遊んでの指摘) */
+#define SH_N 2
+static const u8 sh_idx[SH_N] = { 1, 5 };
+static const u8 sh_dark[SH_N][3] = { { 0, 0, 1 }, { 3, 2, 1 } };
+static const u8 sh_lit[SH_N][3] = { { 1, 1, 3 }, { 6, 5, 3 } };
 
 s16 s6_sx(u16 col) { return (s16)((u16)((g_w0 + col) << 3) - g_wx); }
 s16 s6_sy(s16 s) { return (s16)(s - g_scam); }
@@ -207,15 +210,16 @@ void ovl_bands(s16 sc, u16 nx) {
         }
     }
     (void)sc;
-    /* 影: 帯の上端から 6 行ずつ 1 色ずつ暗くし、下端から 1 色ずつ戻す(半影) */
+    /* 影: 帯の上端で空と外壁の面を暗くし、下端で戻す */
     if (s6_shadow_b > s6_shadow_a) {                          /* ★分割の行(n)より上へは並べられない */
         u8 i;
-        s16 lim = (s16)(n + RAS_GAP);
+        s16 lim = (s16)(n + 12);                              /* ★境の項目(RAS_BLANK)は 5 行ほどかかるので 12 行あける(6 行後に置いて
+                                                                 いた間は仕込み損ね、そのフレームの残りの項目が抜けて HUD 帯がゴミになった) */
         /* ★影より上が空いていれば、上端で明るい色に戻す(影の下端が画面の下を越えると戻す項目が HUD の手前で切られ、暗い色が
            次のフレームに残って、影が抜けた後も外壁と敵が中ボスまで暗いままだった) */
-        if (s6_shadow_a >= lim + 30) for (i = 0; i < 5; i++) stage_ev_pal_i((s16)(lim + i * 6), sh_idx[i], sh_lit[i]);
-        for (i = 0; i < 5; i++) { s16 l = (s16)(s6_shadow_a + i * 6); stage_ev_pal_i(l < lim ? lim : l, sh_idx[i], sh_dark[i]); }
-        for (i = 0; i < 5; i++) { s16 l = (s16)(s6_shadow_b + i * 6); stage_ev_pal_i(l < lim ? lim : l, sh_idx[i], sh_lit[i]); }
+        if (s6_shadow_a >= lim + 12) for (i = 0; i < SH_N; i++) stage_ev_pal_i((s16)(lim + i * 6), sh_idx[i], sh_lit[i]);
+        for (i = 0; i < SH_N; i++) { s16 l = (s16)(s6_shadow_a + i * 6); stage_ev_pal_i(l < lim ? lim : l, sh_idx[i], sh_dark[i]); }
+        for (i = 0; i < SH_N; i++) { s16 l = (s16)(s6_shadow_b + i * 6); stage_ev_pal_i(l < lim ? lim : l, sh_idx[i], sh_lit[i]); }
     }
     b6_bands();
 }
