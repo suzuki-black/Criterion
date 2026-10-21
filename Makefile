@@ -170,7 +170,7 @@ OVL_s8b_HDR    := stage
 OVL_ed_RELS    := $(patsubst src/ovl/ed/%.c,$(BUILD)/ov_ed_%.rel,$(wildcard src/ovl/ed/*.c))
 OVL_ed_HDR     := stage
 OVL_s1_HDR     := stage
-OVL_SIZE_FIRST := s1_s1 s1_boss   # 1 面のオーバレイの空き(遠景。重い経路の pawn.c は速さのまま)
+OVL_SIZE_FIRST := s1_s1 s1_boss s5_s5 s5_s5boss   # 1 面・5 面のオーバレイの空き(遠景・砲台の撃つ条件。重い経路の pawn.c は速さのまま)
 OVL_BINS := $(OVLS:%=$(BUILD)/ovl_%.bin)
 
 $(BUILD)/ov_title_%.rel: src/ovl/title/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
@@ -188,7 +188,7 @@ $(BUILD)/ov_s4_%.rel: src/ovl/s4/%.c src/ovl/s4/s4.h $(HDRS) src/game/game.h $(G
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ov_s5_%.rel: src/ovl/s5/%.c src/ovl/s5/s5.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(OVL_SIZE_FIRST),s5_$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ov_s6_%.rel: src/ovl/s6/%.c src/ovl/s6/s6.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@

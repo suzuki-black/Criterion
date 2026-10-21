@@ -81,7 +81,8 @@ static void aa_update(void) {
         if (!aa_hp[i] || x < -8 || x > 264) continue;
         if (!((t + i) & 7)) aa_dir[i] = best_dir(plx() - x, ply() - y, aa_ux, aa_uy, 8);
         if ((LB_NOW ? (aa_hp[i] = 1) : shot_rect(x - 7, y - 7, 14, 14)) && --aa_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(30); continue; }
-        if (((t + i * 29) & 127) == 0 && x > 16 && x < 240)
+        /* ★画面の中にいるときだけ撃つ(縦を見ていなかったので、船体の下へ潜った後も画面の上の外の甲板から弾が降ってきた。遊んでの指摘) */
+        if (((t + i * 29) & 127) == 0 && x > 16 && x < 240 && y > 8 && y < PLAY_H)
             enemy_bullet(FX(x), FX(y), (s16)(aa_ux[aa_dir[i]] << 1), (s16)(aa_uy[aa_dir[i]] << 1));
     }
 }
@@ -110,7 +111,7 @@ static void tur_update(void) {
             tu_shown[i] = 0xFE;                               /* 砲身を吹き飛ばす(空で塗る) */
             continue;
         }
-        if (((t + i * 37) & 63) == 0 && x > 0 && x < 224)
+        if (((t + i * 37) & 63) == 0 && x > 0 && x < 224 && cy > 8 && cy < PLAY_H)   /* 画面の中だけ(機銃と同じ) */
             enemy_bullet(FX(cx + (tu_ux[tu_dir[i]] >> 1)), FX(cy + (tu_uy[tu_dir[i]] >> 1)),
                          (s16)(tu_ux[tu_dir[i]] * 3 >> 1), (s16)(tu_uy[tu_dir[i]] * 3 >> 1));
     }
@@ -139,6 +140,8 @@ static void tur_vram(void) {
 
 /* ======== 吊り砲台と爆雷(艦底) ======== */
 static u8 hg_hp[S5_NHANG], hg_dir[S5_NHANG];
+static s16 dc_x, dc_y;             /* 爆雷を落とした所(光らせる) */
+static u8  dc_t;
 static void hang_update(void) {
     u8 i;
     for (i = 0; i < S5_NHANG; i++) {
@@ -151,13 +154,18 @@ static void hang_update(void) {
         if (((t + i * 23) & 63) == 0 && x > 16 && x < 240)
             enemy_bullet(FX(x), FX(y + 4), (s16)((hg_dir[i] - 1) * 24), 36);
     }
+    if (dc_t) dc_t--;
     if (g_sec == SEC5_UNDER && !(t & 31)) {                   /* 爆雷: 艦底からゆっくり落ちる */
-        s16 x = (s16)(32 + (rnd8() & 127) + (rnd8() & 63));
-        enemy_bullet(FX(x), FX(s5_sy(S5_HULL_B + 2)), -8, 20);
+        s16 x = (s16)(32 + (rnd8() & 127) + (rnd8() & 63)), y = s5_sy(S5_HULL_B + 2);
+        if (y > 0 && y < PLAY_H - 16) {                       /* ★艦底が画面にあるときだけ。落とす所を光らせる(どこから来たか分からなかった) */
+            enemy_bullet(FX(x), FX(y), -8, 20);
+            dc_x = x; dc_y = y; dc_t = 8;
+        }
     }
 }
 static void hang_draw(void) {
     u8 i;
+    if (dc_t) spr_put(dc_x - 8, dc_y - 8, PAT_EXPL1, G_MISC, CS_EXPL);   /* 爆雷の落とし口の光 */
     for (i = 0; i < S5_NHANG; i++) {
         s16 x = s5_sx(s5_hang[i]) + 4;
         if (!hg_hp[i] || x < -8 || x > 264) continue;
