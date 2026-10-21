@@ -286,18 +286,19 @@ SONGS.append(Song('M10', 140, {
 }, user=GLASS))
 
 # ---- M11 The Prototype(8 面): B 短調、タイトルの動機を短調で、合唱のパッド ----
+# ★遊んでの指摘「1 オクターブ低くて OK。音を出すのがつらそう」で旋律とアルペジオを 1 オクターブ下げた
 m11 = ['Bm', 'G', 'A', 'F#m', 'Bm', 'G', 'Em', 'F#', 'G', 'A', 'Bm', 'Bm', 'Em', 'F#', 'Bm', 'F#7']
 SONGS.append(Song('M11', 152, {
-    'FM0': 'L @0 v13 q2 o4b4 o5f+4 b4 o6c+4 | d2 c+4 o5b4 | a4. b8 o6c+4 e4 | c+1 | '
-           'o4b4 o5f+4 b4 o6c+4 | d2 e4 f+4 | g4. f+8 e4 d4 | c+2 o5a+2 | '
-           'o5b4 o6d4 g4 f+4 | e4 c+4 a4 g4 | f+2. d4 | b1 | g4 e4 o6c+4 o5b4 | a+4 o6c+4 e4 f+4 | d4. c+8 o5b4 f+4 | a+2 f+2',
+    'FM0': 'L @0 v13 q2 o3b4 o4f+4 b4 o5c+4 | d2 c+4 o4b4 | a4. b8 o5c+4 e4 | c+1 | '
+           'o3b4 o4f+4 b4 o5c+4 | d2 e4 f+4 | g4. f+8 e4 d4 | c+2 o4a+2 | '
+           'o4b4 o5d4 g4 f+4 | e4 c+4 a4 g4 | f+2. d4 | b1 | g4 e4 o5c+4 o4b4 | a+4 o5c+4 e4 f+4 | d4. c+8 o4b4 f+4 | a+2 f+2',
     'FM1': 'L @1 v10 ' + pad(m11, 0, 54),
     'FM2': 'L @1 v10 ' + pad(m11, 1, 58),
     'FM3': 'L @1 v9 ' + pad(m11, 2, 62),
     'FM4': 'L @13 v13 q3 ' + bass(m11, 2, (0, 0, 12, 0, 0, 12, 0, 7), 12),
     'RHY': 'PP02 L ' + rep('bh8 h8 sh8 h8 bh8 bh8 sh8 h8', 7) + ' bc8 h8 sh8 h8 s16 s16 s16 s16 sc8 s8 | '
            + rep('bh8 h8 sh8 h8 bh8 bh8 sh8 h8', 7) + ' bc8 b8 s8 s8 s16 s16 s16 s16 sc4',
-    'PSGA': 'L @1 v9 ' + arp(m11, 66, 6, (0, 1, 2, 3)),
+    'PSGA': 'L @1 v9 ' + arp(m11, 54, 6, (0, 1, 2, 3)),
 }, user=TPT))
 
 # ---- M12 Tolerance Check(中ボス、全面共通): 半音ずつ上がる低音 ----
@@ -495,7 +496,7 @@ def _psg_double(mml, env=0, drop=4, oct=0, tune=False):
 # 曲ごとの重ね方(無い曲は既定: 減衰なし・4 段下げ・同じ高さ)。聴き比べで決めた:
 #   M09 = ハープシコードはすぐ減衰するので、PSG も 3 フレームに 1 段ずつ下げる(減衰なしでは PSG だけが鳴り残った)
 #   M10 = 旋律が低く小さい(o4・v11)ので、下げるのは 1 段だけ(4 段では埋もれて変わって聞こえなかった)
-PSG_DOUBLE = {'M09': {'env': 6}, 'M10': {'drop': 1}, 'M10X': {'drop': 1}, 'M14C': {'tune': True}}
+PSG_DOUBLE = {'M09': {'env': 6}, 'M10': {'drop': 1}, 'M10X': {'drop': 1}, 'M11': {'tune': True}, 'M14C': {'tune': True}}
 
 _RT = _re.compile(r'\s+|\||([bstch]+)(%\d+|\d+)?(\.*)|(r)(%\d+|\d+)?(\.*)|(L)|v(\d+)|P(\w+)|T(\d+)')
 def _ticks(num, dots):
