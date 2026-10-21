@@ -1,6 +1,6 @@
 /* s6.c — 6 面「日時計要塞」のオーバレイ: 区間・画面分割・影・当たり(指示書 5.6)。
    宇宙 → 衛星の上へ(カメラ s = -120)。上 48 ラインを SCREEN 12(YJK の惑星、ゆっくり横へ)、下を SCREEN 5 の
-   プレイエリアに分割する → 外壁(歯車・砂粒虫)→ 影の区間(影の帯の中は空と外壁の面を暗くする)→
+   プレイエリアに分割する → 外壁(歯車・砂粒虫)→ 影の区間→
    中ボス HOURGLASS → 文字盤(数字の砲台)→ ボス GNOMON(針を LINE で毎フレーム描き替え)→ 時刻が止まる。
    ・分割(タイトルと同じ): 帰線の 244 行で SCREEN 12 へ、48 行で SCREEN 5 へ戻す(RAS_MARK)。★上の帯の間は CPU の
      VRAM の書き込みも VDP のコマンドも化けるので、VRAM の仕事は 48 行より後(main.c の wait_vram_window)だけ。
@@ -26,17 +26,9 @@ static u16 sec_wx, sec_t;
 static u8  yjk_row;                /* 読んだ YJK の行(0..95: 偶数バイト 48 行 → 奇数バイト 48 行) */
 static u16 yjk_x;                  /* 惑星の横位置(1/8 ドット) */
 static u8  yjk_stop;
-s16 s6_shadow_a, s6_shadow_b;
 static u8  regs_top[2][16], regs_n[2][16];
 
 static const u8 sky[3] = { 1, 1, 3 };
-/* 影の中の暗い組(色 1 空 / 5 外壁の面)。★敵の色は変えない(体を黒にして目だけ光らせていた間は、敵が消えて弾だけ見えた)。
-   差し替える色を 2 つにした(5 色を 6 行ずつずらして替えていた間は、項目が表の上限に届いて HUD 帯の切り替えが崩れ、
-   中ボスの前の数秒、HUD 帯がゴミになった。背景も部分的に黒くなったり戻ったりした。遊んでの指摘) */
-#define SH_N 2
-static const u8 sh_idx[SH_N] = { 1, 5 };
-static const u8 sh_dark[SH_N][3] = { { 0, 0, 1 }, { 3, 2, 1 } };
-static const u8 sh_lit[SH_N][3] = { { 1, 1, 3 }, { 6, 5, 3 } };
 
 s16 s6_sx(u16 col) { return (s16)((u16)((g_w0 + col) << 3) - g_wx); }
 s16 s6_sy(s16 s) { return (s16)(s - g_scam); }
@@ -70,7 +62,7 @@ void ovl_init(void) {
     g_blk_skip = 6;                                           /* リングの 0..47 行は YJK */
     g_bands_all = 1;
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; g_col_rev = 0;
-    yjk_row = 0; yjk_x = 0; yjk_stop = 0; s6_shadow_a = s6_shadow_b = 0;
+    yjk_row = 0; yjk_x = 0; yjk_stop = 0;
     palette();
     b6_init();
     if (g_calib) {                                            /* 7 面の試験 06: 分割なしで指針の間へ降りて GNOMON(針 2 本) */
@@ -117,11 +109,9 @@ void ovl_update(void) {
         }
         break;
     case SEC6_WALL:   if (c + 32 >= S6_COL_SHADOW + 8) enter(SEC6_SHADOW); break;
-    case SEC6_SHADOW:                                         /* 指針の影が上から下へ横切っていく */
-        s6_shadow_a = (s16)(SPLIT_H - 60 + (sec_t >> 2));
-        s6_shadow_b = (s16)(s6_shadow_a + 70);
-        if (s6_shadow_a > PLAY_H) { s6_shadow_a = s6_shadow_b = 0; }
-        if (c + 24 >= S6_COL_MID) { s6_shadow_a = s6_shadow_b = 0; g_scroll_speed = 0; enter(SEC6_MID); }
+    case SEC6_SHADOW:                                         /* ★影の帯(空の色を差し替える)は外した。軽くした後も「パレットの
+                                                                 変換に失敗したような色の変わり方」に見えた(遊んでの指摘) */
+        if (c + 24 >= S6_COL_MID) { g_scroll_speed = 0; enter(SEC6_MID); }
         break;
     case SEC6_MID:
     case SEC6_BOSS:
@@ -210,16 +200,5 @@ void ovl_bands(s16 sc, u16 nx) {
         }
     }
     (void)sc;
-    /* 影: 帯の上端で空と外壁の面を暗くし、下端で戻す */
-    if (s6_shadow_b > s6_shadow_a) {                          /* ★分割の行(n)より上へは並べられない */
-        u8 i;
-        s16 lim = (s16)(n + 12);                              /* ★境の項目(RAS_BLANK)は 5 行ほどかかるので 12 行あける(6 行後に置いて
-                                                                 いた間は仕込み損ね、そのフレームの残りの項目が抜けて HUD 帯がゴミになった) */
-        /* ★影より上が空いていれば、上端で明るい色に戻す(影の下端が画面の下を越えると戻す項目が HUD の手前で切られ、暗い色が
-           次のフレームに残って、影が抜けた後も外壁と敵が中ボスまで暗いままだった) */
-        if (s6_shadow_a >= lim + 12) for (i = 0; i < SH_N; i++) stage_ev_pal_i((s16)(lim + i * 6), sh_idx[i], sh_lit[i]);
-        for (i = 0; i < SH_N; i++) { s16 l = (s16)(s6_shadow_a + i * 6); stage_ev_pal_i(l < lim ? lim : l, sh_idx[i], sh_dark[i]); }
-        for (i = 0; i < SH_N; i++) { s16 l = (s16)(s6_shadow_b + i * 6); stage_ev_pal_i(l < lim ? lim : l, sh_idx[i], sh_lit[i]); }
-    }
     b6_bands();
 }

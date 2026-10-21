@@ -134,7 +134,7 @@ static void mite_update(void) {
         s16 x = s6_sx(s6_mite[i]), y = s6_sy(34) - 16;
         if (!mt_hp[i] || x < -16 || x > 256) continue;
         if ((LB_NOW ? (mt_hp[i] = 1) : shot_rect(x - 4, y, 16, 16)) && --mt_hp[i] == 0) { fx_spawn(FX(x + 4), FX(y + 8)); score_add(50); continue; }
-        if (((t + i * 21) & 63) == 0 && x > 8 && x < 240) enemy_bullet(FX(x + 4), FX(y + 12), -6, 22);   /* 砂粒 */
+        if (((t + i * 21) & 63) == 0 && x > 8 && x < 240) enemy_shoot(FX(x + 4), FX(y + 4));   /* 砂粒。★自機を狙う(真下の壁へ落とすだけで意味が分からなかった。遊んでの指摘) */
     }
 }
 static void mite_draw(void) {

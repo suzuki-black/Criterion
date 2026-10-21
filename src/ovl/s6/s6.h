@@ -13,7 +13,6 @@ enum { SEC6_AIR = 44, SEC6_SINK, SEC6_WALL, SEC6_SHADOW, SEC6_MID, SEC6_DIAL, SE
 s16  s6_sx(u16 col);
 s16  s6_sy(s16 s);
 u16  s6_col_at(s16 sx);
-extern s16 s6_shadow_a, s6_shadow_b;   /* 影の帯(画面の行。a >= b なら無し) */
 
 /* s6boss.c */
 void b6_init(void);
