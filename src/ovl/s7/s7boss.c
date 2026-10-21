@@ -10,6 +10,7 @@
 #include "spr.h"
 #include "vdp.h"
 #include "ghost.h"
+#include "sprite_data.h"
 
 #define PAT_PAN    44
 #define PAT_WEIGHT 45
@@ -25,7 +26,7 @@ static s8  tilt_drawn;
 static u8  drawn;                  /* 竿を描いてある */
 static u8  expose;                 /* 弱点が出ている残り(フレーム / 4) */
 static s16 wy;                     /* 分銅の落下(ドット、0 = 皿の上) */
-static u8  b_t, post, fire_t;
+static u8  b_t, post, fire_t, hit_t;
 
 static const u8 pat_pan[32] = {    /* 皿(16x16 の下半分に) */
     0,0,0,0,0,0,0,0,0x80,0xC0,0x7F,0x3F,0x1F,0,0,0, 0,0,0,0,0,0,0,0,0x01,0x03,0xFE,0xFC,0xF8,0,0,0 };
@@ -69,7 +70,7 @@ static u8 level(void) {            /* 強化の段階の合計(測定値) */
 
 void b7_init(void) { t = 0; spr_loaded = 0; drawn = 0; post = 0; }
 void b7_start(void) {
-    g_boss_state = BS_ENTER; g_boss_hp = 30; tilt = tilt_to = 0; tilt_drawn = 0x7F; expose = 0; wy = 0; b_t = 0; fire_t = 0;
+    g_boss_state = BS_ENTER; g_boss_hp = 30; tilt = tilt_to = 0; tilt_drawn = 0x7F; expose = 0; wy = 0; b_t = 0; fire_t = 0; hit_t = 0;
 }
 
 void b7_update(void) {
@@ -91,6 +92,7 @@ void b7_update(void) {
         return;
     }
     shots_prepare();
+    if (hit_t) hit_t--;
     lv = level();
     if (g_boss_dmg) { g_boss_dmg = 0; tilt_to = 24; expose = 120; wy = 1; }   /* LIMIT BREAK: 竿が跳ね上がり分銅が落ちる */
     if (expose) {
@@ -98,6 +100,7 @@ void b7_update(void) {
         if (wy && wy < 200) wy = (s16)(wy + (wy >> 3) + 1);
         g_boss_aim = CY;
         if (shot_rect(CX - 10, CY - 10, 20, 20)) {
+            hit_t = 4;                                        /* ★当たった印(当てても光らず、どこで傷が入るか分からなかった。遊んでの指摘) */
             if (g_boss_hp) g_boss_hp--;
             if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(8000); return; }
         }
@@ -124,7 +127,8 @@ void b7_draw(void) {
     spr_put(CX + ARM - 8, CY + tilt + 8, PAT_PAN, G_ENEMY, 0);
     for (i = 0; i < lv && i < 4; i++) spr_put(CX - ARM - 14 + i * 7, CY - tilt + 2 - (i & 1) * 6, PAT_ICON, G_MISC, CS_CURSOR);
     if (wy < 190) spr_put(CX + ARM - 8, CY + tilt - 2 + wy, PAT_WEIGHT, G_ENEMY, 0);
-    if (expose && (t & 4)) spr_put(CX - 8, CY - 8, PAT_ICON, G_MISC, CS_EXPL);   /* 支点の核 */
+    if (hit_t) spr_put(CX - 8, CY - 8, PAT_EXPL1, G_MISC, CS_EXPL);   /* 核に当たった火花 */
+    else if (expose && (t & 4)) spr_put(CX - 8, CY - 8, PAT_ICON, G_MISC, CS_EXPL);   /* 支点の核 */
 }
 
 /* 竿: 傾きが変わったら、前の 3 本を空の色(1)で消して描き直す。リングの行 = 画面の行 + g_vscroll */

@@ -29,6 +29,8 @@ extern u16 g_frame_t0;
 #define ESC_LEN 2560
 
 static u16 sec_t, sec_wx, t;
+static s16 hit_x, hit_y;           /* ★当たった所の火花(当てても光らず、傷が入っているか分からなかった。遊んでの指摘) */
+static u8  hit_t;
 static u8  b_t;
 static const u8 inside[3] = { 1, 1, 2 }, flash[3] = { 7, 7, 7 };
 
@@ -129,6 +131,7 @@ static void bell_update(void) {
     if (!(t & 63)) enemy_shoot(FX(CX), FX(CY));
     g_boss_aim = CY;
     if (shot_rect(CX - 36, CY - 36, 72, 72)) {
+        hit_x = CX; hit_y = CY; hit_t = 4;
         if (g_boss_hp) g_boss_hp--;
         if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(4000); }
     }
@@ -189,6 +192,7 @@ static void rod_update(void) {
     }
     g_boss_aim = CY;
     if (shot_rect(CX - 9, CY - 9, 18, 18)) {
+        hit_x = CX; hit_y = CY; hit_t = 4;
         if (g_boss_hp) g_boss_hp--;
         if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(5000); }
     }
@@ -270,7 +274,10 @@ static void ring_update(void) {
         if (!tt_hp[k]) continue;
         left++;
         if (g_boss_aim < 0) g_boss_aim = y;
-        if (shot_rect(x - 8, y - 8, 16, 16) && --tt_hp[k] == 0) fx_spawn(FX(x), FX(y));
+        if (shot_rect(x - 8, y - 8, 16, 16)) {
+            hit_x = x; hit_y = y; hit_t = 4;
+            if (--tt_hp[k] == 0) fx_spawn(FX(x), FX(y));
+        }
         if (((t + k * 11) & 127) == 0) enemy_bullet(FX(x), FX(y), (s16)((CX - x) >> 2), (s16)((CY - y) >> 2));   /* 内へ */
     }
     g_boss_hp = (u8)(left * 3 + 1);
@@ -327,7 +334,7 @@ static void boss_form(u8 sec) {
 
 void ovl_init(void) {
     g_ter.lo = s8_floor; g_ter.hi = s8_ceil; g_ter.lo_add = 0; g_ter.ncol = S8_COLS;   /* DROP の爆雷が這う床・天井 */
-    g_boss_state = BS_NONE; t = 0; rj = 0; rph = 0; rrow = 0; fo = fi = 0; ln = 0; ang = 0;
+    g_boss_state = BS_NONE; t = 0; rj = 0; rph = 0; rrow = 0; fo = fi = 0; ln = 0; ang = 0; hit_t = 0;
     g_sec = SEC8_CORE; sec_t = 0; sec_wx = g_wx;
     enemy_waves(WAVES_AIR);
 }
@@ -394,6 +401,7 @@ void ovl_logic(void) {
     }
 }
 void ovl_draw(void) {
+    if (hit_t) { hit_t--; if (g_boss_state == BS_FIGHT) spr_put(hit_x - 8, hit_y - 8, PAT_EXPL1, G_MISC, CS_EXPL); }
     if (g_sec == SEC8_BOSS3 && g_boss_state == BS_FIGHT) ring_draw();
     if (g_sec == SEC8_ESCAPE) {                               /* 脱出: 光の流線が後ろへ飛ぶ(最高速の手応え) */
         u8 i;
