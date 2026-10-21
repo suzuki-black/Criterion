@@ -235,7 +235,9 @@ void ovl_bands(s16 sc, u16 nx) {
         if (!g_calib) stage_ev_pal((s16)(0 - sc), space);
         if (!s2_far_zero && !g_roll) { stage_ev_scroll((s16)(40 - sc), fx); stage_ev_scroll((s16)(144 - sc), nx); }
     } else if (!g_calib) stage_ev_pal((s16)(0 - sc), space);  /* 試験では測定空間の白のまま */
-    if (b2_lens(&lt, &lb)) {
+    /* ★試験(白い部屋)では重力レンズを出さない(先に並ぶ部屋の空の帯の後ろへ押し出されて球の行に掛かり、球の上が横にずれて
+       縁取りと本体がずれて見えた。遊んでの指摘) */
+    if (!g_calib && b2_lens(&lt, &lb)) {
         stage_ev_haze(lt, 25, b2_lens_tbl_up);
         stage_ev_haze(lb, 24, b2_lens_tbl_dn);
     }
