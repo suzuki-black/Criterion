@@ -95,7 +95,9 @@ static void terrain(void) {
         u8 under = (s16)(PLAY_H - 16) - (s16)(S5_HULL_B - g_scam) >= 20;
         if (s5_kind[k] == 2) side = 2;
         else if (s5_kind[k] == 0) side = under && py > S5_HULL_B - 30 ? 1 : 0;
-        else if (side == 2) side = under && py >= 70 ? 1 : 0;   /* 室内から出た */
+        else if (side == 2) side = 0;                         /* 室内から出た: 甲板の側へ(★この先はボスのためにカメラが甲板の高さへ
+                                                                 上がり、船底の下の通り道は 12 ドットまで狭まる。低く出ると下の側にされて
+                                                                 雲の上へ押し付けられ、甲板へ戻れなかった。遊んでの指摘) */
     }
     for (c = c0; c <= (u16)(c0 + 2); c++) {
         s16 t, b;
@@ -223,6 +225,8 @@ void ovl_update(void) {
     case SEC5_OUT:                                            /* 宇宙へ上がる(沈んだ帯のまま) */
         if (g_calib) { cam_to = S_TOP * 16; if (calib_out(sec_t)) return; break; }
         cam_to = S_TOP * 16;
+        if (sec_t == 1) stage_sky_redraw();                   /* ★空のブロックを描き直させる(甲板の艦橋を描いたリングの行が 6 面では空の行に
+                                                                 当たり、空の印が古いまま残って、6 面の空に艦橋が 1 周ごとに見えた。遊んでの指摘) */
         if (sec_t == 240) {
             palette();
             stage_banner("STAGE 6 / GNOMON CITADEL");
