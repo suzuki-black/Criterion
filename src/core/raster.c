@@ -323,9 +323,15 @@ void ras_isr_subs(void) __naked {    /* 直接方式の下請けだけ(本体は
         cp   d
         jp   nz, ras_arm_item
     00021$:
+        ld   a, (_ras_vs)
+        ld   e, a                  ; E = 適用する前の R#23
         push de
         call _ras_apply_next
         pop  de
+        ld   a, (_ras_vs)          ; ★項目が R#23 を替えたら、今の行の R#19 の値 D もその分ずらす(次の項目の ras_r19 は新しい
+        sub  e                     ;   R#23 で求まる。替えた分だけ比べる値がずれ、本当は 22 行離れた次の項目(HUD 帯)を「6 行未満」と
+        add  a, d                  ;   見て続けて適用し、5 面のプレスで床を上げると床の下が黒くなった。終幕の地球の帯も同じ。遊んでの指摘)
+        ld   d, a
         ld   a, (_ras_left)
         or   a
         ret  z
