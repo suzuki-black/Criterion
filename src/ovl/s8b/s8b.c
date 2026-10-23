@@ -224,7 +224,7 @@ static void rod_vram(void) {
 /* ======== 第 3 形態: 絶対尺度(目盛りのリング) ======== */
 #define NT 12
 static s16 rr;                     /* 半径(× 4) */
-static u8  ra, msg, hint_t;
+static u8  ra, msg, hint_t, core_hp;
 static u8  tt_hp[NT];
 static const char *const msgs[4] = { "MEASURING...", "VALUE: 9999999", "VALUE OUT OF RANGE", "~" };   /* ~ は ∞(font.c) */
 static s16 tpx[NT], tpy[NT];       /* 砲台の位置(1 フレームに 1 回求める) */
@@ -280,15 +280,21 @@ static void ring_update(void) {
         }
         if (((t + k * 11) & 127) == 0) enemy_bullet(FX(x), FX(y), (s16)((CX - x) >> 2), (s16)((CY - y) >> 2));   /* 内へ */
     }
-    g_boss_hp = (u8)(left * 3 + 1);
+    g_boss_hp = (u8)(left * 3 + core_hp);
     if (left <= 8) ring_msg(1);
     if (!left) {
-        /* ★とどめは LIMIT BREAK だけ(遊んでの指摘「倒し方がわからない」)。帯は 1 秒後(判定文の書き込みと重なって遅れた) */
-        if (hint_t < 60 && ++hint_t == 60) stage_banner_c("HINT: USE LIMIT BREAK", 13);
+        /* ★砲台を全部壊したら真ん中の核を撃って倒せる(LIMIT BREAK なら一気に)。前はとどめが LIMIT BREAK だけで、核を撃っても
+           何も起きず、どうしていいか分からなかった(遊んでの指摘)。帯は 1 秒後(判定文の書き込みと重なって遅れた) */
+        if (hint_t < 60 && ++hint_t == 60) stage_banner_c("HINT: SHOOT THE CORE", 13);
         ring_msg(2); g_boss_aim = CY;
+        if (shot_rect(CX - 12, CY - 12, 24, 24)) {
+            hit_x = CX; hit_y = CY; hit_t = 4;
+            if (core_hp) core_hp--;
+            if (!core_hp) { ring_msg(3); g_boss_state = BS_DYING; b_t = 0; score_add(20000); g_boss_dmg = 0; return; }
+        }
     }
     if (!(t & 511)) item_spawn(FX(CX), FX(CY), 1);            /* Infinity Shard(∞ゲージを合わせる余裕) */
-    if (g_boss_dmg && !left) {                                /* とどめは LIMIT BREAK だけ */
+    if (g_boss_dmg && !left) {                                /* LIMIT BREAK なら一気に */
         g_boss_dmg = 0; ring_msg(3);
         g_boss_state = BS_DYING; b_t = 0; score_add(20000);
     }
@@ -328,6 +334,7 @@ static void boss_form(u8 sec) {
         u8 k;
         rr = 120 * 4; ra = 0; msg = 0xFF; msg_drawn = 0xFF; msg_row = 8; hint_t = 0; ring_pos();
         for (k = 0; k < NT; k++) tt_hp[k] = 3;
+        core_hp = 30;
         ring_msg(0);
     }
 }
