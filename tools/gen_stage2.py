@@ -106,7 +106,7 @@ def kilogram(n=64):
             d = math.hypot(dx, dy)
             if d > R: continue
             l = (-dx * 0.6 - dy * 0.5) / R                # 左上から光
-            if d > R - 2 * k: c = 5 if l > 0.2 else 4
+            if d > R - 2 * k: c = 5                              # 縁取りは 1 色の輪(★左上と右下で色を替えていた間は、輪と本体がずれて見えた。遊んでの指摘)
             elif abs(dy) < 1.5 * k and abs(dx) < R - 4 * k: c = 7  # 赤道の亀裂(弱点)。★BG の色 7(13 はスプライトと共有で、開閉で回すと敵が暗く潰れて見えた)
             elif l > 0.55: c = 4
             elif l > 0.1: c = 3
