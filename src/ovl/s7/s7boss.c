@@ -26,7 +26,8 @@ static s8  tilt_drawn;
 static u8  drawn;                  /* 竿を描いてある */
 static u8  expose;                 /* 弱点が出ている残り(フレーム / 4) */
 static s16 wy;                     /* 分銅の落下(ドット、0 = 皿の上) */
-static u8  b_t, post, fire_t, hit_t;
+static u8  b_t, post, fire_t, hit_t, defl_t;
+static s16 defl_x, defl_y;          /* 効かない所に当たった弾の火花 */
 
 static const u8 pat_pan[32] = {    /* 皿(16x16 の下半分に) */
     0,0,0,0,0,0,0,0,0x80,0xC0,0x7F,0x3F,0x1F,0,0,0, 0,0,0,0,0,0,0,0,0x01,0x03,0xFE,0xFC,0xF8,0,0,0 };
@@ -70,7 +71,7 @@ static u8 level(void) {            /* 強化の段階の合計(測定値) */
 
 void b7_init(void) { t = 0; spr_loaded = 0; drawn = 0; post = 0; }
 void b7_start(void) {
-    g_boss_state = BS_ENTER; g_boss_hp = 30; tilt = tilt_to = 0; tilt_drawn = 0x7F; expose = 0; wy = 0; b_t = 0; fire_t = 0; hit_t = 0;
+    g_boss_state = BS_ENTER; g_boss_hp = 30; tilt = tilt_to = 0; tilt_drawn = 0x7F; expose = 0; wy = 0; b_t = 0; fire_t = 0; hit_t = 0; defl_t = 0;
 }
 
 void b7_update(void) {
@@ -93,6 +94,7 @@ void b7_update(void) {
     }
     shots_prepare();
     if (hit_t) hit_t--;
+    if (defl_t) defl_t--;
     lv = level();
     if (g_boss_dmg) { g_boss_dmg = 0; tilt_to = 24; expose = 120; wy = 1; }   /* LIMIT BREAK: 竿が跳ね上がり分銅が落ちる */
     if (expose) {
@@ -100,7 +102,7 @@ void b7_update(void) {
         if (wy && wy < 200) wy = (s16)(wy + (wy >> 3) + 1);
         g_boss_aim = CY;
         if (shot_rect(CX - 10, CY - 10, 20, 20)) {
-            hit_t = 4;                                        /* ★当たった印(当てても光らず、どこで傷が入るか分からなかった。遊んでの指摘) */
+            hit_t = 8;                                        /* ★当たった印(当てても光らず、どこで傷が入るか分からなかった。遊んでの指摘) */
             if (g_boss_hp) g_boss_hp--;
             if (!g_boss_hp) { g_boss_state = BS_DYING; b_t = 0; score_add(8000); return; }
         }
@@ -110,8 +112,11 @@ void b7_update(void) {
         if (!(t & 511)) item_spawn(FX(CX + ARM), FX(CY + tilt), 1);   /* ★分銅の皿から Infinity Shard(∞が無いと核が出せず詰んだ) */
     }
     if (tilt < tilt_to) tilt++; else if (tilt > tilt_to) tilt--;
-    shot_rect(CX - ARM - 10, CY - tilt + 14, 20, 8);          /* 皿は弾を止める(皿の厚みだけ。支点の核へ撃てるように) */
-    shot_rect(CX + ARM - 10, CY + tilt + 14, 20, 8);
+    /* 皿と分銅は弾を止める(皿の厚みだけ。支点の核へ撃てるように)。★止めた所に白い火花(効かない所に撃っても何も起きず、
+       どこで傷が入るか分からなかった。遊んでの指摘「ダメージで点滅しない」) */
+    if (shot_rect(CX - ARM - 10, CY - tilt + 14, 20, 8)) { defl_x = CX - ARM - 10; defl_y = CY - tilt + 18; defl_t = 4; }
+    if (shot_rect(CX + ARM - 10, CY + tilt + 14, 20, 8)) { defl_x = CX + ARM - 10; defl_y = CY + tilt + 18; defl_t = 4; }
+    if (wy < 190 && shot_rect(CX + ARM - 8, CY + tilt - 2 + wy, 16, 14)) { defl_x = CX + ARM - 8; defl_y = CY + tilt + 4 + wy; defl_t = 4; }
     {   /* 皿から撃つ: 測定値が高いほど速く */
         if (++fire_t >= (u8)(64 - lv * 6)) {
             fire_t = 0; enemy_shoot(FX(CX - ARM), FX(CY - tilt + 8)); enemy_shoot(FX(CX + ARM), FX(CY + tilt + 8)); }
@@ -127,8 +132,10 @@ void b7_draw(void) {
     spr_put(CX + ARM - 8, CY + tilt + 8, PAT_PAN, G_ENEMY, 0);
     for (i = 0; i < lv && i < 4; i++) spr_put(CX - ARM - 14 + i * 7, CY - tilt + 2 - (i & 1) * 6, PAT_ICON, G_MISC, CS_CURSOR);
     if (wy < 190) spr_put(CX + ARM - 8, CY + tilt - 2 + wy, PAT_WEIGHT, G_ENEMY, 0);
-    if (hit_t) spr_put(CX - 8, CY - 8, PAT_EXPL1, G_MISC, CS_EXPL);   /* 核に当たった火花 */
+    /* 核: 当たったら火花と点滅(2 フレームごとに消す)。効かない所に当たった弾は白い火花 */
+    if (hit_t) { if (hit_t & 2) spr_put(CX - 8, CY - 8, PAT_EXPL1, G_MISC, CS_EXPL); }
     else if (expose && (t & 4)) spr_put(CX - 8, CY - 8, PAT_ICON, G_MISC, CS_EXPL);   /* 支点の核 */
+    if (defl_t) spr_put(defl_x - 4, defl_y - 8, PAT_EXPL1, G_MISC, CS_CURSOR);
 }
 
 /* 竿: 傾きが変わったら、前の 3 本を空の色(1)で消して描き直す。リングの行 = 画面の行 + g_vscroll */
