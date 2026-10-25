@@ -2,7 +2,7 @@
    ・機銃(艦首・甲板): スプライト。自機の方へ 8 向き(上の半円、プリレンダ)で旋回して撃つ。
    ・主砲塔(甲板 4 基): 台は短冊(BG)、上の 32x32 は 16 向き(左 → 真上 → 右)をプリレンダしてページ 2 に置き、
      向きが変わったときだけ表示リングへ HMMM で写す(GHOST)。壊すと砲身が吹き飛ぶ(空で塗る)。
-   ・吊り砲台(艦底): スプライト 3 向き。艦底からは爆雷(落ちる弾)。
+   ・吊り砲台(艦底): スプライト 3 向き。撃つ瞬間に光る。
    ・HANGAR DECK: 扉の列を地図の書き換えで開け、エレベーター(BG の板)が昇って Notch を 1 機ずつ射出する。
      板を壊すと格納庫が誘爆し、扉の列が穴になる(そこから艦底へ回り込む)。
    ・GAUGE BLOCK: 艦橋の上の 6 段のブロック(長さ 32..112)。段ごとに帯を分け、2 段ずつ帯の横位置で画面の外へ
@@ -138,9 +138,9 @@ static void tur_vram(void) {
     }
 }
 
-/* ======== 吊り砲台と爆雷(艦底) ======== */
+/* ======== 吊り砲台(艦底) ======== */
 static u8 hg_hp[S5_NHANG], hg_dir[S5_NHANG];
-static s16 dc_x, dc_y;             /* 爆雷を落とした所(光らせる) */
+static s16 dc_x, dc_y;             /* 吊り砲台が撃った所(光らせる) */
 static u8  dc_t;
 static void hang_update(void) {
     u8 i;
@@ -151,21 +151,17 @@ static void hang_update(void) {
         dx = plx() - x;
         hg_dir[i] = dx < -24 ? 0 : dx > 24 ? 2 : 1;
         if ((LB_NOW ? (hg_hp[i] = 1) : shot_rect(x - 7, y - 7, 14, 14)) && --hg_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(50); continue; }
-        if (((t + i * 23) & 63) == 0 && x > 16 && x < 240)
+        if (((t + i * 23) & 63) == 0 && x > 16 && x < 240) {
             enemy_bullet(FX(x), FX(y + 4), (s16)((hg_dir[i] - 1) * 24), 36);
-    }
-    if (dc_t) dc_t--;
-    if (g_sec == SEC5_UNDER && !(t & 31)) {                   /* 爆雷: 艦底からゆっくり落ちる */
-        s16 x = (s16)(32 + (rnd8() & 127) + (rnd8() & 63)), y = s5_sy(S5_HULL_B + 2);
-        if (y > 0 && y < PLAY_H - 16) {                       /* ★艦底が画面にあるときだけ。落とす所を光らせる(どこから来たか分からなかった) */
-            enemy_bullet(FX(x), FX(y), -8, 20);
-            dc_x = x; dc_y = y; dc_t = 8;
+            dc_x = x; dc_y = y; dc_t = 8;                     /* ★撃つ瞬間に砲台を光らせる(小さくて目立たず、どこから撃ったか分からなかった) */
         }
     }
+    if (dc_t) dc_t--;
+    /* ★艦底から落とす爆雷は外した(横位置がでたらめで、元の敵が見えない弾になった。遊んでの指摘「敵がいないのに敵弾が発射される」) */
 }
 static void hang_draw(void) {
     u8 i;
-    if (dc_t) spr_put(dc_x - 8, dc_y - 8, PAT_EXPL1, G_MISC, CS_EXPL);   /* 爆雷の落とし口の光 */
+    if (dc_t) spr_put(dc_x - 8, dc_y - 8, PAT_EXPL1, G_MISC, CS_EXPL);   /* 吊り砲台の撃った光 */
     for (i = 0; i < S5_NHANG; i++) {
         s16 x = s5_sx(s5_hang[i]) + 4;
         if (!hg_hp[i] || x < -8 || x > 264) continue;
