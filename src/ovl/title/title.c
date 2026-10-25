@@ -181,6 +181,8 @@ static void enter(u8 ph) {
             sh_vx[i] = (s8)((sh_x[i] - 128) >> 4); sh_vy[i] = (s8)(((sh_y[i] - 96) >> 3) - 2);
         }
         if (!loop_keep) game_start();                     /* 2 周目の出撃は引き継ぐ */
+        else infx_reset();                                /* ★2 周目はタイトルの ∞ を止める(game_start が止めるのを通らず、2 周目に ∞ が
+                                                             出続けた。遊んでの指摘) */
         loop_keep = 0;
         g_pl.x = FX(40); g_pl.y = FX(y); g_pl.invul = 0;      /* タイトルで飛んでいた位置からそのまま操作 */
         g_pl.alive = 1;
