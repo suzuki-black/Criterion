@@ -301,7 +301,9 @@ void b2_vram(void) {
     if (kind != B2_KG || g_boss_state == BS_NONE) { gq_pump(0); return; }
     if (g_boss_state == BS_DONE) {
         if (fr_drawn != 0xFF && gq_free() >= 8) { ring_cmd(0, 0, KG_X - BIG_N / 2, KG_Y - BIG_N / 2, BIG_N, BIG_N, 1, 0x11); fr_drawn = 0xFF; }
-    } else if (gen_k >= NFR && fr != fr_drawn && s2_far_zero && gq_free() >= 8) {   /* ★遠景のずれが 0 に戻ってから(s2.c) */
+    } else if (gen_k >= NFR && fr != fr_drawn && s2_far_zero && !g_scroll_speed && gq_free() >= 8) {
+        /* ★遠景のずれが 0 に戻り、スクロールが止まってから(s2.c)。止まる前に写した最初の段は世界と一緒に流れ、試験 02 では 18 ドット
+           左に出て次の段で跳んだ(遊んでの指摘「2 回目の登場で初期位置がずれて拡大が不自然」) */
         if (fr == BIG) ring_cmd(128, 512u + 64u, KG_X - BIG_N / 2, KG_Y - BIG_N / 2, BIG_N, BIG_N, 0, 0);
         else ring_cmd((u16)((fr & 3) * 64u), (u16)(512u + (fr >> 2) * 64u), KG_X - 32, KG_Y - 32, 64, 64, 0, 0);
         fr_drawn = fr;
