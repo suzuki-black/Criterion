@@ -173,6 +173,11 @@ void stage_start(void) {
     strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; g_ban.t = 0;
     g_col_rev = 0; redraw_n = 0; g_bands_all = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
+    if (g_start_stage > 1) {                                  /* 面セレクト: 前の面の終わりと同じ星空から(★1 面の夕焼けの空と丘が残っていた。指摘) */
+        g_scam_q = S_AIR2 * 16; g_scam = S_AIR2;
+        upper_sky = UP_SKY; g_sky_t = g_start_stage == 2 ? 6 : 16;
+        for (b = 0; b < BLK_CONST; b++) tag[b] = TAG_NONE;
+    }
     enemy_waves(WAVES_AIR);
     ovl_request((u8)(g_start_stage > 1 ? OVL_S1 + g_start_stage - 1 : OVL_S1));   /* 隠しコンフィグの面セレクト */
 }
@@ -552,6 +557,21 @@ static u8 hs_cur[8][3];
 static const u8 sky_line[7] = { 0, 16, 32, 48, 64, 80, 96 };
 static u8 regs_top[2][16], regs_b[2][8];
 
+/* 高い空の色: 藍と黒を g_sky_t / 16 で混ぜる。★掛け算(ライブラリ呼び出し)を 48 回していた間は、2 面の空中戦で空が 1 段暗くなる
+   (64 フレームごと)たびにそのフレームが 3ms 重くなって遅れた。黒は藍以下なので、藍 × 16 から差の回数だけ g_sky_t を引く */
+static void hs_mix(void) {
+    const u8 *a = hs_indigo[0], *b = hs_black[0];
+    u8 *d = hs_cur[0], i, j, k;
+    for (i = 0; i < 8; i++)
+        for (j = 0; j < 3; j++, a++, b++, d++) {
+            u8 v;
+            if (g_hall == 1) { *d = (u8)(5 + (i >> 2) + (j == 2)); continue; }   /* 測定空間: 白(下ほど明るい) */
+            v = (u8)((*a << 4) + 8);
+            for (k = (u8)(*a - *b); k; k--) v -= g_sky_t;
+            *d = (u8)(v >> 4);
+        }
+}
+
 /* R#1 の組(RG1SAV に MAG を足す)。★stage_build に直に書くと SDCC の割り当てが崩れて 150 バイト太った */
 void mag_pair(u8 *p, u8 m) { p[0] = 1; p[1] = (u8)(*(volatile u8 *)0xF3E0 | m); }
 
@@ -602,12 +622,8 @@ void stage_build(void) {
         stage_ev_scroll((s16)(-38 - sc), nx);
     } else {
         if (hs_t != (u8)(g_sky_t | (g_hall << 7))) {
-            u8 j;
             hs_t = (u8)(g_sky_t | (g_hall << 7));
-            for (i = 0; i < 8; i++)
-                for (j = 0; j < 3; j++)
-                    hs_cur[i][j] = g_hall == 1 ? (u8)(5 + (i >> 2) + (j == 2)) :   /* 測定空間: 白(下ほど明るい) */
-                                   (u8)((hs_indigo[i][j] * (16u - g_sky_t) + hs_black[i][j] * g_sky_t + 8u) >> 4);
+            hs_mix();
         }
         for (i = 0; i < 8; i++) {
             s16 l = (s16)(S_AIR2 + i * 24 - sc);

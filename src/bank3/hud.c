@@ -35,8 +35,8 @@ static u8 *level_of(u8 node) {
 
 /* ---- 文字の書き込み待ち行列 ----
    ★文字の書き換えは VDP の I/O が多く(15 文字で約 70 ライン)、1 フレームで書くとそのフレームが遅れた。
-     項目ごとに文字列を用意し、1 フレームに 2 行(8 行のうち)ずつ書き進める。 */
-typedef struct { char text[16]; u8 x, y, fg; u8 row; } TextJob;   /* row = 8 で書き終わり */
+     項目ごとに文字列を用意し、1 フレームに 2 回(1 回 = 1 行の 6 文字まで)ずつ書き進める。 */
+typedef struct { char text[16]; u8 x, y, fg; u8 row, seg; } TextJob;   /* row = 8 で書き終わり。seg = 行の中の書き始めの文字 */
 enum { J_SCORE, J_LIVES, J_NODE, NJOB };
 static TextJob job[NJOB];
 
@@ -46,7 +46,7 @@ static void job_set(u8 j, u8 x, u8 y, u8 fg, const char *s, u8 width) {
     while (s[i] && i < width) { t->text[i] = s[i]; i++; }
     while (i < width) t->text[i++] = ' ';
     t->text[width] = 0;
-    t->x = x; t->y = y; t->fg = fg; t->row = 0;
+    t->x = x; t->y = y; t->fg = fg; t->row = 0; t->seg = 0;
 }
 
 /* HUD を描き直す。★一度に描くと 1 フレームに収まらない(場面の切り替えでフレーム落ち)ので、
@@ -80,11 +80,22 @@ static void init_step(void) {
     init_stage = init_stage > INIT_TEXT ? 0 : (u8)(init_stage + 1);
 }
 
+/* ★強化の名前・残機を先に書く(得点を先にしていた間は、得点が数フレームおきに変わり続けると後ろの項目に順番が回らず、
+   強化の名前が上の何行かだけ書き替わったまま止まった。指摘「下半分が欠ける」)。1 回に書くのは 6 文字まで: 強化の名前(11 文字)は
+   1 行を左右 2 回に分ける(1 行を 1 回で書くと得点の 2 倍かかり、m4 で遅れたフレームが増えた) */
+#define SEG_W 6
 static void jobs_run(u8 rows) {
     u8 j;
-    for (j = 0; j < NJOB && rows; j++) {
+    for (j = NJOB; j-- && rows;) {
         TextJob *t = &job[j];
-        while (t->row < 8 && rows) { font_text_row(HUD_PAGE, t->x, t->y, t->fg, 0, t->text, t->row); t->row++; rows--; pcmx_service(); }   /* ★1 行ごとに PCM の送出口(M7) */
+        while (t->row < 8 && rows) {
+            char *p = t->text + t->seg, c = p[SEG_W];
+            p[SEG_W] = 0;
+            font_text_row(HUD_PAGE, (u8)(t->x + t->seg * 8), t->y, t->fg, 0, p, t->row);
+            p[SEG_W] = c;
+            if (!t->seg && c) t->seg = SEG_W; else { t->seg = 0; t->row++; }
+            rows--; pcmx_service();                           /* ★1 回ごとに PCM の送出口(M7) */
+        }
     }
 }
 
