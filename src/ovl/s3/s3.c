@@ -15,6 +15,7 @@
 #include "s3_data.h"
 #include "spr.h"
 #include "sprite_data.h"
+#include "snd.h"
 
 #define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
 #define SINK_LEN 256
@@ -102,6 +103,7 @@ void ovl_init(void) {
     vdp_set_pal(6, 2, 2, 3);                                  /* 壁の影(暗い灰) */
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; bulk_t = 0; bulk_ph = 0; lit = 0;
     { u8 i; for (i = 0; i < S3_NBULK; i++) g_map[s3_bulk[i]] = 14; }   /* 隔壁の列は通路にして、柱はスプライトで */
+    g_map[S3_COL_STOP + 2] = 14; g_map[S3_COL_STOP + 6] = 14;   /* 停止の隔壁は開いた形で始め、止まりながら閉じる(close_bulk) */
     vdp_write_addr17(1, (u16)(0xF800u + PAT_PILLAR * 32u)); vdp_out_block(32, pillar_pat);
     { u8 i; vdp_write_addr17(1, (u16)(0xF800u + PAT_SCAN * 32u)); for (i = 0; i < 32; i++) VDP_DAT = i < 16 ? 0x01 : 0x80; }   /* 測定線(縦 2 ドット) */
     if (g_calib) {                                            /* 7 面の試験 03: 白い空間から最高速の区間の終わりへ沈んで TACHOMETER */
@@ -150,6 +152,24 @@ static void bulkheads(void) {
     if (!(++bulk_t & 15)) bulk_ph++;
 }
 
+/* 停止の 2 枚の隔壁が上下から閉じていく(短冊 28 → 29 → 30 → 19。gen_stage3.py)。4 フレームごとに 1 段、2 枚目は 12 フレーム遅れて。
+   地図を書き換えて列を描き直させる(頼みがいっぱいなら地図を戻して次のフレームにやり直す) */
+static void close_bulk(void) {
+    static const u8 seq[4] = { 28, 29, 30, 19 };
+    u8 i;
+    for (i = 0; i < 2; i++) {
+        s16 d = (s16)(sec_t - 6 - i * 12);
+        u16 c = (u16)(S3_COL_STOP + 2 + i * 4);
+        u8 k, old;
+        if (d < 0) continue;
+        k = (u8)(d >> 2); if (k > 3) k = 3;
+        if (g_map[c] == seq[k]) continue;
+        old = g_map[c]; g_map[c] = seq[k];
+        if (!stage_redraw_col((u16)(g_w0 + c))) g_map[c] = old;   /* 引数は世界の列 */
+        else if (k == 3) sfx(SFX_TICK);                       /* 閉じきった音 */
+    }
+}
+
 void ovl_update(void) {
     if (g_sec >= SEC3_ACCEL && g_sec <= SEC3_BOSS) { lights(); lit = 1; }
     else if (lit) { lit = 0; bg_mix(15); bg_mix(16); }      /* 色 2..5 は雲の色。bg_mix は値が替わったときだけ書くので 2 度呼ぶ */
@@ -174,12 +194,13 @@ void ovl_update(void) {
         if (g_scroll_speed < sp && !(sec_t & 3)) g_scroll_speed++;
         set_streak(g_scroll_speed >= 16);
         bulkheads();
-        if (c + 34 >= S3_COL_STOP) enter(SEC3_STOP);
+        if (c + 28 >= S3_COL_STOP) enter(SEC3_STOP);          /* ★止まったとき 2 枚の隔壁が画面の中に来る位置(閉じる動きを見せる) */
         break;
     }
     case SEC3_STOP:
         /* 1/2 秒で 0 に。静寂の中、Scanner の測定線が左から右へ縦断する */
         if (g_scroll_speed > 0) { g_scroll_speed -= 2; if (g_scroll_speed < 0) g_scroll_speed = 0; set_streak(0); }
+        close_bulk();
         if (sec_t == 40) { scan_x = 0; scan_got = 0; }
         if (sec_t > 40) {
             scan_x += 3;

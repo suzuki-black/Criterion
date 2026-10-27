@@ -91,7 +91,10 @@ for k in range(6, 10): tube(k, True, False, 2 + (k - 6))
 for k in range(10, 14): tube(k, True, True, 2 + (k - 10))
 tube(14, False, False); tube(15, False, True)
 bulkhead(16, (16, 68)); bulkhead(17, (68, 120)); bulkhead(18, (120, 172)); bulkhead(19, None)
-for k in range(20, 32): tube(k, False, False)
+for k in range(20, 28): tube(k, False, False)
+# ★停止の隔壁が閉じていく途中の 3 段(s3.c が地図を 28 → 29 → 30 → 19 と書き換える。指示書 5.3「前方で隔壁が連続して閉鎖」)
+bulkhead(28, (40, 148)); bulkhead(29, (64, 124)); bulkhead(30, (84, 104))
+tube(31, False, False)
 assert len(LIMITS) == 32
 
 # ★遠景(多重スクロール。遊んでの指摘「上下の地面と真ん中の背景で多重スクロールしてほしい」): 短冊 20..27 の 16..167 行に、
