@@ -52,9 +52,9 @@ static const ZWave sc_s6[] = {   /* 6 面の外壁・影 */
 static const ZWave sc_s6d[] = {  /* 6 面の文字盤 */
     { 100, K_PROTR, 70 }, { 400, K_DIAL, 110 }, { 700, K_PROTR, 120 }, { 1000, K_DIAL, 60 },
 };
-static const ZWave sc_s7[] = {   /* 7 面の空中戦: 計測器の雑魚を一通り */
-    { 40, K_TICK, 40 }, { 150, K_COMPASS, 90 }, { 260, K_DIAL, 60 }, { 380, K_SCANNER, 0 }, { 480, K_ABACUS, 120 },
-    { 600, K_SMITE, 70 }, { 720, K_PROTR, 100 }, { 850, K_NOTCH_DN, 0 }, { 950, K_TOCK, 130 },
+static const ZWave sc_s7[] = {   /* 7 面の空中戦: 空を飛ぶ雑魚を全種(指示書 5.7。地面に据わる Caliper・ハッチ・Spirit は測定空間に地面が無いので出さない) */
+    { 40, K_TICK, 40 }, { 150, K_COMPASS, 90 }, { 260, K_DIAL, 60 }, { 330, K_PLUMMET, 0 }, { 380, K_SCANNER, 0 }, { 480, K_ABACUS, 120 },
+    { 600, K_SMITE, 70 }, { 720, K_PROTR, 100 }, { 800, K_SEXTANT, 60 }, { 850, K_NOTCH_DN, 0 }, { 950, K_TOCK, 130 }, { 1050, K_PLUMMET, 0 },
 };
 static const ZWave sc_s8[] = {   /* 8 面の空中戦 */
     { 60, K_ABACUS, 60 }, { 250, K_SEXTANT, 90 }, { 420, K_TICK, 120 }, { 560, K_ABACUS, 130 }, { 760, K_SEXTANT, 50 },
