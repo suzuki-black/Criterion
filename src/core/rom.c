@@ -137,22 +137,31 @@ void rom_to_ram(u8 bank, u16 off, u8 *dst, u16 len) {
     }
 }
 
-/* ---- 第 2 バンク(bank.h) ---- */
+/* ---- 第 2〜第 4 バンク(bank.h) ---- */
 #include "bank.h"
 
-/* 呼び口から: call _bk_call / .db 番号 × 3。戻り番地(呼び口の .db)から番号を読み、セグメントを 6(番号の最上位ビットが 1 なら
-   7 = 第 3 バンク)にして JP 表へ。A・HL・DE・BC は呼び出し元の値のまま渡し、戻り値(A / DE / HL)もそのまま返す。 */
+/* 呼び口から: call _bk_call / .db 番号 × 3。戻り番地(呼び口の .db)から番号を読み、セグメントを選んで JP 表へ:
+   0x00..0x7F = 6(第 2 バンク)、0x80..0xBF = 7(第 3 バンク)、0xC0..0xFF = 8(第 4 バンク。下位 6 ビットが JP 表の位置)。
+   A・HL・DE・BC は呼び出し元の値のまま渡し、戻り値(A / DE / HL)もそのまま返す。 */
 void bk_call(void) __naked {
     __asm
         ex   (sp), hl              ; HL = 番号の番地、(sp) = 元の HL
         push af
         ld   a, (hl)
-        rlca                       ; CF = 最上位ビット(第 3 バンク)
+        add  a, a                  ; CF = 最上位ビット(第 3・第 4 バンク)
+        jr   c, 00010$
         ld   a, #BK_SEG
-        adc  a, #0
         ld   (00003$ + 1), a       ; セグメント(RAM なので書き換えてよい)
+        ld   a, (hl)               ; 0..0x7F
+        jr   00011$
+    00010$:
+        add  a, a                  ; CF = 次のビット(第 4 バンク)
+        ld   a, #BK3_SEG
+        adc  a, #0                 ; 7 / 8(BK4_SEG = BK3_SEG + 1)
+        ld   (00003$ + 1), a
         ld   a, (hl)
-        and  #0x7F
+        and  #0x3F
+    00011$:
         ld   (00002$ + 1), a       ; JP 表の下位
         pop  af
         pop  hl                    ; 元の HL。スタックの先頭は呼び出し元への戻り番地
@@ -195,9 +204,9 @@ static void bk_put(u16 off) __naked {
 
 void bk_load(void) {
     u16 off;
-    for (bk_seg = BK_SEG; bk_seg <= BK3_SEG; bk_seg++)
+    for (bk_seg = BK_SEG; bk_seg <= BK4_SEG; bk_seg++)
         for (off = 0; off < BK_LEN; off += 0x800) {
-            rom_to_ram(bk_seg == BK_SEG ? BK_ROM : BK3_ROM, off, (u8 *)0xD800, 0x800);
+            rom_to_ram(bk_seg == BK_SEG ? BK_ROM : bk_seg == BK3_SEG ? BK3_ROM : BK4_ROM, off, (u8 *)0xD800, 0x800);
             bk_put(off);
         }
 }

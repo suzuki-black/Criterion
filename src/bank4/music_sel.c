@@ -1,4 +1,4 @@
-/* music_sel.c — 場面に合わせて曲を選ぶ(指示書 6.3)、場面の音の演出(第 2 バンク。本体のループから毎フレーム)。
+/* music_sel.c — 場面に合わせて曲を選ぶ(指示書 6.3)、場面の音の演出(第 4 バンク。2026-10-28 に第 2 バンクから移した。本体のループから毎フレーム)。
    区間(g_sec)は全面の通し番号なので、区間 → 曲の表を 1 つ持てば各面のオーバレイは曲を知らなくてよい。
    空中戦(M03)は面ごとに移調し、面の本体に入ると次の小節の頭で面の曲へ切り替える。ボスは警告(J02)から。 */
 #include "game.h"
@@ -28,7 +28,7 @@ static const u8 sec_first[9] = { 7, 15, 24, 33, 44, 52, 55, 65, 255 };   /* 次�
 static const u8 stage_song[8] = { SONG_M04, SONG_M05, SONG_M06, SONG_M07, SONG_M08, SONG_M09, SONG_M10, SONG_M11 };
 static const s8 air_trans[8] = { 0, 2, 3, 4, 5, 6, 7, 8 };     /* 空中戦は面ごとに上がっていく */
 
-static u8  want, sec_prev, ph_prev, bs_prev, calib_prev, sel_ok;   /* ★第 2 バンクの変数は初期化されないので、最初の呼び出しで代入(sel_ok) */
+static u8  want, sec_prev, ph_prev, bs_prev, calib_prev, sel_ok;   /* ★バンクの変数は初期化されないので、最初の呼び出しで代入(sel_ok) */
 static u16 mt;                                   /* 区間に入ってからのフレーム */
 static u8  v04;                                  /* 8 面の声を鳴らした */
 static u8  motif_t;                              /* 7 面の試験の頭: その面の曲を挟む残り */

@@ -8,7 +8,7 @@
   gen_ovl.py resident_bk <game.noi> <out.s> <除く名前...>
                                                    第 2 バンク用: 同じく、ただしページ 2(0x8000-0xBFFF)の記号と _bk_ で始まる
                                                    記号を除く(第 2 バンクを出している間、本体のページ 2 は見えない)
-  gen_ovl.py bkstubs <out.s> <名前...> [-- <名前...>]
+  gen_ovl.py bkstubs <out.s> <名前...> [-- <名前...> [-- <名前...>]]
                                                    本体側: 第 2(と第 3)バンクの関数の呼び口(call _bk_call / .db 番号 × 3。
                                                    第 3 バンクは番号に 0x80 を足す)
   gen_ovl.py bin <in.ihx> <in.map> <out.bin> <base> <end> <data_base> <data_end>
@@ -45,13 +45,18 @@ def resident(noi, out, exclude, bank=False):
         for n, v in syms: f.write(f'{n} == 0x{v:04X}\n')
 
 def bkstubs(out, names):
-    """名前... [-- 第 3 バンクの名前...]。番号の最上位ビットが 0 なら第 2 バンク、1 なら第 3 バンク(rom.c の bk_call)"""
-    b2, b3 = (names[:names.index('--')], names[names.index('--') + 1:]) if '--' in names else (names, [])
+    """名前... [-- 第 3 バンクの名前... [-- 第 4 バンクの名前...]]。番号 0x00..0x7F = 第 2 バンク、0x80..0xBF = 第 3 バンク、
+    0xC0..0xFF = 第 4 バンク(rom.c の bk_call が上位 2 ビットでセグメントを選ぶ)"""
+    groups = [[]]
+    for n in names:
+        if n == '--': groups.append([])
+        else: groups[-1].append(n)
+    groups += [[]] * (3 - len(groups))
     with open(out, 'w') as f:
-        f.write('; gen_ovl.py が生成(第 2・第 3 バンクの関数の呼び口。rom.c の bk_call が番号の JP 表へ飛ぶ)\n'
+        f.write('; gen_ovl.py が生成(第 2〜第 4 バンクの関数の呼び口。rom.c の bk_call が番号の JP 表へ飛ぶ)\n'
                 '\t.module bkstubs\n\t.area _CODE\n\t.globl _bk_call\n')
-        for names_, base, what in ((b2, 0, '第 2'), (b3, 0x80, '第 3')):
-            if len(names_) > 42: sys.exit(f'ERROR: {what}バンクの入口が多すぎる(42 まで)')
+        for names_, base, what, lim in ((groups[0], 0, '第 2', 42), (groups[1], 0x80, '第 3', 21), (groups[2], 0xC0, '第 4', 21)):
+            if len(names_) > lim: sys.exit(f'ERROR: {what}バンクの入口が多すぎる({lim} まで)')
             for i, n in enumerate(names_):
                 f.write(f'_{n}::\n\tcall _bk_call\n\t.db {base + 3 * i}\n')
 
