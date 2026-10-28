@@ -118,16 +118,63 @@ static void rot_vram(void) {
 
 /* ======== 第 1 形態: 二重の鐘 ======== */
 static u8 fo, fi;
+/* 継ぎ目からのレーザー(指示書 5.8。★前は回る弾 4 発だった): 128 フレームごとに 4 方向。0..31 は細い赤の予告(当たらない)、
+   32..55 は白い太い線(当たる)、56 で消す。線は第 2 形態と同じ LINE(line_add)。鐘の絵(96x96)と重ならない半径から */
+static u8 lz_a, lz_drawn;          /* 向き(64 で一周)/ 描いてある段(0 = 無し、1 = 予告、2 = 発射) */
+static u8 lz_want(void) { u8 p = (u8)(t & 127); return p < 32 ? 1 : p < 56 ? 2 : 0; }
+static void line_add(s16 x0, s16 y0, s16 x1, s16 y1, u8 col);
+static void line_erase(void);
+/* 向き b の始まりの半径(鐘の四角(半径 48)の外: 縦横で 50、斜めで 70)と、画面の枠(x 0..255、y 16..172)に収まる終わりの半径 */
+static s16 lz_r0(s8 cs, s8 sn) { u8 m = (u8)((cs < 0 ? -cs : cs) > (sn < 0 ? -sn : sn) ? (cs < 0 ? -cs : cs) : (sn < 0 ? -sn : sn)); return (s16)(50 + (((u16)(127 - m) * 35u) >> 6)); }
+static s16 lz_r1(s8 cs, s8 sn) {
+    s16 r = 200;
+    while (r > 60) {
+        s16 x = (s16)(CX + ((r * cs) >> 7)), y = (s16)(CY + ((r * sn) >> 7));
+        if (x >= 0 && x <= 255 && y >= 16 && y <= 172) break;
+        r -= 8;
+    }
+    return r;
+}
+static void lz_update(void) {
+    u8 k;
+    if (!(t & 127)) lz_a = (u8)((t >> 3) + 8);                /* 外の鐘の回りに合わせて毎回ずらす */
+    if (lz_want() != 2 || !g_pl.alive) return;
+    {
+        s16 px = (s16)((PX(g_pl.x) + 8 - CX) >> 1), py = (s16)((PX(g_pl.y) + 8 - CY) >> 1);   /* 半分の座標(掛け算を s16 に収める) */
+        for (k = 0; k < 4; k++) {
+            u8 b = (u8)(lz_a + k * 16);
+            s8 cs = g_sin64[(u8)(b + 16) & 63], sn = g_sin64[b & 63];
+            s16 along = (s16)(px * cs + py * sn), cross = (s16)(px * sn - py * cs);
+            if (along > (lz_r0(cs, sn) >> 1) * 127 && cross > -3 * 127 && cross < 3 * 127) { player_hit(); return; }
+        }
+    }
+}
+/* ★描き替えは 1 フレームに LINE を数本まで(消す 4〜8 本と描く 8 本を 1 フレームで出していた間は、m6 で発射のたびに遅れた):
+   1 フレーム目で前の線を消し、次から 1 フレームに 2 方向ずつ描く */
+static u8 lz_k;                    /* 次に描く向き(4 = 描き終わり) */
+static void lz_vram(void) {
+    u8 w = g_boss_state == BS_FIGHT ? lz_want() : 0, k;
+    if (gq_free() < 16 || (u16)(sys_timer() - g_frame_t0) > 150u * 16u) return;   /* ★残りが少なければ次のフレームへ */
+    if (w != lz_drawn) { line_erase(); lz_drawn = w; lz_k = w ? 0 : 4; return; }
+    if (lz_k >= 4) return;
+    for (k = lz_k; k < lz_k + 2; k++) {
+        u8 b = (u8)(lz_a + k * 16);
+        s8 cs = g_sin64[(u8)(b + 16) & 63], sn = g_sin64[b & 63];
+        s16 r0 = lz_r0(cs, sn), r1 = lz_r1(cs, sn);
+        s16 x0 = (s16)(CX + ((r0 * cs) >> 7)), y0 = (s16)(CY + ((r0 * sn) >> 7));
+        s16 x1 = (s16)(CX + ((r1 * cs) >> 7)), y1 = (s16)(CY + ((r1 * sn) >> 7));
+        line_add(x0, y0, x1, y1, w == 1 ? 12 : 15);
+        if (w == 2) {                                         /* 太さ: 横か縦に 1 ドットずらしてもう 1 本 */
+            s16 ox = (cs < 0 ? -cs : cs) > (sn < 0 ? -sn : sn) ? 0 : 1, oy = ox ? 0 : 1;
+            line_add(x0 + ox, y0 + oy, x1 + ox, y1 + oy, 15);
+        }
+    }
+    lz_k = (u8)(lz_k + 2);
+}
 static void bell_update(void) {
     if (!(t & 7)) fo = (u8)((fo + 1) & 3);                   /* 外は 8 フレームで 11.25°(前の 4 フレームで 5.6° と同じ速さ) */
     if (!(t & 3)) fi = (u8)((fi - 1) & 7);
-    if (!(t & 31)) {                                          /* 継ぎ目からレーザー(4 方向、回る) */
-        u8 a = (u8)(t >> 3), k;
-        for (k = 0; k < 4; k++) {
-            u8 b = (u8)(a + k * 16);
-            enemy_bullet(FX(CX), FX(CY), (s16)(g_sin64[(u8)(b + 16) & 63] >> 2), (s16)(g_sin64[b & 63] >> 2));
-        }
-    }
+    lz_update();
     if (!(t & 63)) enemy_shoot(FX(CX), FX(CY));
     g_boss_aim = CY;
     if (shot_rect(CX - 36, CY - 36, 72, 72)) {
@@ -341,7 +388,7 @@ static void boss_form(u8 sec) {
 
 void ovl_init(void) {
     g_ter.lo = s8_floor; g_ter.hi = s8_ceil; g_ter.lo_add = 0; g_ter.ncol = S8_COLS;   /* DROP の爆雷が這う床・天井 */
-    g_boss_state = BS_NONE; t = 0; rj = 0; rph = 0; rrow = 0; fo = fi = 0; ln = 0; ang = 0; hit_t = 0;
+    g_boss_state = BS_NONE; t = 0; rj = 0; rph = 0; rrow = 0; fo = fi = 0; ln = 0; ang = 0; hit_t = 0; lz_a = 0; lz_drawn = 0; lz_k = 4;
     g_sec = SEC8_CORE; sec_t = 0; sec_wx = g_wx;
     enemy_waves(WAVES_AIR);
 }
@@ -420,6 +467,7 @@ void ovl_vram(void) {
                                                                  重なって 1 周の遅れが増えた) */
     if (!late) rot_vram();
     if (g_sec == SEC8_BOSS1 && g_boss_state == BS_FIGHT) bell_vram();
+    if (g_sec == SEC8_BOSS1) lz_vram();                       /* 倒れたら(BS_DYING)線を消す */
     if (g_sec == SEC8_BOSS2) rod_vram();
     if (g_sec == SEC8_BOSS3) { ring_vram(); if (!late) msg_vram(); }
     gq_pump(0);
