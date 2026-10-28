@@ -17,7 +17,7 @@
 #include "sprite_data.h"
 #include "snd.h"
 
-#define AIR_LEN  1200              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後) */
+#define AIR_LEN  2000              /* 空中戦の残り(ドット。★4〜6 秒は短すぎた。約 20 秒に。M7 の後。補給船団を追って 1 → 2 ドットに速めたので 1200 → 2000) */
 #define SINK_LEN 256
 #define S_TOP    (-192)
 
@@ -180,10 +180,13 @@ void ovl_update(void) {
     { s8 sp = g_scroll_speed; g_pl_boost = (g_sec == SEC3_ACCEL || g_sec == SEC3_TOP) && sp >= 8 ? (u8)((sp - 4) << 1) : 0; }
     switch (g_sec) {
     case SEC3_AIR:
+        /* 補給船団を追って 1 → 2 ドット/フレームへ(指示書 5.3)。沈む間に 1 ドットへ戻す(加速の区間は今までどおり 1 ドットから) */
+        if (!g_calib && g_scroll_speed < 8 && !(sec_t & 63)) g_scroll_speed++;
         if ((u16)(g_wx - sec_wx) >= (g_calib ? 128u : AIR_LEN)) enter(SEC3_SINK);
         break;
     case SEC3_SINK: {
         u16 d = (u16)(g_wx - sec_wx);
+        if (g_scroll_speed > 4 && !(sec_t & 7)) g_scroll_speed--;
         if (d >= SINK_LEN) { g_scam_q = 0; enter(g_calib ? SEC3_TOP : SEC3_ACCEL); }
         else g_scam_q = (s16)(S_TOP * 16 + (s16)(d * 12u));
         break;
@@ -245,6 +248,16 @@ void ovl_logic(void) { b3_update(); }
 
 void ovl_draw(void) {
     b3_draw();
+    if (g_sec == SEC3_AIR && !g_calib) {                      /* 補給船団(遠景のシルエット 3 機)。右から入って前を行き、終わり際に加速して抜ける */
+        u16 d = (u16)(g_wx - sec_wx);
+        s16 x = (s16)(sec_t < 64 ? 272 - (s16)(sec_t << 1) : 144);
+        u8 i;
+        if (d + 240u > AIR_LEN) x += (s16)((d + 240u - AIR_LEN) >> 1);
+        for (i = 0; i < 3; i++) {
+            s16 xi = (s16)(x + i * 28), yi = (s16)(36 + i * 14 + (g_sin64[(u8)((sec_t >> 1) + i * 20) & 63] >> 5));
+            if (xi < 256) spr_put(xi, yi, PAT_CONVOY, G_MISC, CS_DIM);
+        }
+    }
     if (g_sec == SEC3_OUT && !g_calib && sec_t >= 60) {      /* 宇宙へ出るとガス惑星が見える(4 面の予告) */
         s16 x = (s16)(208 - (sec_t >> 3)), y = (s16)(36 - (g_scam_q >> 4) + S_TOP);
         spr_put(x, y, PAT_GAS_TL, G_MISC, CS_QUANTA); spr_put((s16)(x + 16), y, PAT_GAS_TR, G_MISC, CS_QUANTA);

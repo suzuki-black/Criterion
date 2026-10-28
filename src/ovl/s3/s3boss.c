@@ -81,6 +81,7 @@ static void met_update(void) {
         return;
     }
     if (!(t & 63) && omega < 80) omega += 4;                  /* テンポが上がる */
+    g_met_tempo = (u8)(120 + (omega >> 1));                 /* 曲も振り子の周期に合わせて速く(128 → 160 = 1.25 倍。指示書 5.3) */
     ph += omega;
     ang = (s8)(g_sin64[(u8)(ph >> 8) & 63] / 22);            /* ±5(≒ ±30 度) */
     /* 右に振れると前進、左で逆走(最大 6 ドット/フレーム)。真ん中で止まる */
@@ -224,7 +225,7 @@ static void to_patterns(void) {
 void b3_start(u8 k) {
     u8 i;
     kind = k; t = 0; g_boss_state = BS_ENTER; g_boss_dmg = 0;
-    if (k == B3_MET) { g_boss_hp = 40; ph = 0; omega = 16; last_side = 0; }
+    if (k == B3_MET) { g_boss_hp = 40; ph = 0; omega = 16; last_side = 0; g_met_tempo = 0; }
     else {
         dial_wx = (u16)(g_wx + DIAL_SX + 64); dial_drawn = 0; dial_clean = 0; needle = 0; rush_t = 0; wild_t = 0;
         for (i = 0; i < NMARK; i++) mark_hp[i] = 3;

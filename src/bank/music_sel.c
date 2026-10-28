@@ -44,6 +44,7 @@ static void effects(u8 sec) {
     } else if (sec >= 15 && sec <= 23) {                         /* 3 面: テンポをスクロールの速さに */
         s8 v = g_scroll_speed < 0 ? (s8)-g_scroll_speed : g_scroll_speed;
         if (v > 4) { v = (s8)((v - 4) >> 1); tempo = (u8)(128 + (v > 12 ? 12 : v)); }
+        if (sec == 20 && g_boss_state == BS_FIGHT && g_met_tempo) tempo = g_met_tempo;   /* METRONOME: 振り子の周期で(振れ幅では揺らさない) */
         if (sec == 18 && !g_scroll_speed) atten = 15;            /* 急停止: 無音 */
         if (sec == 20 && g_boss_state == BS_DYING) bend = (s8)((mt & 4) ? 1 : -1);   /* 錘が壊れて曲がねじれる */
     } else if (sec == 25) mute = 0x0182;                         /* 4 面: 帯が増えるほどパートが増える */

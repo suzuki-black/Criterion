@@ -38,6 +38,7 @@ typedef struct {
 } GameStat;
 volatile GameStat g_stat;
 volatile u8 g_dbg_invul;
+u8  g_met_tempo;                    /* 3 面の METRONOME: 振り子の周期から決めた曲のテンポ(0 = 使わない。music_sel.c) */
 s16 g_boss_aim = -1;                /* 今撃てる弱点の y(検証が自機を寄せる。-1 = なし。ボスが毎フレーム書く) */
 /* 場面(タイトルのオーバレイが動かすが、本体も見るので本体に置く) */
 u8  g_phase;
