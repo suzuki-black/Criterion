@@ -99,13 +99,15 @@ static s8  sway[5];                /* 帯ごとの横のずれ(頭 → 脚)。�
 #define SKY_BOT 158                /* 歩道(ここから下には描かない) */
 #define FLOOR2  126                /* 鎖が切れてから跳ねる床(枠の下端 = SKY_BOT) */
 /* 枠の並び(gen_boss.py の FRAMES と同じ): 傾き -6..6(64 で一周)× 等倍、直立の縮小 0.85 / 0.7 / 0.55 */
-static const s8  fr_angle[NFRAME] = { -6, -4, -2, 0, 2, 4, 6, 0, 0, 0 };
-static const u16 fr_step[NFRAME]  = { 256, 256, 256, 256, 256, 256, 256, 301, 366, 465 };
 static const u8  fr_r[NFRAME]     = { 18, 18, 18, 18, 18, 18, 18, 15, 13, 10 };  /* 当たりの半径(C3: 胴の半径 29 に合わせた) */
 static const u8  brass[4][3] = { { 3, 2, 1 }, { 5, 4, 1 }, { 7, 6, 3 }, { 5, 4, 1 } };
 static s16 anchor_y;
 static u8  spin;
-static u8  gen_k, gen_ph;          /* 絵を作る進み(gen_k == NFRAME で終わり) */
+static u8  gen_done;               /* 絵ができた(作るのは第 4 バンクの plumb_gen) */
+/* 測定ビーム(指示書 5.1。★前は弾 3 発だった): 先端から歩道まで。1..24 = 赤い細い線の予告(当たらない)、25..44 = 白い太い線(当たる)、
+   45 で空の色に塗って消す(広場の背景は空)。描いた位置に残る(振り子は振れ続ける)。2 個のときは 1 個目だけ */
+static u8  bm_t, bm_dr;            /* 経過(0 = 無し)/ 描いてある段(0 = 無し、1 = 予告、2 = 発射) */
+static s16 bm_x, bm_y;
 /* 7 面の再校正版: 下げ振りが 2 個(吊り元を左右に分け、逆の位相で振って鎖を交差させる)。P を入れ替えて
    2 個ぶん動かす(体力は共有) */
 static Plumb pl[2];
@@ -115,7 +117,7 @@ static void pl_save(u8 i) { pl_cp((u8 *)&pl[i], (const u8 *)&P); }
 static void pl_load(u8 i) { pl_cp((u8 *)&P, (const u8 *)&pl[i]); cur_pl = i; }
 /* 場面の始め(game_start): 何も作っていない状態へ */
 void boss_reset(void) {
-    g_boss_state = BS_NONE; kind = 0xFF; gen_k = NFRAME; dr_w = 0; broken = 0;
+    g_boss_state = BS_NONE; kind = 0xFF; gen_done = 1; bm_t = 0; bm_dr = 0; dr_w = 0; broken = 0;
 }
 
 void boss_start(u8 k) {
@@ -355,7 +357,7 @@ static void plumb_pos(void) {
 }
 
 /* 吊り輪の位置(弱点)。中心 (x, y) の枠 fr の絵の中の吊り輪 = (x + rg_dx, y - rg_dy)。ROTOR は角度 a で時計回りに
-   回すので (25 sin a, 25 cos a)、縮小の枠は 25 / 倍率(四捨五入。fr_angle / fr_step と合わせる) */
+   回すので (25 sin a, 25 cos a)、縮小の枠は 25 / 倍率(四捨五入。第 4 バンクの plumb_gen.c の fr_angle / fr_step と合わせる) */
 static const s8 rg_dx[NFRAME] = { -14, -10, -5, 0, 5, 10, 14, 0, 0, 0 };
 static const u8 rg_dy[NFRAME] = { 21, 23, 25, 25, 25, 23, 21, 21, 17, 14 };
 #define rg_x(x, fr) ((s16)((x) + rg_dx[fr]))
@@ -365,7 +367,7 @@ static s16 ring_y(void) { return rg_y(by, cur_fr); }
 
 static void plumb_update(void) {
     if (g_boss_state == BS_ENTER) {
-        if (gen_k < NFRAME && t < 240) return;               /* ★絵ができるまで降りてこない(作り切るループで 0.25 秒止まった。4 秒で諦める) */
+        if (!gen_done && t < 240) return;               /* ★絵ができるまで降りてこない(作り切るループで 0.25 秒止まった。4 秒で諦める) */
         if (cur_pl == 0) anchor_y += 2;                      /* 2 個のときも吊り元は 1 つの高さ */
         if (anchor_y >= -8) { anchor_y = -8; if (cur_pl == npl - 1) g_boss_state = BS_FIGHT; }
         plumb_pos();
@@ -383,10 +385,7 @@ static void plumb_update(void) {
             fx_spawn(FX(pivot), FX(anchor_y + 40));
         }
         if (++aim_t >= 45) { aim_t = 0; enemy_shoot(FX(bx), FX(by + 20)); }
-        if ((t & 127) == 64) {                                /* 測定ビーム: 先端から下へ */
-            enemy_bullet(FX(bx), FX(by + 24), 0, 40); enemy_bullet(FX(bx), FX(by + 24), -12, 38);
-            enemy_bullet(FX(bx), FX(by + 24), 12, 38);
-        }
+        if ((t & 127) == 64 && cur_pl == 0 && !bm_t) { bm_t = 1; bm_x = (s16)(bx & ~1); bm_y = (s16)(by + 24); }   /* 測定ビーム: 先端から下へ */
     } else {
         s8 d = g_sin64[(u8)(t >> 1) & 63];                    /* 遠近: 近い(等倍)〜遠い(0.55) */
         fx += fvx; fy += fvy; fvy += 2;
@@ -419,34 +418,13 @@ static void plumb_update(void) {
 #define SLOT_X(k) ((u16)(((k) & 3) * 64u))
 #define SLOT_Y(k) ((u16)(512u + ((k) >> 2) * 64u))
 
-static u16 src_off;                /* 元の絵を ROM から読んだバイト数(1 段 512 バイト) */
-
 void boss_prepare(u8 k) {
     if (k != BOSS_PLUMB) return;
-    gen_k = 0; gen_ph = 0; src_off = 0;
+    gen_done = plumb_gen(1);
 }
 
-/* 1 段: 0..15 = 4 行ずつ計算(約 20 ライン)、16..23 = 8 行ずつ VRAM へ(256 バイト、約 36 ライン)。
-   ★8 行ずつ計算すると、敵の多いフレームと重なって遅れた */
-void boss_vram_gen(void) {
-    if (gen_k >= NFRAME) return;
-    if (src_off < ASSET_BOB_LEN) {                            /* まず元の絵(2KB)を 4 段で */
-        rom_to_ram(ASSET_BOB_BANK, (u16)(ASSET_BOB_OFF + src_off), ROTOR_SRC + src_off, 512);
-        src_off += 512;
-        return;
-    }
-    if (gen_ph < 16) {
-        if (gen_ph == 0) rotor_begin(64, (u8)fr_angle[gen_k], fr_step[gen_k], 1);
-        rotor_rows(ROTOR_DST + gen_ph * 128u, 4);
-    } else {
-        u8 r, r0 = (u8)((gen_ph - 16) * 8);
-        for (r = r0; r < r0 + 8; r++) {
-            vdp_write_addr17(1, (u16)(((gen_k >> 2) * 64u + r) * 128u + (gen_k & 3) * 32u));
-            vdp_out_block(32, ROTOR_DST + r * 32u);
-        }
-    }
-    if (++gen_ph >= 24) { gen_ph = 0; gen_k++; }
-}
+/* 絵を 1 段ずつ作る(★第 4 バンクの plumb_gen。1 面のオーバレイの空きを作るため移した) */
+void boss_vram_gen(void) { if (!gen_done) gen_done = plumb_gen(0); }
 
 static void erase(s16 x, s16 y, s16 w, s16 h) {
     if (w > 0 && h > 0) ring_cmd(0, 0, x, y, (u8)w, (u8)h, 1, 0x11);
@@ -488,9 +466,23 @@ void boss_vram(void) {
            締め切りを 200 ラインまで緩める(★2 フレームに 1 回締め切りを無視して作ると、ボスの声の PCM と重なって 3 フレーム続けて
            遅れた。重いフレームが続いても固まらないよう、plumb_update は 4 秒で待つのをやめる)(★間に合わない分を boss_start で作り切ると 0.25 秒止まった) */
         extern u16 g_frame_t0;
-        if (gen_k < NFRAME && (u16)(sys_timer() - g_frame_t0) <= (g_boss_state == BS_ENTER ? 200u * 16u : 150u * 16u)) boss_vram_gen();
+        if (!gen_done && (u16)(sys_timer() - g_frame_t0) <= (g_boss_state == BS_ENTER ? 200u * 16u : 150u * 16u)) boss_vram_gen();
     }
-    if (kind != BOSS_PLUMB || gen_k < NFRAME) { gq_pump(0); return; }   /* 絵ができるまでは写さない */
+    if (kind != BOSS_PLUMB || !gen_done) { gq_pump(0); return; }   /* 絵ができるまでは写さない */
+    {   /* 測定ビーム: 段が替わったら、太い線の幅を空の色に塗り、次の回で描く。★PLUMB を写す偶数フレームを避け、残りが少なければ
+           次へ(写しと同じフレームにまとめて出すと m5 で遅れた) */
+        extern u16 g_frame_t0;
+        u8 w = !bm_t || bm_t > 44 ? 0 : bm_t > 24 ? 2 : 1;
+        s16 h = (s16)(SKY_BOT - bm_y);
+        if (w != bm_dr && (t & 1) && gq_free() >= 24 && h > 0 && (u16)(sys_timer() - g_frame_t0) < 150u * 16u) {
+            if (bm_dr) { ring_cmd(0, 0, (s16)(bm_x - 2), bm_y, 6, (u8)h, 1, 0x11); bm_dr = 0; }
+            else {
+                if (w == 1) ring_cmd(0, 0, bm_x, bm_y, 2, (u8)h, 1, 0xDD);
+                else ring_cmd(0, 0, (s16)(bm_x - 2), bm_y, 6, (u8)h, 1, 0xFF);
+                bm_dr = w;
+            }
+        }
+    }
     /* ★1 回の描き替えは最大 20 コマンド(写し 4 + 消し 4 方向 × リングの継ぎ目)。入りきらないときは見送る
        (途中まで積むと、消し残しや描き残しが出る) */
     if (gq_free() >= 20) {
@@ -509,8 +501,13 @@ void boss_update(void) {
     if (g_boss_state == BS_NONE || g_boss_state == BS_DONE) return;
     t++;
     shots_prepare();
-    if (kind == BOSS_LEGION) legion_update();
-    else if (npl == 1) plumb_update();
+    if (kind == BOSS_LEGION) { legion_update(); return; }
+    if (bm_t && ++bm_t > 45) bm_t = 0;
+    if (bm_t > 24 && g_pl.alive) {                            /* 発射の間: 自機の中心が線の幅に入り、先端より下なら */
+        s16 dx = (s16)(PX(g_pl.x) + 8 - (bm_x + 1));
+        if (dx > -4 && dx < 4 && PX(g_pl.y) + 8 > bm_y) player_hit();
+    }
+    if (npl == 1) plumb_update();
     else { u8 i; for (i = 0; i < npl; i++) { pl_load(i); plumb_update(); pl_save(i); } }
 }
 

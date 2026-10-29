@@ -284,11 +284,12 @@ void calib_begin(u8 k);                     /* 試験 k の始まり(各面の o
 u8   calib_out(u16 t);                      /* 試験に合格したあと(各面から毎フレーム): 判定文 → 上がって次の試験へ。1 = 頼んだ */
 typedef struct { u8 s0, s1, t0, t1, strip[8]; } FarCfg;   /* 遠景(stage.c): 使う短冊 s0..s1・s の範囲 t0..t1-1・遠景の短冊 8 本 */
 extern FarCfg *g_far;              /* 0 = 使わない。オーバレイの変数を指す */
-u16 far_step(u16 a);               /* 第 2 バンク: 遠景の帯の横位置。a = bg の位置(14 ビット) | 指示 << 14(FAR_LOCK / FAR_FREE / FAR_RESET) */
+u16 far_step(u16 a);               /* 第 4 バンク: 遠景の帯の横位置。a = bg の位置(14 ビット) | 指示 << 14(FAR_LOCK / FAR_FREE / FAR_RESET) */
+u8  plumb_gen(u8 reset);           /* 第 4 バンク: 1 面の PLUMB の絵を 1 段ずつ作る(reset = 1 で始める)。全部できたら 1 */
 #define FAR_LOCK  0x0000u          /* bg と一緒に動きつつ、ずれを 1/8 ずつ 0 へ */
 #define FAR_FREE  0x4000u          /* 半分の速さ */
 #define FAR_RESET 0x8000u          /* 置き直す(ずれ 0) */
-#define FAR_CITY  0xC000u          /* 1 面: 流す・戻すを第 2 バンクが決める(都市の前半・後半だけ流し、広場の手前で戻す。g_far の t1 = 0 なら設定を書く) */
+#define FAR_CITY  0xC000u          /* 1 面: 流す・戻すを第 4 バンクが決める(都市の前半・後半だけ流し、広場の手前で戻す。g_far の t1 = 0 なら設定を書く) */
 void stage_ev_scroll(s16 line, u16 x);      /* ラスターリスト(ovl_bands の中で、行の順に) */
 void stage_ev_pal(s16 line, const u8 *rgb);
 void stage_ev_ps(s16 line, const u8 *rgb, u16 x);   /* 色 1 と横スクロールを 1 つの項目に */

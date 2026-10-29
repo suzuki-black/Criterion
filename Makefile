@@ -236,7 +236,7 @@ BK_SIZE_FIRST := infx
 # ---- 第 3 バンク(src/bank3): セグメント 7。第 2 バンクと同じ作り(ROM はバンク 102..103)。★互いの呼び口は使えない(入れ子) ----
 BK3_EXPORTS := hud_init hud_update hud_sprites
 # ---- 第 4 バンク(src/bank4): セグメント 8。同じ作り(ROM はバンク 100..101。呼び口の番号は 0xC0 から)。★ほかのバンクの呼び口は使えない ----
-BK4_EXPORTS := music_frame far_step
+BK4_EXPORTS := music_frame far_step plumb_gen
 BK4_RELS := $(patsubst src/bank4/%.c,$(BUILD)/b4_%.rel,$(wildcard src/bank4/*.c))
 $(BUILD)/b4_%.rel: src/bank4/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
