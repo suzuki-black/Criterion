@@ -286,6 +286,10 @@ typedef struct { u8 s0, s1, t0, t1, strip[8]; } FarCfg;   /* 遠景(stage.c): �
 extern FarCfg *g_far;              /* 0 = 使わない。オーバレイの変数を指す */
 u16 far_step(u16 a);               /* 第 4 バンク: 遠景の帯の横位置。a = bg の位置(14 ビット) | 指示 << 14(FAR_LOCK / FAR_FREE / FAR_RESET) */
 u8  plumb_gen(u8 reset);           /* 第 4 バンク: 1 面の PLUMB の絵を 1 段ずつ作る(reset = 1 で始める)。全部できたら 1 */
+void pawn_sheet(void);             /* 第 4 バンク: 1 面の Pawn の絵をページ 2 へ */
+void pawn_cl_reset(void);          /* 第 4 バンク(climb.c): ビルの壁を登る Pawn */
+u8   pawn_cl_try(u16 wx);
+void pawn_cl_update(u8 tick);
 #define FAR_LOCK  0x0000u          /* bg と一緒に動きつつ、ずれを 1/8 ずつ 0 へ */
 #define FAR_FREE  0x4000u          /* 半分の速さ */
 #define FAR_RESET 0x8000u          /* 置き直す(ずれ 0) */
@@ -296,5 +300,7 @@ void stage_ev_ps(s16 line, const u8 *rgb, u16 x);   /* 色 1 と横スクロー�
 void stage_ev_pal_i(s16 line, u8 idx, const u8 *rgb);   /* 色 idx を(1 項目に 1 色)*/
 void stage_ev_haze(s16 line, u8 n, u8 *tbl);  /* HR ポーリング帯(R#27 を毎ライン。tbl は (r26, r27) × n) */
 void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */
+void stage_restore(s16 x, s16 y, u8 w, u8 h);   /* 画面の矩形を背景の絵(短冊・遠景、空は色 1)へ描き戻す(GHOST。x と w は偶数) */
+u8   stage_src_of(u16 wcol, s16 s0);   /* 世界の列 wcol の高さ s0 のブロックを写す短冊の番号(遠景を含む) */
 
 #endif /* GAME_H */

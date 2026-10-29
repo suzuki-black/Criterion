@@ -188,11 +188,15 @@ def main(d, hpath):
         f.write('#ifndef CITY_DATA_H\n#define CITY_DATA_H\n\n')
         for k, v in SEC.items(): f.write(f'#define CITY_COL_{k} {v}\n')
         f.write(f'#define CITY_COLS {len(cmap)}\n#define CITY_ROAD_Y {ROAD_Y}\n#define CITY_WALK {WALK}\n\n')
-        f.write(f'#define CITY_NTURRET {len(turrets)}\n')
+        f.write(f'#define CITY_NTURRET {len(turrets)}\n#ifndef CITY_CLIMB\n')
         f.write('static const u16 city_turret_col[CITY_NTURRET] = {\n    ' +
                 ', '.join(str(c) for c, _ in turrets) + ' };\n')
         f.write('static const u8 city_turret_row[CITY_NTURRET] = {\n    ' +
-                ', '.join(str(r) for _, r in turrets) + ' };\n')
+                ', '.join(str(r) for _, r in turrets) + ' };\n#endif\n')
+        # ★Pawn が登るビルの左の壁の短冊 → 屋上の行(0 = 登れない)。pawn.c だけが使う(表を複製しないよう #ifdef で)
+        climb = [0] * 32
+        for t in HEIGHTS: climb[BLD[t][0]] = t
+        f.write('\n#ifdef CITY_CLIMB\nstatic const u8 city_climb[32] = {\n    ' + ', '.join(str(c) for c in climb) + ' };\n#endif\n')
         f.write('\n#endif /* CITY_DATA_H */\n')
 
 if __name__ == '__main__':

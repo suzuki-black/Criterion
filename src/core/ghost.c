@@ -47,6 +47,16 @@ void gq_hmmv(u16 dx, u16 dy, u16 nx, u16 ny, u8 byte) {
     p[12] = byte; p[14] = 0xC0;
 }
 
+/* LMMM・TIMP: 色 0 を透かして写す(1 面の Pawn がビルの壁を登る。HMMM より 1 ドットずつ遅いので小さな絵だけ) */
+void gq_lmmm_t(u16 sx, u16 sy, u16 dx, u16 dy, u16 nx, u16 ny) {
+    u8 *p = push();
+    if (!p) return;
+    p[0] = (u8)sx; p[1] = (u8)((sx >> 8) & 0x01);
+    p[2] = (u8)sy; p[3] = (u8)((sy >> 8) & 0x03);
+    rect(p, dx, dy, nx, ny);
+    p[12] = 0; p[14] = 0x98;
+}
+
 /* LINE: (x, y) から (dx, dy) だけ。色 col(4 ビット)。6 面の GNOMON の針 */
 void gq_line(u16 x, u16 y, s16 dx, s16 dy, u8 col) {
     u8 *p = push();

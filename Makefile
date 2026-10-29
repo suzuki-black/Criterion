@@ -124,7 +124,7 @@ $(BUILD)/g_raster.rel: src/core/raster.c $(HDRS) config.mk Makefile | $(BUILD)
 GAME_REST  := $(filter-out $(BUILD)/raster.rel $(GAME_FIRST) $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel,$(CORE))   # pcmb(方式 B の試作)・pcmc(方式 A/C の制御)は M0 の検証用
 # ★第 2 バンク(src/bank、ページ 2 のセグメント 6)から呼べるのはページ 1 のものだけなので、下回り(GAME_REST)と
 #   敵・自機をページ 1 へ寄せる(Makefile の検査と、第 2 バンクのリンクが 0x8000 以上の記号を見ないことで守る)
-GAME_P1    := $(BUILD)/g_enemy.rel
+GAME_P1    := $(BUILD)/g_enemy.rel $(BUILD)/g_restore.rel   # restore: 第 4 バンクの登る Pawn から呼ぶ
 GAME_MID   := $(filter-out $(GAME_FIRST) $(GAME_P1),$(GAME_RELS))
 # ★ページ 0 のコード(CODE0、0x0100-OVL_BASE): 共通のエンジン(ROTOR / GHOST)。起動時に ROM の bank4-5 から
 #   RAM へ複製する(main.c の code0_load。直接割込み方式の間はページ 0 が RAM)。複製の前には呼ばないこと。
@@ -134,7 +134,7 @@ GAME_CODE0_CORE := $(CODE0_CORE:%=$(BUILD)/%.rel)
 $(BUILD)/g_music.rel: src/game/music.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) --opt-code-size $(DEFS) --codeseg CODE0 --constseg CODE0 -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 # 毎フレームの重い経路を自分では持たないファイルは大きさを優先する(常駐の空き。M7 の後。hud.c は逆に太ったので外した)
-SIZE_FIRST := main bg
+SIZE_FIRST := main bg restore
 $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(SIZE_FIRST),$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
@@ -236,7 +236,7 @@ BK_SIZE_FIRST := infx
 # ---- 第 3 バンク(src/bank3): セグメント 7。第 2 バンクと同じ作り(ROM はバンク 102..103)。★互いの呼び口は使えない(入れ子) ----
 BK3_EXPORTS := hud_init hud_update hud_sprites
 # ---- 第 4 バンク(src/bank4): セグメント 8。同じ作り(ROM はバンク 100..101。呼び口の番号は 0xC0 から)。★ほかのバンクの呼び口は使えない ----
-BK4_EXPORTS := music_frame far_step plumb_gen
+BK4_EXPORTS := music_frame far_step plumb_gen pawn_sheet pawn_cl_reset pawn_cl_try pawn_cl_update
 BK4_RELS := $(patsubst src/bank4/%.c,$(BUILD)/b4_%.rel,$(wildcard src/bank4/*.c))
 $(BUILD)/b4_%.rel: src/bank4/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@

@@ -15,7 +15,6 @@ void boss_vram(void);               /* VRAM の窓で毎フレーム(絵を作�
 void boss_vram_gen(void);
 u8   boss_bands(s16 *line, s8 *off);   /* LEGION の揺れの帯(数を返す) */
 
-void pawn_sheet_load(void);
 void pawn_reset(void);
 void pawn_update(u8 active);
 void pawn_cell(s16 x, s16 y, u8 kind);  /* 空の地の 4x4: 0 / 1 = Pawn、2 = 空 */

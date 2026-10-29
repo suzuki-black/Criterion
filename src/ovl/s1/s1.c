@@ -61,7 +61,7 @@ void ovl_init(void) {
     rom_to_ram(ASSET_CITY_MAP_BANK, ASSET_CITY_MAP_OFF, g_map, CITY_COLS);
     g_maplen = CITY_COLS;
     stage_load_strips(ASSET_CITY_STRIPS_BANK, ASSET_CITY_STRIPS_OFF);
-    pawn_sheet_load(); pawn_reset(); boss_reset();
+    pawn_sheet(); pawn_reset(); boss_reset();
     turret_i = 0;
     far_cfg.t1 = 0; g_far = &far_cfg;                         /* 遠景(雲の底の下)。t1 = 0 = まだ(第 2 バンクが書く) */
     enter(SEC_AIR1);

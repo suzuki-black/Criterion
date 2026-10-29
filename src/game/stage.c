@@ -54,7 +54,8 @@ void boss_damage(u8 n) { g_boss_dmg = (u8)(g_boss_dmg + n); }   /* LIMIT BREAK �
 #define w0 g_w0
 static s8  dir;                    /* カメラの縦の向き(+1 = 降下、-1 = 上昇) */
 static u8  upper_sky;              /* UP_SKY = s < 0 は高い空 */
-static s16 tag[NBLK];
+s16 g_blk_tag[NBLK];               /* リングのブロック(8 行)に描いてある s(restore.c も読む) */
+#define tag g_blk_tag
 static u8  strip_bank;
 static u16 strip_src;
 static u16 strip_off;              /* 短冊を ROM から読んだバイト数(STRIP_LEN で終わり。0xFFFF = 読まない) */
@@ -209,31 +210,19 @@ void stage_update(void) {
                                       画面に古い列(リングの 64 列前)が見えた */
 static u8 run_max = RUN_MAX;       /* 流している列のコマンドの最大ブロック数 */
 
-static u8 strip_of(u16 wcol) {
-    u16 m = (u16)(wcol - w0);
-    /* ★差だけで見る(地図より手前の列は差が 65536 で回って maplen 以上になる)。試験では g_w0 が「今の列 - 広場までの列」で
-       負に回る(g_wx は面ごとに 0..511 へ戻す)ので、wcol < w0 で外にしていた間は試験の地形が全部短冊 0 になり、5 面の試験の
-       GAUGE BLOCK が空に浮いて見えた(遊んでの指摘) */
-    if (m >= g_maplen) return 0;
-    return g_strip_xlat[g_map[m] & 31];
-}
-/* ★遠景(多重スクロール): 短冊が s0..s1 の列の、s が t0..t1-1 のブロックは、短冊 strip[列 & 7](周期 64 ドットの遠景)から
-   写す。面が真ん中の帯をラスターで別の速さにずらす(1・2・3 面。帯の横位置は第 2 バンクの far_step)。g_far = 0 で使わない。
-   ★g_far はオーバレイの変数(RAM)を指す(本体の変数の領域に空きが無い。次の面のコードを読む間も変数の領域は残り、
-   次の面の ovl_init の stage_reset_ground で外す。オーバレイのコードの中の const を指すと、読み込みで壊れる) */
-FarCfg *g_far;
-static u8 far_at(u8 st, s16 s0) { const FarCfg *f = g_far; return (u8)(f && st >= f->s0 && st <= f->s1 && s0 >= f->t0 && s0 < f->t1); }
-static u8 src_of(u16 wcol, s16 s0) {
-    u8 st = strip_of(wcol);
-    return far_at(st, s0) ? g_far->strip[wcol & 7] : st;
-}
+/* 列の短冊・遠景・写し元の短冊は restore.c(ページ 1。第 4 バンクの登る Pawn も使うので、ページ 2 を呼ばない所に置く) */
+#define strip_of stage_strip_of
+#define far_at   stage_far_at
+FarCfg *g_far;                     /* 遠景の設定(restore.c の stage_far_at が見る) */
+u8 stage_strip_of(u16 wcol);
+u8 stage_far_at(u8 st, s16 s0);
 
 /* 次のコマンド(c_hmmv = 1 なら HMMV、c_star = 1 なら星を打つ) */
 static u16 c_sx, c_sy, c_dx, c_dy, c_nx, c_ny;
 static u8  c_hmmv, c_star;
 
 static void cmd_ring(u8 c, u8 b, u16 wcol, s16 s0, u8 n) {
-    c_sx = (u16)src_of(wcol, s0) * 8u; c_sy = (u16)(STRIP_Y + s0);
+    c_sx = (u16)stage_src_of(wcol, s0) * 8u; c_sy = (u16)(STRIP_Y + s0);
     c_dx = (u16)((c & 31) * 8u); c_dy = (u16)(((c & 32) ? 256u : 0u) + b * 8u);
     c_nx = 8; c_ny = (u16)n * 8u; c_hmmv = 0; c_star = 0;
 }
