@@ -63,5 +63,37 @@ void pawn_cl_update(u8 tick) {
         rx = g_cl_wx & 511u; ry = (u8)(g_cl_s - g_scam + g_vscroll);
         if (ry <= 248) gq_lmmm_t((u16)(WALK_X + 2 + ((g_cl_s & 2) ? 10 : 0)), SHEET_Y, rx & 255u, (u16)((rx & 256u) + ry), 6, 8);
     }
-    if (g_cl_st == 2 && !(tick & 31) && x > 32 && x < 224) enemy_shoot(FX(x + 3), FX(y));   /* 屋上から自機を狙う */
+    if (g_cl_st == 2 && !(tick & 31) && x > 32 && x < 224 && g_boss_state == BS_NONE) enemy_shoot(FX(x + 3), FX(y));   /* 屋上から自機を狙う(★ボス戦の間は撃たない: 弾が上乗せされて LEGION で遅れた) */
+}
+
+/* 街路の Pawn(pawn.c と同じ並び) */
+typedef struct { u16 wx; u8 lane; s8 dir; u8 on; } Pw;
+#define NPW 16
+static const u8 lane_y[2] = { 160, 176 };
+
+/* 画面の右の外に 4〜7 体の隊列を出す(2026-10-29 にオーバレイの pawn.c から移した) */
+void pawn_spawn_group(void *vp) {
+    Pw *pw = (Pw *)vp;
+    u8 i, n = (u8)(4 + (rnd8() & 3)), lane = (u8)(rnd8() & 1), k = 0;
+    s8 dir = (rnd8() & 1) ? 1 : -1;
+    for (i = 0; i < NPW && k < n; i++, pw++) {
+        if (pw->on) continue;
+        pw->on = 1; pw->lane = lane; pw->dir = dir;
+        pw->wx = (u16)((g_wx + 264u + k * 10u) & ~1u);
+        k++;
+    }
+}
+
+/* 集団で対空射撃(指示書 5.1): 自機の左右 64 ドット以内の Pawn のうち最大 3 体が、そろって自機を狙う */
+void pawn_volley(void *vp) {
+    Pw *pw = (Pw *)vp;
+    u8 i, n = 3;
+    s16 px = PX(g_pl.x);
+    if (!g_pl.alive || g_boss_state != BS_NONE) return;      /* ★ボス戦の間は撃たない(屋上の Pawn と同じ) */
+    for (i = 0; i < NPW && n; i++, pw++) {
+        s16 x;
+        if (!pw->on) continue;
+        x = (s16)(pw->wx - g_wx);
+        if (x > 16 && x < 240 && (u16)(x - px + 64) < 128) { enemy_shoot(FX(x + 3), FX(lane_y[pw->lane] - g_scam)); n--; }
+    }
 }

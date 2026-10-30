@@ -46,18 +46,6 @@ void pawn_reset(void) {
                                                      更新が毎回途中で抜けて Pawn が一度も出ていなかった) */
 }
 
-/* 画面の右の外に 4〜7 体の隊列を出す */
-static void spawn_group(void) {
-    u8 i, n = (u8)(4 + (rnd8() & 3)), lane = (u8)(rnd8() & 1), k = 0;
-    s8 dir = (rnd8() & 1) ? 1 : -1;
-    for (i = 0; i < NPW && k < n; i++) {
-        if (pw[i].on) continue;
-        pw[i].on = 1; pw[i].lane = lane; pw[i].dir = dir;
-        pw[i].wx = (u16)((g_wx + 264u + k * 10u) & ~1u);
-        k++;
-    }
-}
-
 static void kill(Pw *p) {
     s16 x = (s16)(p->wx - g_wx);
     p->on = 0;
@@ -76,7 +64,7 @@ void pawn_update(u8 active) {
        進むので、当たりの幅を後ろへ 16 ドット広げる */
     if ((half ^= 1)) return;
     tick++;
-    if (active && ++group_t >= 45) { group_t = 0; spawn_group(); }   /* 2 フレームに 1 回なので 1.5 秒ごと */
+    if (active && ++group_t >= 45) { group_t = 0; pawn_spawn_group(pw); }   /* 2 フレームに 1 回なので 1.5 秒ごと */
     if (g_lb) {                                               /* LIMIT BREAK: 画面の中の Pawn を 1 回に 3 体ずつ(消すのは VDP の
                                                                  コマンドなので、一度に全員だと重い) */
         u8 n = 3;
@@ -139,6 +127,7 @@ void pawn_update(u8 active) {
         }
     }
     pawn_cl_update(tick);
+    if (!(tick & 63)) pawn_volley(pw);                        /* 2 秒ごとに近くの Pawn がそろって撃つ(第 4 バンクの climb.c) */
     {                                                         /* 1 フレームに 1 体だけ、撃つかを決める */
         Pw *p = &pw[(u8)(tick % NPW)];
         if (p->on && rnd8() < 3) {                                /* 1 秒に約 0.7 発 */

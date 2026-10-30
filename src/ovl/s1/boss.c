@@ -463,17 +463,16 @@ static void pd_settle(void) {      /* VDP へ出た写しを「写した絵」�
 }
 
 /* VRAM の窓で毎フレーム(stage.c): 絵を作る段と、PLUMB を写す */
+extern u16 g_frame_t0;
 void boss_vram(void) {
     {   /* ★重いフレームは次へ(強化を積んだ都市後半で遅れが続いた)。PLUMB は絵ができるまで降りてこないので、登場の間は
            締め切りを 200 ラインまで緩める(★2 フレームに 1 回締め切りを無視して作ると、ボスの声の PCM と重なって 3 フレーム続けて
            遅れた。重いフレームが続いても固まらないよう、plumb_update は 4 秒で待つのをやめる)(★間に合わない分を boss_start で作り切ると 0.25 秒止まった) */
-        extern u16 g_frame_t0;
         if (!gen_done && (u16)(sys_timer() - g_frame_t0) <= (g_boss_state == BS_ENTER ? 200u * 16u : 150u * 16u)) boss_vram_gen();
     }
     if (kind != BOSS_PLUMB || !gen_done) { gq_pump(0); return; }   /* 絵ができるまでは写さない */
     {   /* 測定ビーム: 段が替わったら、太い線の幅を空の色に塗り、次の回で描く。★PLUMB を写す偶数フレームを避け、残りが少なければ
            次へ(写しと同じフレームにまとめて出すと m5 で遅れた) */
-        extern u16 g_frame_t0;
         u8 w = !bm_t || bm_t > 44 ? 0 : bm_t > 24 ? 2 : 1;
         s16 h = (s16)(SKY_BOT - bm_y);
         if (w != bm_dr && (t & 1) && gq_free() >= 24 && h > 0 && (u16)(sys_timer() - g_frame_t0) < 150u * 16u) {
@@ -487,7 +486,8 @@ void boss_vram(void) {
     }
     /* ★1 回の描き替えは最大 20 コマンド(写し 4 + 消し 4 方向 × リングの継ぎ目)。入りきらないときは見送る
        (途中まで積むと、消し残しや描き残しが出る) */
-    if (gq_free() >= 20) {
+    /* ★残りが少ないフレーム(曲の小節の頭に FM の書き込みが集中した)は次のフレームへ(写しは 30Hz なので見た目は変わらない。m3 で 1 フレーム遅れた) */
+    if (gq_free() >= 20 && (u16)(sys_timer() - g_frame_t0) < 170u * 16u) {
         u8 i = npl > 1 ? (u8)(t & 1) : 0;                     /* 2 個のときは 1 フレームおきに交互 */
         if (npl > 1) pl_load(i);
         if (g_boss_state == BS_DONE || g_boss_state == BS_NONE) {

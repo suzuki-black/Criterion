@@ -290,6 +290,8 @@ void pawn_sheet(void);             /* 第 4 バンク: 1 面の Pawn の絵を�
 void pawn_cl_reset(void);          /* 第 4 バンク(climb.c): ビルの壁を登る Pawn */
 u8   pawn_cl_try(u16 wx);
 void pawn_cl_update(u8 tick);
+void pawn_spawn_group(void *pw);   /* 第 4 バンク(climb.c): 街路の Pawn の隊列を出す。pw = Pw の配列 */
+void pawn_volley(void *pw);        /* 集団で対空射撃 */
 #define FAR_LOCK  0x0000u          /* bg と一緒に動きつつ、ずれを 1/8 ずつ 0 へ */
 #define FAR_FREE  0x4000u          /* 半分の速さ */
 #define FAR_RESET 0x8000u          /* 置き直す(ずれ 0) */
