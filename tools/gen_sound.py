@@ -160,6 +160,50 @@ class Chan:
                 r = tempo_rate(int(g[20]))
                 self.emit([0xA6, r & 255, r >> 8])
 
+    def reverse(self):
+        """音符と休符の並びを後ろから前へ(★曲の逆再生。指示書 6.3 の逆再生シンバルの代わり)。ループの区間だけを逆にし、
+        前奏は捨てる。音量・音色・切り・デチューン・ノイズは、各音符の時点の値を保って付け直す。同じ音へのタイはつないでから逆にし、
+        違う音へのタイ(レガート)は外す。PCM の合図は外す(逆の曲で鳴っても意味が合わない)"""
+        start = self.loop_at if self.loop_at is not None else 0
+        head, body = self.ev[:start], self.ev[start:]
+        state, items, k = {}, [], 0
+        for _, val, kind in head:                            # 前奏の音符は捨て、決めた音色・音量だけ引き継ぐ(全声部で捨てるので長さはそろう)
+            if kind == 'cmd' and val[0] not in (0xA3, 0xA6):
+                state[val[0] & 0xF0 if val[0] < 0xA0 else val[0]] = val
+        head = []
+        while k < len(body):
+            tick, val, kind = body[k]
+            if kind == 'cmd':
+                op = val[0]
+                if op == 0xA3 or op == 0xA6:
+                    pass                                     # PCM・テンポは逆の側では使わない(テンポは曲の頭のまま)
+                else:
+                    state[op & 0xF0 if op < 0xA0 else op] = val
+            elif kind == 'rest':
+                items.append((tuple(sorted(state.items())), val, 'rest'))
+            else:
+                n, t, tie = val
+                while tie and k + 1 < len(body) and body[k + 1][2] == 'note' and body[k + 1][1][0] == n:
+                    k += 1
+                    t += body[k][1][1]
+                    tie = body[k][1][2]
+                items.append((tuple(sorted(state.items())), (n, t, False), 'note'))
+            k += 1
+        ev = []
+        tick = 0
+        self.loop_at = len(ev)
+        prev = None
+        for st, val, kind in reversed(items):
+            if st != prev:
+                for op, b in st:
+                    if prev is None or dict(prev).get(op) != b:
+                        ev.append((tick, b, 'cmd'))
+                prev = st
+            ev.append((tick, val, kind))
+            tick += val if kind == 'rest' else val[1]
+        self.ev = ev
+        self.total = tick
+
     def code(self, base, loop):
         """bytes と、ループの戻り先(base からの相対)"""
         out = bytearray()
@@ -232,6 +276,8 @@ def compile_song(song, base, pcm_ids, song_ids):
         if name in song.ch:
             try:
                 chans[name] = Chan(song.ch[name], name == 'RHY', pcm_ids, None if cue_done else song.bar)
+                if getattr(song, 'rev', False):
+                    chans[name].reverse()
             except Err as e:
                 raise Err(f'{song.id} {name}: {e}')
             cue_done = True

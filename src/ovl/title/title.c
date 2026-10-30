@@ -68,7 +68,7 @@ static u8 cf_on, cf_k, cf_item, cf_bgm, cf_se, cf_pcm, cf_dirty, cf_keys, cf_row
 static const u8 cf_seq[10] = { IN_UP, IN_UP, IN_DOWN, IN_DOWN, IN_LEFT, IN_RIGHT, IN_LEFT, IN_RIGHT, 0x80, 0x40 };   /* 0x80 = B、0x40 = A */
 static const char *const cf_song[SND_NSONG + 1] = {
     "M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10", "M11", "M12", "M13", "M14A", "M14B", "M14C",
-    "M15", "M16", "M17", "J01", "J02", "M18", "M08C", "M10X", "STOP" };
+    "M15", "M16", "M17", "J01", "J02", "M18", "M08C", "M10X", "M06R", "M01R", "STOP" };
 static char cf_line[20];
 static const char *const cf_pcmn[11] = { "P01", "P02", "P03", "P05", "P06", "V01", "V02", "V03", "V04", "V05", "V06" };
 #define CF_COPY "@ 2026 SUZUKI-BLACK"   /* 著作権表示(@ は ©。font.c)。19 文字 = x 52..203 */

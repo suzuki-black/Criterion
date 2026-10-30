@@ -16,7 +16,7 @@ extern s8 snd_trans_next;                         /* snd.c */
 static const u8 sec_song[NSEC] = {
     A_, S_, S_, MI, S_, BO, OU,                              /* 1 面  0.. 6 */
     A_, S_, S_, S_, MI, S_, BO, OU,                          /* 2 面  7..14 */
-    A_, S_, S_, S_, S_, MI, S_, BO, OU,                      /* 3 面 15..23 */
+    A_, S_, S_, S_, SONG_M06R, MI, S_, BO, OU,               /* 3 面 15..23(19 = 逆走: 曲も逆に) */
     A_, S_, S_, S_, S_, MI, S_, BO, OU,                      /* 4 面 24..32 */
     A_, S_, S_, S_, S_, MI, S_, S_, BO, CO, OU,              /* 5 面 33..43(38 = 中ボス HANGAR、42 = 撃沈 → 哀歌) */
     A_, S_, S_, S_, MI, S_, BO, OU,                          /* 6 面 44..51 */
@@ -80,7 +80,7 @@ void music_frame(u8 over) {
     while (sec >= sec_first[st]) st++;
     if (over) w = SONG_M17;
     else if (g_phase == PH_LOGO) w = SND_NONE;
-    else if (g_phase == PH_TITLE) w = g_title_mode == 1 ? SONG_M18 : g_title_mode == 2 ? SND_NONE : SONG_M01;   /* ネームエントリー / 巻き戻し */
+    else if (g_phase == PH_TITLE) w = g_title_mode == 1 ? SONG_M18 : g_title_mode == 2 ? SONG_M01R : SONG_M01;   /* ネームエントリー / 巻き戻し(タイトルの曲を逆に) */
     else if (g_phase == PH_SORTIE) w = SONG_M02;
     else if (g_calib && g_calib < 7) w = motif_t ? stage_song[g_calib - 1] : SONG_M10;   /* 7 面の試験 01..06(頭でその面の曲を挟む) */
     else {

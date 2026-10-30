@@ -530,3 +530,17 @@ for _s in SONGS:
         _d = _psg_drums(_s.ch['RHY'])
         if _d:
             _s.ch['PSGC'] = _d
+
+# ================================================================ 逆再生の曲(指示書 6.3 の逆再生シンバルの代わり。2026-10-30)
+# gen_sound.py が声部ごとに音符の並びを後ろから前へ(Chan.reverse。前奏は捨てる)。主旋律のユーザー音色は「立ち上がりが遅く、
+# 伸ばして、離すとすぐ消える」音にして、テープの逆回しのように聞かせる。PSG の厚み付けも済んだ声部を写す
+REVERSE = [0x21, 0x21, 0x18, 0x05, 0x40, 0x40, 0x0F, 0x0F]   # EG 持続・AR 4・DR 0・SL 0・RR 15(変調・搬送とも)
+
+def _reversed(src, id, bpm):
+    s = next(x for x in SONGS if x.id == src)
+    r = Song(id, bpm, dict(s.ch), bar=s.bar, user=REVERSE)
+    r.rev = True
+    return r
+
+SONGS.append(_reversed('M06', 'M06R', 168))   # 3 面の逆走
+SONGS.append(_reversed('M01', 'M01R', 132))   # 終わりの巻き戻し(タイトルへ)
