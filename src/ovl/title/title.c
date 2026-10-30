@@ -56,7 +56,6 @@ static u8  v13;                   /* 色 13 に書いた値の目印(タイト�
 static s16 sh_x[8], sh_y[8];      /* 出撃: ロゴが砕けた破片(拡大スプライト) */
 static s8  sh_vx[8], sh_vy[8];
 static u8  loop_keep;             /* 1 = 2 周目の出撃(game_start しない) */
-static u8  hit_done;              /* ロゴが組み上がったオケヒを鳴らした */
 static u16 idle_t;                /* 最後に触ってからのフレーム(デモへ) */
 
 static u8 regs_top[2][16], regs_n[2][14], regs_ring[2][4], regs_b[2][4];
@@ -167,7 +166,7 @@ static void enter(u8 ph) {
     }
     if (ph == PH_TITLE) {
         for (i = 0; i < LOGO_BANDS; i++) band_x[i] = (i & 1) ? -256 : 256;   /* 奇数帯は左から、偶数帯は右から */
-        g_split_n = 0; ring_logo = 0; v13 = 0xFF; hit_done = 0; idle_t = 0;
+        g_split_n = 0; ring_logo = 0; v13 = 0xFF; idle_t = 0;
         g_scroll_speed = 1;
         bg_mix(0);
         vdp_set_pal(15, 7, 7, 7);
@@ -215,8 +214,7 @@ void title_update(void) {
         if (tm) { scene_update(); return; }                   /* ランキング・ネームエントリー・巻き戻し */
         if (g_split_n < YJK_H && g_pt >= 4) g_split_n = (u8)(g_split_n < 8 ? 8 : g_split_n + 2);   /* 地平線の帯が上から伸びる */
         for (i = 0; i < LOGO_BANDS; i++)
-            if (g_pt >= 24 + i * 6) band_x[i] = ease(band_x[i], 0);
-        if (!hit_done && !band_x[LOGO_BANDS - 1] && !band_x[LOGO_BANDS - 2]) { hit_done = 1; pcm_req(PCM_P01); }   /* 組み上がった瞬間にオケヒ */
+            if (g_pt >= 24 + i * 12) band_x[i] = ease(band_x[i], 0);   /* ★曲の前奏の低音 1 音(12 フレーム)ごとに 1 本。組み上がりのオケヒは曲の本体の頭(M01) */
         yjk_q++;
         if (g_in) idle_t = 0; else idle_t++;
         if (cf_update()) return;                              /* 隠しコンフィグ */
@@ -671,7 +669,7 @@ void title_start(void) {
         loop_keep = 1;
         enter(PH_TITLE);
         for (i = 0; i < LOGO_BANDS; i++) band_x[i] = 0;
-        g_split_n = YJK_H; hit_done = 1;
+        g_split_n = YJK_H;
         enter(PH_SORTIE);
         *(volatile u8 *)0xF3E0 |= 0x40; vdp_wreg(1, *(volatile u8 *)0xF3E0);   /* 読み込みの間止めていた表示を戻す */
     }

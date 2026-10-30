@@ -127,24 +127,25 @@ def rep(s, n):
 # ================================================================ 曲
 SONGS = []
 
-# ---- M01 Absolute Scale(タイトル): 92 で積み上げ → 132 で金管の Infinitas の動機 ----
+# ---- M01 Absolute Scale(タイトル): ロゴの帯が 1 本入るごとに低音が 1 音ずつ積み上がり(指示書 6.3)、組み上がると 132 で金管の
+#      Infinitas の動機。前奏は 150(1 刻み = 1 フレーム): 間 34 + 12 フレームおきに 8 音。title.c の帯の間隔(12 フレーム)と合わせる ----
 m01_prog = ['Dm', 'Bb', 'C', 'Dm', 'Gm', 'Bb', 'A', 'A']
-SONGS.append(Song('M01', 92, {
-    'FM0': 'v0 r1 r1 r1 r1 L T132 v13 @0 q2 o4d4 a4 o5d4 e4 | f2 e4 d4 | e4. c8 o4g4 o5c4 | d1 | '
+SONGS.append(Song('M01', 150, {
+    'FM0': 'v0 r%130 L T132 v13 @0 q2 o4d4 a4 o5d4 e4 | f2 e4 d4 | e4. c8 o4g4 o5c4 | d1 | '
            'o4d4 a4 o5d4 e4 | a2 g4 f4 | e2. c+4 | e1',
-    'FM1': '@1 v11 o4f1& f1& f1& f1 L ' + pad(m01_prog, 1, 60),
-    'FM2': '@1 v10 o4a1& a1& a1& a1 L ' + pad(m01_prog, 2, 64),
-    'FM3': '@14 v13 o2d1& d1& d1& d1 L q4 ' + bass(m01_prog, 2, (0, 0, 7, 12), 24),
-    'FM4': '@1 v9 r1 o2a1& a1& a1 L ' + pad(m01_prog, 0, 50),
-    'FM5': '@1 v9 r1 r1 o3d1& d1 L r1 r1 r1 r1 r1 r1 r1 r1',
-    'RHY': 'r1 r1 r1 r1 L PP01 b4 h8 h8 bs8 h8 h8 h8 | ' + rep('b4 h8 h8 bs8 h8 h8 h8', 6) + ' | b8 b8 s8 s8 bs8 s8 sc4',
-    'PSGA': '@2 v9 q2 r1 r1 r1 r1 L ' + arp(m01_prog, 62, 12, (0, 1, 2, 1)),
+    'FM1': '@1 v11 r%58 o4f%72 L ' + pad(m01_prog, 1, 60),
+    'FM2': '@1 v10 r%82 o4a%48 L ' + pad(m01_prog, 2, 64),
+    'FM3': '@14 v13 r%34 o2d%12 a%12 o3d%12 f%12 a%12 o4d%12 f%12 a%12 L q4 ' + bass(m01_prog, 2, (0, 0, 7, 12), 24),
+    'FM4': '@1 v9 r%34 o3d%96 L ' + pad(m01_prog, 0, 50),
+    'FM5': '@1 v9 r%106 o5d%24 L r1 r1 r1 r1 r1 r1 r1 r1',
+    'RHY': 'r%130 L PP01 b4 h8 h8 bs8 h8 h8 h8 | ' + rep('b4 h8 h8 bs8 h8 h8 h8', 6) + ' | b8 b8 s8 s8 bs8 s8 sc4',
+    'PSGA': '@2 v9 q2 r%130 L ' + arp(m01_prog, 62, 12, (0, 1, 2, 1)),
     # ★PSG で厚みを足す(遊んでの指摘「ドラムがポコポコ、メロディーに厚みがない」。聴き比べで C 案に決めた):
     #   B = 旋律を同じ高さで重ねる(D2 = 周期 +2 で少し低く、FM の金管とうならせる)、C = ノイズのスネア(v13、約 9 フレーム)と
     #   閉じたハイハット(v9、約 4 フレーム)。シンバルは FM のまま。★C は効果音と取り合うので、ゲーム中の曲では置き場を考える
-    'PSGB': 'r1 r1 r1 r1 L @0 v9 q2 D2 o4d4 a4 o5d4 e4 | f2 e4 d4 | e4. c8 o4g4 o5c4 | d1 | '
+    'PSGB': 'r%130 L @0 v9 q2 D2 o4d4 a4 o5d4 e4 | f2 e4 d4 | e4. c8 o4g4 o5c4 | d1 | '
             'o4d4 a4 o5d4 e4 | a2 g4 f4 | e2. c+4 | e1',
-    'PSGC': 'r1 r1 r1 r1 L N1 @1 ' + rep('r4 q9 v9 o5d+8 q9 v9 o5d+8 q4 v13 o4e8 q9 v9 o5d+8 q9 v9 o5d+8 q9 v9 o5d+8', 7) +
+    'PSGC': 'r%130 L N1 @1 ' + rep('r4 q9 v9 o5d+8 q9 v9 o5d+8 q4 v13 o4e8 q9 v9 o5d+8 q9 v9 o5d+8 q9 v9 o5d+8', 7) +
             ' r8 r8 q4 v13 o4e8 o4e8 o4e8 o4e8 q8 o4e4',
 }, user=BRASS))
 
