@@ -545,3 +545,4 @@ def _reversed(src, id, bpm):
 
 SONGS.append(_reversed('M06', 'M06R', 168))   # 3 面の逆走
 SONGS.append(_reversed('M01', 'M01R', 132))   # 終わりの巻き戻し(タイトルへ)
+SONGS.append(_reversed('M05', 'M05R', 112))   # 2 面の重力反転

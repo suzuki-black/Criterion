@@ -15,7 +15,7 @@ extern s8 snd_trans_next;                         /* snd.c */
 #define NSEC 69
 static const u8 sec_song[NSEC] = {
     A_, S_, S_, MI, S_, BO, OU,                              /* 1 面  0.. 6 */
-    A_, S_, S_, S_, MI, S_, BO, OU,                          /* 2 面  7..14 */
+    A_, S_, S_, SONG_M05R, MI, S_, BO, OU,                   /* 2 面  7..14(10 = 重力反転: 曲も逆に) */
     A_, S_, S_, S_, SONG_M06R, MI, S_, BO, OU,               /* 3 面 15..23(19 = 逆走: 曲も逆に) */
     A_, S_, S_, S_, S_, MI, S_, BO, OU,                      /* 4 面 24..32 */
     A_, S_, S_, S_, S_, MI, S_, S_, BO, CO, OU,              /* 5 面 33..43(38 = 中ボス HANGAR、42 = 撃沈 → 哀歌) */
