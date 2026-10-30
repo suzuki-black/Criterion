@@ -191,7 +191,48 @@ static u8  hg_f, hg_shown, hg_chunk, hg_ph, hg_drawing, hg_hit;
 static u16 hg_t;
 static u8  b_t;
 static const s8 hg_ring[8][2] = { { 24, 0 }, { 17, 17 }, { 0, 24 }, { -17, 17 }, { -24, 0 }, { -17, -17 }, { 0, -24 }, { 17, -17 } };
-void b6_mid_start(void) { hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_drawing = 0; hg_hit = 0; hg_ph = 0; hg_t = 0; g_boss_state = BS_ENTER; g_boss_hp = 16; b_t = 0; }
+/* ======== 砂(指示書 5.6「上部に溜まった砂(BG のドット粒子)が下部へ落ちる」。2026-10-29) ========
+   砂を、汎用の敵弾ではなく自分で動かす粒にする(最大 NSAND。落ちる間はスプライト、当たると被弾)。
+   ・括れからこぼれる砂: ガラスの中を落ち、下に溜まった砂の上(lim)で消える(★床まで落とすとガラスの底を突き抜けて見えた)。
+   ・回り終わりに 8 方向へ散る砂: 外へ飛んで重力で落ち、床に着いたら消えて、その 4 ドットの列の床の上に BG の 4x2 を
+     描き足す(列ごとの高さ pile。積もって山になる)。着地 1 回に VDP のコマンド 1 つ。山は止めた画面に描くので、戦いが終わって
+     流れれば列ごと消える */
+#define NSAND 12
+static s16 sd_x[NSAND], sd_y[NSAND], sd_vy[NSAND];   /* 固定小数点 */
+static s8  sd_vx[NSAND];
+static u8  sd_on[NSAND], sd_lim[NSAND], pile[64];  /* sd_lim: 0 = 床に積もる、それ以外 = この画面の y で消える */
+static void sand_spawn(s16 x, s16 y, s8 vx, s16 vy, u8 lim) {
+    u8 i;
+    for (i = 0; i < NSAND; i++) if (!sd_on[i]) {
+        sd_on[i] = 1; sd_x[i] = FX(x); sd_y[i] = FX(y); sd_vx[i] = vx; sd_vy[i] = vy; sd_lim[i] = lim;
+        return;
+    }
+}
+static void sand_update(void) {
+    u8 i;
+    for (i = 0; i < NSAND; i++) {
+        s16 x, y, fy;
+        u8 c;
+        if (!sd_on[i]) continue;
+        if (sd_vy[i] < FX(4)) sd_vy[i] += 3;                  /* 重力 */
+        sd_x[i] += sd_vx[i]; sd_y[i] += sd_vy[i];
+        x = PX(sd_x[i]); y = PX(sd_y[i]);
+        if (x < 0 || x > 252) { sd_on[i] = 0; continue; }
+        if (g_pl.alive && (u16)(PX(g_pl.x) + 12 - x) < 9 && (u16)(PX(g_pl.y) + 12 - y) < 9) { player_hit(); sd_on[i] = 0; continue; }
+        if (sd_lim[i]) { if (y >= sd_lim[i]) sd_on[i] = 0; continue; }
+        c = (u8)(x >> 2);
+        fy = (s16)(s6_sy(s6_top[g_map[s6_col_at(x)]]) - pile[c]);
+        if (y < fy) continue;
+        sd_on[i] = 0;                                         /* 着いた: 積もる */
+        if (pile[c] < 24 && gq_free() >= 4) { ring_cmd(0, 0, (s16)(x & ~3), (s16)(fy - 2), 4, 2, 1, 0x77); pile[c] += 2; }
+    }
+}
+static void sand_draw(void) {
+    u8 i;
+    for (i = 0; i < NSAND; i++) if (sd_on[i]) spr_put(PX(sd_x[i]) - 8, PX(sd_y[i]) - 8, PAT_EBUL, G_EBUL, 0);
+}
+
+void b6_mid_start(void) { { u8 i; for (i = 0; i < NSAND; i++) sd_on[i] = 0; for (i = 0; i < 64; i++) pile[i] = 0; } hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_drawing = 0; hg_hit = 0; hg_ph = 0; hg_t = 0; g_boss_state = BS_ENTER; g_boss_hp = 16; b_t = 0; }
 static void hg_update(void) {
     s16 cy = s6_sy(HG_S + HG_N / 2), cx = HG_X + HG_N / 2;
     if (g_boss_state == BS_ENTER) { if (rj >= RJ_END && hg_shown == 0) g_boss_state = BS_FIGHT; return; }
@@ -205,7 +246,7 @@ static void hg_update(void) {
     if (hg_hit) hg_hit--;
     if (hg_ph == 0) {                                         /* 止まっている: 括れから砂がこぼれ、上下の膨らみから自機を狙う */
         /* ★真下に砂を落とすだけだった(遊んでの指摘「ずっと真下に球を吐いている」)。砂は前半だけ、狙い撃ちと回り終わりの 8 方向を足す */
-        if (hg_t < 64 && !(hg_t & 15)) enemy_bullet(FX(cx - 2 + (rnd8() & 3)), FX(cy + 4), (s16)((s16)(rnd8() & 15) - 8), 20 + (rnd8() & 7));
+        if (hg_t < 64 && !(hg_t & 3)) sand_spawn((s16)(cx - 2 + (rnd8() & 3)), (s16)(cy + 4), (s8)((rnd8() & 7) - 4), FX(1), (u8)(cy + 26));   /* 括れから下の砂へこぼれる */
         if (hg_t == 30 || hg_t == 80) { enemy_shoot(FX(cx), FX(cy - 28)); enemy_shoot(FX(cx), FX(cy + 28)); }
         if (hg_t >= 120) { hg_ph = 1; hg_t = 0; }
     } else {                                                  /* 180° 回る(コマ 1..4、13 フレームずつ)→ 0 */
@@ -215,7 +256,7 @@ static void hg_update(void) {
         if (f >= HG_NF) {                                     /* 回り終わり: 括れから 8 方向へ砂を散らす */
             u8 k;
             f = 0; hg_ph = 0; hg_t = 0;
-            for (k = 0; k < 8; k++) enemy_bullet(FX(cx), FX(cy), hg_ring[k][0], hg_ring[k][1]);
+            for (k = 0; k < 8; k++) sand_spawn(cx, cy, (s8)(hg_ring[k][0] + (rnd8() & 15) - 8), hg_ring[k][1], 0);   /* 外へ飛んで床に積もる(向きを揺らして山をならす) */
         }
         hg_f = f;
         if (f >= 2 && f <= 3) {                               /* 括れ(弱点)が横を向いている(73°・107°。26 フレーム) */
@@ -363,11 +404,13 @@ void b6_update(void) {
     if (g_sec == SEC6_WALL || g_sec == SEC6_SHADOW) mite_update();
     if (g_sec == SEC6_DIAL || g_sec == SEC6_BOSS) num_update();
     if (g_sec == SEC6_MID && g_boss_state != BS_NONE && g_boss_state != BS_DONE) hg_update();
+    if (g_sec == SEC6_MID) sand_update();
     if (g_sec == SEC6_BOSS && g_boss_state != BS_NONE && g_boss_state != BS_DONE) gn_update();
 }
 
 void b6_draw(void) {
     if (g_sec == SEC6_BOSS && hg_hit) spr_put(GN_CX - 8, GN_CY - 8, PAT_EXPL1, G_MISC, CS_EXPL);   /* 根元に当たった火花 */
+    if (g_sec == SEC6_MID) sand_draw();
     if (g_sec == SEC6_MID && hg_hit) spr_put(HG_X + HG_N / 2 - 8, (s16)(s6_sy(HG_S + HG_N / 2) - 8), PAT_EXPL1, G_MISC, CS_EXPL);   /* 括れに当たった火花 */
     if (g_sec == SEC6_WALL || g_sec == SEC6_SHADOW) mite_draw();   /* ★影の中の敵を目だけにする演出はやめた(敵が消えたように見えた。遊んでの指摘) */
 }
