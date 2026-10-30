@@ -17,7 +17,7 @@
 enum { SECE_SPACE = 65, SECE_EARTH, SECE_ROLL, SECE_FINAL };
 
 #define CAM_EARTH (-316)
-#define CAM_ROLL0 (-700)
+#define CAM_ROLL0 (-908)           /* ★行を増やしたら 1 行 16 ずつ上へ(最後の行の止まる位置 = ROLL_S0 + (NROLL - 1) * 16 = -52 を保つ) */
 #define CAM_ROLL1 (-200)
 #define YJK_ROW   64
 #define YJK_H     56
@@ -34,9 +34,14 @@ static const u8 black[3] = { 0, 0, 0 };
 static const u8 night[3] = { 0, 0, 1 };
 
 static const char *const roll[] = {
-    "CRITERION", "", "", "STAFF", "", "GAME DESIGN", "TDF", "", "PROGRAM", "TDF", "", "GRAPHICS", "TDF", "",
-    "SOUND", "TDF", "", "", "SPECIAL THANKS", "MSX TURBO R USERS", "", "", "THANK YOU FOR PLAYING", "", "", "",
-    "SUBJECT: INFINITAS", "", "STATUS: ~" };   /* ~ は ∞(font.c) */
+    "CRITERION", "", "", "STAFF", "",
+    "ORIGINAL CONCEPT / DIRECTION", "SUZUKI-BLACK", "",
+    "PROGRAM / GRAPHICS", "CLAUDE CODE", "ANTHROPIC CLAUDE", "",
+    "SOUND", "MUSIC, SFX, SYNTHESIZED VOICES", "CLAUDE CODE", "ANTHROPIC CLAUDE", "ALL ORIGINAL", "",
+    "PCM SOURCE RECORDINGS", "CC0 1.0 FROM FREESOUND", "",
+    "ORCHESTRA HIT", "BIGDUMBWEIRDO", "", "SNARE", "KEVOY", "", "EXPLOSION", "SAMSTERBIRDIES", "", "",
+    "SPECIAL THANKS", "MSX TURBO R USERS", "", "", "THANK YOU FOR PLAYING", "", "", "",
+    "SUBJECT: INFINITAS", "", "STATUS: ~" };   /* ~ は ∞(font.c)。1 行 32 文字まで、( ) [ ] はフォントに無い */
 #define NROLL (sizeof roll / sizeof roll[0])
 #define ROLL_S0 (CAM_ROLL0 + 200)  /* 1 行目の s(16 行おき) */
 
