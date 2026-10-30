@@ -132,7 +132,7 @@ static void terrain(void) {
         if (s3_ymax[k] < hi) hi = s3_ymax[k];
         {   /* 隔壁の柱: その時のすき間 */
             u8 b = bulk_at(c);
-            if (b != 0xFF && (g_sec == SEC3_ACCEL || g_sec == SEC3_TOP)) {
+            if (b != 0xFF && (g_sec == SEC3_ACCEL || g_sec == SEC3_REV || g_sec == SEC3_TOP)) {
                 s16 t = gap_top(b);
                 if (t > lo) lo = t;
                 if (t + GAP_H - 16 < hi) hi = (s16)(t + GAP_H - 16);
@@ -177,7 +177,7 @@ void ovl_update(void) {
     /* ★高速の区間は自機の上下を速くする(スクロール 6 ドット/フレームで 1.5 → 4。隔壁は画面に入ってから 32〜36 フレームで
        来るので、1.5 では反射神経が良くても間に合わなかった。指摘。反応 20 フレームで見てから向かって全部抜けられる
        ことを、すき間の高さ・動きと合わせて計算で確かめた) */
-    { s8 sp = g_scroll_speed; g_pl_boost = (g_sec == SEC3_ACCEL || g_sec == SEC3_TOP) && sp >= 8 ? (u8)((sp - 4) << 1) : 0; }
+    { s8 sp = g_scroll_speed < 0 ? (s8)-g_scroll_speed : g_scroll_speed; g_pl_boost = (g_sec == SEC3_ACCEL || g_sec == SEC3_REV || g_sec == SEC3_TOP) && sp >= 8 ? (u8)((sp - 4) << 1) : 0; }
     switch (g_sec) {
     case SEC3_AIR:
         /* 補給船団を追って 1 → 2 ドット/フレームへ(指示書 5.3)。沈む間に 1 ドットへ戻す(加速の区間は今までどおり 1 ドットから) */
@@ -214,6 +214,7 @@ void ovl_update(void) {
         break;
     case SEC3_REV:
         if (g_scroll_speed > -16 && !(sec_t & 3)) g_scroll_speed--;   /* 逆へ加速 */
+        bulkheads();                                          /* 行きと同じ隔壁を、すき間の位置を変えて戻る(指示書 5.3「地形は一部変化」) */
         if (col_of_screen() <= S3_COL_ACCEL + 88) enter(SEC3_MID);
         break;
     case SEC3_MID:
@@ -263,7 +264,7 @@ void ovl_draw(void) {
         spr_put(x, y, PAT_GAS_TL, G_MISC, CS_QUANTA); spr_put((s16)(x + 16), y, PAT_GAS_TR, G_MISC, CS_QUANTA);
         spr_put(x, (s16)(y + 16), PAT_GAS_BL, G_MISC, CS_QUANTA); spr_put((s16)(x + 16), (s16)(y + 16), PAT_GAS_BR, G_MISC, CS_QUANTA);
     }
-    if (g_sec == SEC3_ACCEL || g_sec == SEC3_TOP) {           /* 隔壁の柱(すき間の上と下にスプライトを積む) */
+    if (g_sec == SEC3_ACCEL || g_sec == SEC3_REV || g_sec == SEC3_TOP) {   /* 隔壁の柱(すき間の上と下にスプライトを積む) */
         u8 i;
         for (i = 0; i < S3_NBULK; i++) {
             s16 sx = bulk_sx(i), t, y;
