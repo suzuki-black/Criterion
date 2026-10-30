@@ -17,6 +17,9 @@ NOI=build/game.noi
 MACHINE=${MACHINE:-My_FS-A1ST_512K}
 mkdir -p "$OUT"; rm -f "$OUT"/rotor.vram "$OUT"/legion.vram "$OUT"/city.vram
 sym() { awk -v s="$1" '$2==s{print $3}' "$NOI"; }
+# 登る Pawn の変数は第 4 バンク(セグメント 8)の中なので、RAM の通しの番地で読む
+clsym() { printf '0x%X' $(( 0x20000 + 0x$(awk -v s="$1" '$2==s{print $1}' build/bank4.map) - 0x8000 )); }
+CLWX=$(clsym _g_cl_wx); CLS=$(clsym _g_cl_s); CLST=$(clsym _g_cl_st)
 ST=$(sym _g_stat); GQD=$(sym _g_gq_drop); PL=$(sym _g_pl); SEC=$(sym _g_sec); BS=$(sym _g_boss_state); INV=$(sym _g_dbg_invul)
 WX=$(sym _g_wx); W0=$(sym _g_w0); LGON=$(sym _g_lg_on); LGX=$(sym _g_lg_x0); SCAM=$(sym _g_scam)
 PCMOFF=$(awk '$2=="_g_pcm_off"{print $3}' "$NOI")   # ★PCM は切る(エンジンの時間を見る。PCM は run_game_m7.sh)
@@ -35,7 +38,7 @@ proc dump {name} {
   binary scan [debug read_block memory $SCAM 2] s sc
   binary scan [debug read_block memory $LGON 52] su26 lg
   binary scan [debug read_block memory $LGX 2] s lx
-  set h [open "$OUT/\$name.txt" w]; puts \$h "wx=\$wx w0=\$w0 scam=\$sc sec=[rd $SEC] bs=[rd $BS] lx=\$lx lg=\$lg"; close \$h
+  set h [open "$OUT/\$name.txt" w]; puts \$h "wx=\$wx w0=\$w0 scam=\$sc sec=[rd $SEC] bs=[rd $BS] lx=\$lx clst=[debug read {Main RAM} $CLST] cls=[debug read {Main RAM} $CLS] clwx=[expr {[debug read {Main RAM} $CLWX] + 256 * [debug read {Main RAM} [expr {$CLWX + 1}]]}] lg=\$lg"; close \$h
 }
 set ::legion_done 0
 proc watch {} {
@@ -90,6 +93,7 @@ for W in range((wx + 8 + 7) >> 3, (wx + 248) >> 3):
         got = v[page * 0x8000 + r * 128 + xb: page * 0x8000 + r * 128 + xb + 4]
         kk = (27, 28, 29, 30, 31, 27, 28, 29)[W & 7] if 16 <= s < 40 and k <= 26 else k   # ★遠景の行は遠景の短冊(bank/far.c の FAR_CITY)
         exp = v[0x18000 + s * 128 + kk * 4: 0x18000 + s * 128 + kk * 4 + 4]
+        if d['clst'] and W == d['clwx'] >> 3 and d['cls'] - 2 <= s < d['cls'] + 10: continue   # ★ビルの壁を登る Pawn(第 4 バンクの climb.c)の行
         if got != exp: bad += 1
 check('city_ring', d['scam'] == 0 and bad == 0 and cols >= 28, f"列={cols} 違う 4 バイト={bad} (wx={wx} scam={d['scam']} 区間={d['sec']})")
 # 2. LEGION
