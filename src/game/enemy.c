@@ -596,8 +596,8 @@ void enemy_draw(void) {
         if (e->type == E_TICK) pat = (e->t & 16) ? PAT_TICK2 : PAT_TICK1;
         else if (e->type == E_TOCK) pat = (e->t & 16) ? PAT_TOCK2 : PAT_TOCK1;
         else if (e->type == E_NOTCH) pat = PAT_NOTCH;
-        else pat = PAT_SPIRIT;
-        spr_put(PX(e->x) - 8, PX(e->y) - 8, pat, pat == PAT_SPIRIT ? G_ENEMY : G_PAIR, 0);   /* ★編隊の敵は 2 枚重ね(3 色) */
+        else pat = e->x < g_pl.x ? PAT_SPIRIT_R : PAT_SPIRIT;   /* 砲身は自機の側を向く */
+        spr_put(PX(e->x) - 8, PX(e->y) - 8, pat, e->type == E_SPIRIT ? G_ENEMY : G_PAIR, 0);   /* ★編隊の敵は 2 枚重ね(3 色) */
         pcmx_service();
     }
     if (g_zako_n) zako_draw();

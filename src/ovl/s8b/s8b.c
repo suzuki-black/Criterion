@@ -373,6 +373,27 @@ static void ring_vram(void) {
     }
 }
 
+/* ======== 脱出の破片(指示書 5.8「崩落する破片が全帯で降る」。★前は丸い敵弾だった) ========
+   崩れた母艦の破片が斜めに落ちる。当たると被弾。最大 NDB 個 */
+#define NDB 6
+static s16 db_x[NDB], db_y[NDB], db_vy[NDB];   /* 固定小数点 */
+static u8  db_on[NDB];
+static void db_update(void) {
+    u8 i;
+    if (!(sec_t & 7)) for (i = 0; i < NDB; i++) if (!db_on[i]) {
+        db_on[i] = 1; db_x[i] = FX(64 + (s16)rnd8()); db_y[i] = FX(8); db_vy[i] = (s16)(24 + (rnd8() & 15));
+        break;
+    }
+    for (i = 0; i < NDB; i++) {
+        s16 x, y;
+        if (!db_on[i]) continue;
+        db_x[i] -= 64; db_y[i] += db_vy[i];
+        x = PX(db_x[i]); y = PX(db_y[i]);
+        if (y > 172 || x < -8) { db_on[i] = 0; continue; }
+        if (g_pl.alive && (u16)(PX(g_pl.x) + 8 - x + 8) < 16 && (u16)(PX(g_pl.y) + 8 - y + 8) < 16) { player_hit(); db_on[i] = 0; }
+    }
+}
+
 /* ======== 区間 ======== */
 static void boss_form(u8 sec) {
     g_sec = sec; sec_t = 0; b_t = 0;
@@ -389,6 +410,7 @@ static void boss_form(u8 sec) {
 void ovl_init(void) {
     g_ter.lo = s8_floor; g_ter.hi = s8_ceil; g_ter.lo_add = 0; g_ter.ncol = S8_COLS;   /* DROP の爆雷が這う床・天井 */
     g_boss_state = BS_NONE; t = 0; rj = 0; rph = 0; rrow = 0; fo = fi = 0; ln = 0; ang = 0; hit_t = 0; lz_a = 0; lz_drawn = 0; lz_k = 4;
+    { u8 i; for (i = 0; i < NDB; i++) db_on[i] = 0; }
     g_sec = SEC8_CORE; sec_t = 0; sec_wx = g_wx;
     enemy_waves(WAVES_AIR);
 }
@@ -417,7 +439,7 @@ void ovl_update(void) {
         break;
     case SEC8_ESCAPE:                                         /* 最高速で脱出。全部の帯で破片が降る */
         if (g_scroll_speed < 32 && !(sec_t & 3)) g_scroll_speed++;
-        if (!(sec_t & 3)) enemy_bullet(FX(rnd8()), FX(8), -16, (s16)(16 + (rnd8() & 15)));
+        db_update();
         if ((u16)(g_wx - sec_wx) >= ESC_LEN) { g_sec = SEC8_OUT; sec_t = 0; g_hall = 0; stage_sky_redraw(); }   /* 縦穴の壁を星空に */
         break;
     case SEC8_OUT:                                            /* 宇宙へ抜ける → 終幕 */
@@ -457,8 +479,9 @@ void ovl_logic(void) {
 void ovl_draw(void) {
     if (hit_t) { hit_t--; if (g_boss_state == BS_FIGHT) spr_put(hit_x - 8, hit_y - 8, PAT_EXPL1, G_MISC, CS_EXPL); }
     if (g_sec == SEC8_BOSS3 && g_boss_state == BS_FIGHT) ring_draw();
-    if (g_sec == SEC8_ESCAPE) {                               /* 脱出: 光の流線が後ろへ飛ぶ(最高速の手応え) */
+    if (g_sec == SEC8_ESCAPE) {                               /* 脱出: 光の流線が後ろへ飛ぶ(最高速の手応え)、破片 */
         u8 i;
+        for (i = 0; i < NDB; i++) if (db_on[i]) spr_put(PX(db_x[i]) - 8, PX(db_y[i]) - 8, PAT_DEBRIS, G_EBUL, 0);
         for (i = 0; i < 4; i++) spr_put((s16)((u8)(200 - sec_t * 24 - i * 71)), (s16)(24 + ((i * 97 + (sec_t >> 3) * 31) & 127)), PAT_STREAK, G_MISC, CS_CURSOR);
     }
 }
