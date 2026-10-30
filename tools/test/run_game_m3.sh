@@ -41,6 +41,7 @@ proc dump {name} {
   set h [open "$OUT/\$name.txt" w]; puts \$h "wx=\$wx w0=\$w0 scam=\$sc sec=[rd $SEC] bs=[rd $BS] lx=\$lx clst=[debug read {Main RAM} $CLST] cls=[debug read {Main RAM} $CLS] clwx=[expr {[debug read {Main RAM} $CLWX] + 256 * [debug read {Main RAM} [expr {$CLWX + 1}]]}] lg=\$lg"; close \$h
 }
 set ::legion_done 0
+set ::late_prev 0; set ::late_at {}
 proc watch {} {
   set s [rd $SEC]
   if {\$s == 3} { debug write_block memory [expr {$PL+2}] [binary format s 1280] }
@@ -50,7 +51,9 @@ proc watch {} {
     if {\$::legion_wait > 8} { dump legion; set ::legion_done 1 }
   }
   if {\$s == 5 && [rd $BS] == 2 && !\$::rotor_done} { dump rotor; set ::rotor_done 1 }   ;# ★PLUMB は絵ができてから降りてくる(作る速さは重さしだいなので、決まった時刻では照合しない)
-  if {\$s == 6} { puts \$::f "late=[rd16 [expr {$ST+4}]] drop=[rd16 $GQD]"; close \$::f; exit }
+  set lt [rd16 [expr {$ST+4}]]
+  if {\$lt != \$::late_prev} { lappend ::late_at "[format %.2f [machine_info time]](区間 \$s)"; set ::late_prev \$lt }
+  if {\$s == 6} { puts \$::f "late=\$lt drop=[rd16 $GQD] at=\$::late_at"; close \$::f; exit }
   after time 0.25 watch
 }
 set ::legion_wait 0
@@ -126,7 +129,7 @@ check('rotor', diff == 0, f"違うバイト={diff} / {len(ref)}")
 # 4. 遅れ
 log = open(os.path.join(out, 'game_m3.log')).read()
 late = int(log.split('late=')[1].split()[0]) if 'late=' in log else -1
-check('no_late', late == 0, f"遅れたフレーム={late}")
+check('no_late', late == 0, f"遅れたフレーム={late} " + log.split(' at=')[1].split('\n')[0] if ' at=' in log else f"遅れたフレーム={late}")
 drop = int(log.split('drop=')[1].split()[0]) if 'drop=' in log else -1
 check('gq_drop', drop == 0, f"GHOST の待ち行列から捨てたコマンド={drop}")
 print('判定: ' + ('OK' if not fails else f'NG ({fails})'))

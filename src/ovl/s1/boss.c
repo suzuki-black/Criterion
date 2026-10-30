@@ -107,6 +107,8 @@ static u8  gen_done;               /* 絵ができた(作るのは第 4 バン�
 /* 測定ビーム(指示書 5.1。★前は弾 3 発だった): 先端から歩道まで。1..24 = 赤い細い線の予告(当たらない)、25..44 = 白い太い線(当たる)、
    45 で空の色に塗って消す(広場の背景は空)。描いた位置に残る(振り子は振れ続ける)。2 個のときは 1 個目だけ */
 static u8  bm_t, bm_dr;            /* 経過(0 = 無し)/ 描いてある段(0 = 無し、1 = 予告、2 = 発射) */
+static s16 ch_x[CHAIN_N], ch_y[CHAIN_N], ch_px, ch_py;   /* 鎖の節の位置と、それを求めたときの絵の位置 */
+static u8  ch_pf;
 static s16 bm_x, bm_y;
 /* 7 面の再校正版: 下げ振りが 2 個(吊り元を左右に分け、逆の位相で振って鎖を交差させる)。P を入れ替えて
    2 個ぶん動かす(体力は共有) */
@@ -117,7 +119,7 @@ static void pl_save(u8 i) { pl_cp((u8 *)&pl[i], (const u8 *)&P); }
 static void pl_load(u8 i) { pl_cp((u8 *)&P, (const u8 *)&pl[i]); cur_pl = i; }
 /* 場面の始め(game_start): 何も作っていない状態へ */
 void boss_reset(void) {
-    g_boss_state = BS_NONE; kind = 0xFF; gen_done = 1; bm_t = 0; bm_dr = 0; dr_w = 0; broken = 0;
+    g_boss_state = BS_NONE; kind = 0xFF; gen_done = 1; bm_t = 0; bm_dr = 0; ch_pf = 0xFF; dr_w = 0; broken = 0;
 }
 
 void boss_start(u8 k) {
@@ -522,11 +524,18 @@ void boss_draw(void) {
     if (npl > 1) pl_load(k);
     pd_settle();
     if (!broken && g_boss_state != BS_DYING && sh_fr != 0xFF) {   /* 吊り元から、写した絵の吊り輪まで 12 等分(1/12 ≒ 21/256) */
-        s16 rx = rg_x(sh_x, sh_fr), ry = rg_y(sh_y, sh_fr);
-        s16 stx = (s16)((rx - pivot) * 21), sty = (s16)((ry - anchor_y) * 21), ax = stx, ay = sty;
-        if (npl > 1) { stx <<= 1; sty <<= 1; ax = stx; ay = sty; }   /* 2 個のときは 1 つおきの節(スプライトの段が遅れた) */
-        for (i = 0; i < (npl > 1 ? CHAIN_N / 2 : CHAIN_N); i++, ax += stx, ay += sty)
-            spr_put((s16)(pivot + (ax >> 8)) - 8, (s16)(anchor_y + (ay >> 8)) - 8, PAT_CHAIN, G_ENEMY, 0);
+        /* ★位置は絵を写したとき(2 フレームに 1 回)しか変わらないので、1 個のときは計算を持ち越す(PLUMB の戦いは空きが少なく、
+           曲の小節の頭に重なると 1 フレーム遅れた)。2 個のときは毎回求める */
+        if (npl > 1 || sh_x != ch_px || sh_y != ch_py || sh_fr != ch_pf) {
+            s16 rx = rg_x(sh_x, sh_fr), ry = rg_y(sh_y, sh_fr);
+            s16 stx = (s16)((rx - pivot) * 21), sty = (s16)((ry - anchor_y) * 21), ax = stx, ay = sty;
+            if (npl > 1) { stx <<= 1; sty <<= 1; ax = stx; ay = sty; }   /* 2 個のときは 1 つおきの節(スプライトの段が遅れた) */
+            for (i = 0; i < (npl > 1 ? CHAIN_N / 2 : CHAIN_N); i++, ax += stx, ay += sty) {
+                ch_x[i] = (s16)(pivot + (ax >> 8)) - 8; ch_y[i] = (s16)(anchor_y + (ay >> 8)) - 8;
+            }
+            ch_px = sh_x; ch_py = sh_y; ch_pf = sh_fr;
+        }
+        for (i = 0; i < (npl > 1 ? CHAIN_N / 2 : CHAIN_N); i++) spr_put(ch_x[i], ch_y[i], PAT_CHAIN, G_ENEMY, 0);
     }
     }
 }
