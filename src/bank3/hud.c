@@ -10,6 +10,7 @@
 #include "spr.h"
 #include "hud_data.h"
 #include "sprite_data.h"
+#include "ghost.h"
 
 #define TX 136                       /* 右側の文字の左端 */
 #define GX 8                         /* ゲージの絵の左端(左 8 ドットは MSK で隠れる) */
@@ -38,6 +39,9 @@ static u8 *level_of(u8 node) {
      項目ごとに文字列を用意し、1 フレームに 2 回(1 回 = 1 行の 6 文字まで)ずつ書き進める。 */
 typedef struct { char text[16]; u8 x, y, fg; u8 row, seg; } TextJob;   /* row = 8 で書き終わり。seg = 行の中の書き始めの文字 */
 enum { J_SCORE, J_LIVES, J_NODE, NJOB };
+/* ★得点は見えない行へ書いてから 1 回で写す。表示の行へ 1 行ずつ書いていた間は、書き替えの途中の数字が別の数字に見えた(5 の上に 2 を
+   書く途中は 3 に見え、4500 → 5300 → 5200 と「上がって下がった」ように見えた。指摘) */
+#define SCORE_WORK 240               /* ページ 2 の作業行(240..247。HUD の 212..235 の下で、ほかでは使わない) */
 static TextJob job[NJOB];
 
 static void job_set(u8 j, u8 x, u8 y, u8 fg, const char *s, u8 width) {
@@ -94,6 +98,11 @@ static void jobs_run(u8 rows) {
             font_text_row(HUD_PAGE, (u8)(t->x + t->seg * 8), t->y, t->fg, 0, p, t->row);
             p[SEG_W] = c;
             if (!t->seg && c) t->seg = SEG_W; else { t->seg = 0; t->row++; }
+            if (j == J_SCORE && t->row == 8)                  /* 書き上がったら 1 回で表示の行へ */
+            {
+                gq_hmmm((u16)(TX + 24), 512u + SCORE_WORK, (u16)(TX + 24), 512u + HUD_ROW0, 40, 8);
+                if (g_phase < PH_AIR) gq_pump(0);             /* 待ち行列を回すのは空中戦から(出撃の間はここで出す) */
+            }
             rows--; pcmx_service();                           /* ★1 回ごとに PCM の送出口(M7) */
         }
     }
@@ -117,7 +126,7 @@ void hud_update(u8 rows) {
     if (g_pl.score != shown_score && job[J_SCORE].row >= 8) {
         shown_score = g_pl.score;
         num_str(buf, g_pl.score, 5);
-        job_set(J_SCORE, (u8)(TX + 24), HUD_ROW0, 15, buf, 5);
+        job_set(J_SCORE, (u8)(TX + 24), SCORE_WORK, 15, buf, 5);
     }
     if (g_pl.lives != shown_lives) {
         shown_lives = g_pl.lives;
