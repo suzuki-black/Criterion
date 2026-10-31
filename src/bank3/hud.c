@@ -54,7 +54,7 @@ static void job_set(u8 j, u8 x, u8 y, u8 fg, const char *s, u8 width) {
 static u8 init_stage;
 
 void hud_init(void) {
-    vdp_hmmv(0, 512 + HUD_VROW, 256, 24, 0x00);             /* ページ 2 の HUD の行 */
+    vdp_hmmv(0, 512 + HUD_VROW - 1, 256, 25, 0x00);         /* ページ 2 の HUD の行(HUD_R23 で上の 1 行も見える) */
     shown_score = 0xFFFF; shown_lives = 0xFF; shown_node = 0xFF; shown_lv = 0xFF; shown_armed = 0xFF;
     { u8 j; for (j = 0; j < NJOB; j++) job[j].row = 8; }
     init_stage = 1;

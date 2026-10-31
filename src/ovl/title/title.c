@@ -149,7 +149,7 @@ void title_load(void) {
     rom_to_vram(ASSET_TDF_BANK, ASSET_TDF_OFF, 1, (u16)(0x8000u + TDF_ROW * 128u), ASSET_TDF_LEN); /* ページ 3 */
     vdp_hmmv(0, 512 + 128, 256, 84, 0x00);                   /* ページ 2 の 128..211 行: 起動ロゴの黒(ゲーム中は
                                                                 PLUMB の絵や面の開始表示に使うので描き直す) */
-    vdp_hmmv(0, 512 + HUD_VROW, 256, 24, 0x00);               /* HUD 帯は空にしておく(文字はタイトルに入ってから) */
+    vdp_hmmv(0, 512 + HUD_VROW - 1, 256, 25, 0x00);           /* HUD 帯は空にしておく(文字はタイトルに入ってから) */
     vdp_cmd_wait();
 }
 
@@ -287,7 +287,7 @@ void title_vram(void) {
         }
     }
     if (g_phase == PH_SORTIE) {
-        if (g_pt == 1) vdp_hmmv(0, 512 + HUD_VROW, 256, 24, 0x00);   /* タイトルの文字を消す */
+        if (g_pt == 1) vdp_hmmv(0, 512 + HUD_VROW - 1, 256, 25, 0x00);   /* タイトルの文字を消す */
         /* ゲームの HUD は上の帯(SCREEN12)が消えてから描く。★SCREEN12 の表示中に VRAM の書き込みが 244 行を
            越えると、書き込みが別の場所へ化ける(HUD の文字が崩れ、プレイエリアに黒い点が出た) */
         if (!g_hud_on && !g_split_n && !g_split_shown) { hud_init(); g_hud_on = 1; }   /* 表示中のリストも分割なし */
