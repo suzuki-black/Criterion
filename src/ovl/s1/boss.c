@@ -520,6 +520,10 @@ void boss_draw(void) {
         if (g_boss_state == BS_FIGHT) spr_put((s16)(gx0 + 24 + sway[2]) - 8, LG_Y + 34 - 8, PAT_LEGION_CORE, G_ENEMY, 0);
         return;
     }
+    if (anchor_y >= -10) {                                    /* 吊り元の測定艦(画面の上端。指示書 5.1。2 個のときは中央に 1 隻) */
+        spr_put((s16)(128 - 16), (s16)(anchor_y + 10), PAT_PROBE_L, G_MISC, CS_DIM);
+        spr_put(128, (s16)(anchor_y + 10), PAT_PROBE_R, G_MISC, CS_DIM);
+    }
     for (k = 0; k < npl; k++) {
     if (npl > 1) pl_load(k);
     pd_settle();
