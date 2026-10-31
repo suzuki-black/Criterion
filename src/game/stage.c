@@ -121,7 +121,9 @@ void stage_reset_ground(void) {
 }
 /* ---- 7 面の試験(過去の面のオーバレイを g_calib で再校正版として読み直す) ---- */
 u8 g_calib, g_loop;
+static u8 g_scan_t;                /* 試験の頭の測定の光(64 から 0 へ。1 本の帯に 8 フレーム。stage_build) */
 void calib_begin(u8 k) {
+    g_scan_t = 64;
     char s[27];
     static const char head[] = "TEST 0  SUBJECT: INFINITAS";
     u8 i;
@@ -543,6 +545,7 @@ void stage_ev_ps(s16 line, const u8 *rgb, u16 x) {
 static const u8 hs_indigo[8][3] = { { 0, 0, 2 }, { 1, 0, 2 }, { 1, 0, 3 }, { 1, 1, 3 }, { 2, 1, 3 }, { 2, 1, 4 }, { 3, 1, 4 }, { 3, 2, 4 } };
 static const u8 hs_black[8][3]  = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 1, 0, 1 }, { 1, 0, 2 } };
 static u8 hs_cur[8][3];
+static const u8 hs_scan[3] = { 2, 6, 7 };
 static const u8 sky_line[7] = { 0, 16, 32, 48, 64, 80, 96 };
 static u8 regs_top[2][16], regs_b[2][8];
 
@@ -590,6 +593,7 @@ void stage_build(void) {
     u16 nx = bg_layer_x(2);
 
     E = ras_back(); K = 1; sat_done = 0; vs_n = 0; vs_bi = bi;
+    if (g_scan_t) g_scan_t--;
     sat_regs = regs_b[bi];
     sat_regs[0] = 5; sat_regs[1] = spr_regs.r5b; sat_regs[2] = 11; sat_regs[3] = spr_regs.r11b;
     rt[0] = 5; rt[1] = spr_regs.r5a; rt[2] = 11; rt[3] = spr_regs.r11a;
@@ -617,7 +621,7 @@ void stage_build(void) {
         for (i = 0; i < 8; i++) {
             s16 l = (s16)(S_AIR2 + i * 24 - sc);
             if (l + 24 <= 0 && i < 7) continue;                       /* 画面の上の外で終わる帯は出さない(0 行へまとまるだけ) */
-            stage_ev_pal(l, hs_cur[i]);
+            stage_ev_pal(l, g_scan_t && (u8)(g_scan_t >> 3) == (u8)(7 - i) ? hs_scan : hs_cur[i]);   /* 試験の頭: 測定の光が帯を上から下へ走る */
             /* 星の 3 層: 遠い・中・近い。★測定空間(g_hall)は 1 層(7 面の LIBRA は BG を画面 = リングの位置で描くので、上の 2 層では
                支柱と竿が横にずれて見えなかった。遊んでの指摘「どこが弱点かわからない」) */
             if (i == 0) stage_ev_scroll(l, g_hall ? nx : nx >> 2);
