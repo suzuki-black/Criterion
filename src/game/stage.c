@@ -146,6 +146,7 @@ u8 calib_out(u16 t) {
         g_scroll_speed = 4;                                   /* ボスで止めた世界を流す(次の試験は流れで降りる) */
     }
     if (g_scam_q > -192 * 16) g_scam_q -= 24;                 /* 白い空間へ上がる */
+    if (t > 120 && !(t & 63)) g_scan_t = 64;                  /* 試験の間の回廊: 測定の光のゲートをくぐっていく(指示書 5.7) */
     if (t == 300) {
         u8 k = ++g_calib;
         ovl_request(k <= 6 ? (u8)(OVL_S1 + k - 1) : OVL_S7);
