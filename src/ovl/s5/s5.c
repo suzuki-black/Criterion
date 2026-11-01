@@ -1,5 +1,5 @@
 /* s5.c — 5 面「規格戦艦ノルム」のオーバレイ: 区間・カメラ・帯・当たり・接近・撃沈(指示書 5.5)。
-   宇宙 → 雲海の上へ降りる → 接近(世界を止め、雲だけ帯で流す。遠くの戦艦が 8 段で大きくなり、閃光で実寸の
+   宇宙 → 雲海の上へ降りる → 接近(世界を止め、雲だけ帯で流す。遠くの戦艦が 57 段で大きくなり、閃光で実寸の
    BG へ)→ 艦首(機銃)→ 艦体上面(主砲塔 4 基)→ 中ボス HANGAR DECK(誘爆で艦体に穴)→ 穴から艦底へ(上半分が
    艦底、下半分が雲海)→ 装甲の破れ目から機関部(天井と床のプレスが R#23 の帯で上下)→ 出口の縦穴から艦橋へ →
    ボス GAUGE BLOCK → 撃沈(前後の帯が離れながら沈む)→ 宇宙へ。
@@ -25,7 +25,7 @@ static u16 sec_wx, sec_t;
 static u8  side;                   /* 自機のいる側: 0 = 艦体の上、1 = 下、2 = 室内 */
 static s16 cam_to;                 /* カメラの行き先(s × 16) */
 static u16 cq;                     /* 接近の間の雲の流れ(1/4 ドット) */
-static u8  far_k, far_drawn, flash_t, far_t;
+static u8  far_on, flash_t;
 static u8  vortex;
 static u8  press_on;
 s8 s5_press_c, s5_press_f;
@@ -64,7 +64,7 @@ void ovl_init(void) {
     g_maplen = S5_COLS;
     stage_load_strips(ASSET_S5_STRIPS_BANK, ASSET_S5_STRIPS_OFF);
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; g_col_rev = 0; g_sky_t = 16;
-    side = 0; far_k = 0; far_drawn = 0xFF; flash_t = 0; far_t = 0; press_on = 0; cq = 0; vortex = 0;
+    side = 0; far_on = 0; flash_t = 0; press_on = 0; cq = 0; vortex = 0;
     s5_press_c = s5_press_f = 0; cam_to = S_TOP * 16;
     b5_init();
     if (g_calib) {                                            /* 7 面の試験 05: 白い空間から艦橋の甲板へ降りて GAUGE BLOCK */
@@ -118,12 +118,10 @@ static void terrain(void) {
     g_pl_ymax = hi > PLAY_H - 16 ? PLAY_H - 16 : hi;
 }
 
-/* 接近: 遠くの戦艦(8 段)を空の帯に描く。下の中央を (180, 104) にそろえる(大きいコマが前のコマを覆う) */
+/* 接近: 遠くの戦艦を空の帯に描く(zoom.c)。下の中央を (180, 104) にそろえる(大きいコマが前のコマを覆う) */
 static void far_draw(void) {
-    const u8 *f = s5_far[far_k];
-    if (far_drawn == far_k || gq_free() < 8) return;
-    ring_cmd(f[0], (u16)(512u + 64u + f[1]), (s16)(180 - (f[2] >> 1)), (s16)(104 - f[3] - g_scam), f[2], f[3], 0, 0);
-    far_drawn = far_k;
+    if (!far_on || gq_free() < 8) return;
+    if (zoom_step()) ring_cmd(0, 512u + 64u, (s16)(180 - g_zm_w), (s16)(104 - g_zm_h - g_scam), (u8)(g_zm_w * 2), g_zm_h, 0, 0);
 }
 
 void ovl_update(void) {
@@ -143,11 +141,14 @@ void ovl_update(void) {
     case SEC5_APPROACH:                                       /* 世界は止め、雲だけ流す。戦艦がだんだん大きくなる */
         if (flash_t == 0) {
             cq += 6;
-            if (sec_t > 120 && ++far_t >= 110) { far_t = 0; if (far_k < 7) far_k++; else flash_t = 1; }   /* 1 段 1.8 秒 */
+            if (sec_t > 120) {
+                if (!far_on) { far_on = 1; zoom_start(ASSET_FAR_BANK, ASSET_FAR_OFF, 64u * 128u); }
+                else if (g_zm_done) flash_t = 1;
+            }
         } else if (++flash_t == 2) {                          /* 閃光: 遠くの絵を消して、実寸の艦が来る */
             cq = 0;                                           /* 雲の帯も世界の位置へ戻す(跳ぶのは閃光の間) */
             vdp_set_pal(3, 7, 7, 7); vdp_set_pal(4, 7, 7, 7); vdp_set_pal(14, 7, 7, 7); vdp_set_pal(2, 7, 7, 7);
-            ring_cmd(0, 0, 180 - 88, (s16)(104 - 35 - g_scam), 176, 35, 1, 0x11);
+            ring_cmd(0, 0, 180 - 90, (s16)(104 - 40 - g_scam), 180, 40, 1, 0x11);
         } else if (flash_t == 8) {
             palette(); vdp_set_pal(14, 4, 4, 5);
             g_scroll_speed = 8;                               /* 艦首を急いで連れてくる */

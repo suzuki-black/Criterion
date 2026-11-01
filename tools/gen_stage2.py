@@ -95,26 +95,37 @@ section('ARENA2', 40, 0, 0, 0, 0)
 section('OUT', 64, 0, 0, 0, 0)
 SEC['END'] = len(cmap)
 
-def kilogram(n=64):
-    """n x n。64 = ROTOR の元(近づく段)、96 = 戦う大きさの描き直し(C3。ROTOR で 1.5 倍にすると縁が角ばる)"""
-    k = n / 64
+def kilogram(n, R):
+    """n x n の箱の真ん中に半径 R の球。R は実数(箱は 4 の倍数なので、球がどの大きさでも中心が揺れない)"""
+    k = R / 30
     s = [[1] * n for _ in range(n)]
-    cx = cy = (n - 1) / 2; R = 30 * k
+    cx = cy = (n - 1) / 2
     for y in range(n):
         for x in range(n):
             dx, dy = x - cx, y - cy
             d = math.hypot(dx, dy)
             if d > R: continue
             l = (-dx * 0.6 - dy * 0.5) / R                # 左上から光
-            if d > R - 2 * k: c = 5                              # 縁取りは 1 色の輪(★左上と右下で色を替えていた間は、輪と本体がずれて見えた。遊んでの指摘)
-            elif abs(dy) < 1.5 * k and abs(dx) < R - 4 * k: c = 7  # 赤道の亀裂(弱点)。★BG の色 7(13 はスプライトと共有で、開閉で回すと敵が暗く潰れて見えた)
+            if d > R - max(2 * k, 1): c = 5                      # 縁取りは 1 色の輪(★左上と右下で色を替えていた間は、輪と本体がずれて見えた)
+            elif abs(dy) < max(1.5 * k, 0.6) and abs(dx) < R - 4 * k: c = 7  # 赤道の亀裂(弱点)。★BG の色 7(13 はスプライトと共有)
             elif l > 0.55: c = 4
             elif l > 0.1: c = 3
             else: c = 2
             s[y][x] = c
+    return s
+
+# 近づく絵の列: 半径 7 → 45(戦う大きさ)を KG_STEP ずつ。1 枚 = 見出し 4 バイト(1 行のバイト数・行数・保つフレーム数・最後の印)+ 絵(zoom.c)
+KG_R0, KG_R1, KG_STEP, KG_HOLD = 7.0, 45.0, 1.5, 13
+def kg_stream():
     out = bytearray()
-    for y in range(n):
-        for x in range(0, n, 2): out.append((s[y][x] << 4) | s[y][x + 1])
+    n = int((KG_R1 - KG_R0) / KG_STEP + 0.5)
+    for i in range(n + 1):
+        R = KG_R0 + (KG_R1 - KG_R0) * i / n
+        box = (int(2 * R + 2) + 3 + 2) // 4 * 4
+        s = kilogram(box, R)
+        out += bytes((box // 2, box, KG_HOLD, 1 if i == n else 0))
+        for y in range(box):
+            for x in range(0, box, 2): out.append((s[y][x] << 4) | s[y][x + 1])
     return bytes(out)
 
 def main(d, hpath):
@@ -123,8 +134,7 @@ def main(d, hpath):
         for x in range(0, W, 2): out.append((img[y][x] << 4) | img[y][x + 1])
     open(os.path.join(d, 's2_strips.bin'), 'wb').write(bytes(out))
     open(os.path.join(d, 's2_map.bin'), 'wb').write(bytes(cmap))
-    open(os.path.join(d, 'kg.bin'), 'wb').write(kilogram())
-    open(os.path.join(d, 'kg96.bin'), 'wb').write(kilogram(96))
+    open(os.path.join(d, 'kg.bin'), 'wb').write(kg_stream())
     with open(hpath, 'w') as f:
         f.write('/* s2_data.h — tools/gen_stage2.py が生成(手で編集しない)。2 面の区間と短冊の当たり。 */\n')
         f.write('#ifndef S2_DATA_H\n#define S2_DATA_H\n\n')

@@ -7,7 +7,6 @@
 enum { SEC2_AIR = 7, SEC2_SINK, SEC2_DOWN, SEC2_FLIP, SEC2_MID, SEC2_CENTER, SEC2_BOSS, SEC2_OUT };
 enum { B2_CW, B2_KG };
 void b2_start(u8 kind);
-void b2_prepare(void);              /* KILOGRAM の絵を ROTOR で作り始める */
 void b2_update(void);
 void b2_draw(void);
 void b2_vram(void);

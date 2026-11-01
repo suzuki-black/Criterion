@@ -304,6 +304,9 @@ void stage_ev_ps(s16 line, const u8 *rgb, u16 x);   /* 色 1 と横スクロー�
 void stage_ev_pal_i(s16 line, u8 idx, const u8 *rgb);   /* 色 idx を(1 項目に 1 色)*/
 void stage_ev_haze(s16 line, u8 n, u8 *tbl);  /* HR ポーリング帯(R#27 を毎ライン。tbl は (r26, r27) × n) */
 void ring_cmd(u16 sx, u16 sy, s16 x, s16 y, u8 w, u8 h, u8 fill, u8 byte);   /* 画面の矩形 → 表示リング(GHOST) */
+void zoom_start(u8 bank, u16 off, u16 vaddr);   /* 絵の列を流し始める(zoom.c)。vaddr = ページ 2 の中の VRAM の番地 */
+u8   zoom_step(void);              /* 毎フレーム。1 = 次の 1 枚が作業の場所に揃った(大きさは g_zm_w バイト × g_zm_h 行) */
+extern u8 g_zm_w, g_zm_h, g_zm_done;
 void stage_restore(s16 x, s16 y, u8 w, u8 h);   /* 画面の矩形を背景の絵(短冊・遠景、空は色 1)へ描き戻す(GHOST。x と w は偶数) */
 u8   stage_src_of(u16 wcol, s16 s0);   /* 世界の列 wcol の高さ s0 のブロックを写す短冊の番号(遠景を含む) */
 

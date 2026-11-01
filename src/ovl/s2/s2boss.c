@@ -1,8 +1,8 @@
 /* s2boss.c — 2 面の中ボス COUNTERWEIGHT とボス KILOGRAM(指示書 5.2)。
    ・COUNTERWEIGHT: 天秤の腕で結ばれた 2 つの錘(スプライト 32x32 × 2)。撃たれた方は軽くなって上がり、重い方が
      下がって自機の側へ振り下ろされる。両方を削らないと逃げ場がなくなる。腕はスプライトの節(回転は sin 表)。
-   ・KILOGRAM: 画面の奥から近づく黒い球。ROTOR で 6 段の大きさの絵(64x64 まで)を作り、最後に 96x96 の絵(ROM)を
-     写してページ 2 に置き、段階的に大きくしていく(BG)。着くと、球の上下の帯で背景が曲がる(重力レンズ: R#27 を毎ラインずらす HR ポーリング帯)。
+   ・KILOGRAM: 画面の奥から近づく黒い球。大きさごとの絵(半径 7..45)を ROM に並べ、zoom.c が 1 枚ずつ流して BG へ写す。
+     着くと、球の上下の帯で背景が曲がる(重力レンズ)。
      周りを小衛星 8 個(スプライト)が回る。一定時間ごとに自機を引き寄せる(重力を球へ)間だけ赤道の亀裂が
      開き(色 13 が明るくなる)、そこだけ傷が入る。
    ★仮の簡略: 指示書の「腕は ROTOR」「最終的に 96x96 の拡大スプライト帯」は、節のスプライトと 96x96 の BG。 */
@@ -11,7 +11,6 @@
 #include "sprite_data.h"
 #include "vdp.h"
 #include "rom.h"
-#include "rotor.h"
 #include "ghost.h"
 #include "assets.h"
 
@@ -125,77 +124,16 @@ static void cw_draw(void) {
 /* ---- KILOGRAM ---- */
 #define KG_X    176
 #define KG_Y    94
-#define NFR     7
 #define NSAT    8
 #define KG_R    42                 /* 球の半径(当たり)。★C3: 最後の段は 96x96(描き直した絵) */
-#define BIG     (NFR - 1)          /* 96x96 の段。ページ 2 の x 128..223、64..159 行(2 面では空き。帯の文字は 160 行から) */
-#define BIG_N   96
-static const u16 kg_step[BIG] = { 1707, 1024, 640, 427, 320, 256 };   /* 0.15 .. 1 倍(ROTOR で作る段) */
-static const u8  kg_n[BIG]    = { 16, 32, 64, 64, 64, 64 };              /* 作る大きさ(n/2 x step が 128 ドット未満に収まる。下の kg_gen) */
-static u8  gen_k, gen_ph;
+#define BIG_N   96                 /* 最後の絵の箱。ページ 2 の x 128..223、64..159 行が作業の場所(2 面では空き。帯の文字は 160 行から) */
 static u16 cal_t;                  /* 再校正版の重力の替わり目 */
-static u16 src_off;
-static u8  fr, fr_drawn;
+static u8  kg_shown;               /* 表に絵が出ている(倒したら消す) */
 static u8  sat_hp[NSAT], sat_t[NSAT];
 static s8  orb_x[64], orb_y[64];   /* 小衛星の軌道(b2_start で作る。★毎フレーム掛け算で出すと 8 個 × 2 回で重かった) */
 static u16 open_t;                 /* 吸い込みの周期(0..239 閉じている、240..359 開いて吸い込む) */
 u8 b2_lens_tbl_up[50], b2_lens_tbl_dn[48];
 static u16 lens_nx;               /* 表を作ったときの横位置(0xFFFF = まだ。b2_start で) */
-
-void b2_prepare(void) { gen_k = 0; gen_ph = 0; src_off = 0; }
-
-/* ROTOR_DST(64 x 64、2KB)を空の色(1)で埋める */
-static void dst_fill(void) __naked {
-    __asm
-        ld   hl, #0xE000
-        ld   (hl), #0x11
-        ld   de, #0xE001
-        ld   bc, #2047
-        ldir
-        ret
-    __endasm;
-}
-
-/* 絵を作る 1 段(ROM から元 → 4 行ずつ ROTOR → 8 行ずつページ 2 へ) */
-static void kg_gen(void) {
-    if (gen_k >= NFR) return;
-    if (src_off < ASSET_KG_LEN) {
-        rom_to_ram(ASSET_KG_BANK, (u16)(ASSET_KG_OFF + src_off), ROTOR_SRC + src_off, 512);
-        src_off += 512;
-        return;
-    }
-    if (gen_k == BIG) {                                       /* 96x96: 描き直した絵(ROM)を 4 行ずつ写す(★行ごとに番地が飛ぶので 1 行ずつ)。
-                                                                 ★C3: 64x64 を ROTOR で 1.5 倍にすると縁が角ばったので、Python で描き直した */
-        u8 r;
-        for (r = 0; r < 4; r++)
-            rom_to_vram(ASSET_KG96_BANK, (u16)(ASSET_KG96_OFF + (gen_ph * 4u + r) * (BIG_N / 2)), 1,
-                        (u16)((64u + gen_ph * 4u + r) * 128u + 64u), BIG_N / 2);
-        if (++gen_ph >= BIG_N / 4) { gen_ph = 0; gen_k++; }
-        return;
-    }
-    if (gen_ph < 16) {
-        /* ★小さい段は真ん中の n x n だけを作り、まわりは空の色(1)で埋める。64 x 64 全体を 0.15 倍・0.25 倍で作ると元の絵の
-           座標が 8.8 固定小数点の ±128 を越えて回り込み、絵がずれて出た(遊んでの指摘「最初の位置だけ大きくずれる」) */
-        u8 n = kg_n[gen_k], r = (u8)(gen_ph * 4), e = (u8)(r + 4);
-        if (gen_ph == 0) {
-            rotor_begin(n, 0, kg_step[gen_k], 1);
-            if (n < 64) dst_fill();
-        }
-        if (e > n) e = n;
-        if (e > r) {
-            u8 h = (u8)(32 - (n >> 1)), *d = ROTOR_DST + (u16)(h + r) * 32u + (h >> 1);
-            e -= r;
-            do { rotor_rows(d, 1); d += 32; } while (--e);
-        }
-    } else {
-        u8 r, r0 = (u8)((gen_ph - 16) * 8);
-        for (r = r0; r < r0 + 8; r++) {
-            vdp_write_addr17(1, (u16)(((gen_k >> 2) * 64u + r) * 128u + (gen_k & 3) * 32u));
-            vdp_out_block(32, ROTOR_DST + r * 32u);
-        }
-    }
-    if (++gen_ph >= 24) { gen_ph = 0; gen_k++; }
-}
 
 /* 赤道の亀裂は BG の色 7(★前は色 13 を回していたが、8..15 はスプライトと共有で、閉じるたびに 2 面の敵の体の色が暗くなり、
    衛星が全部まとめて潰れて見えた。遊んでの指摘) */
@@ -220,9 +158,8 @@ static void lens_tables(u16 nx) {
 
 static void kg_update(void) {
     u8 k;
-    if (g_boss_state == BS_ENTER) {                           /* 近づく: 1 秒ごとに 1 段大きく */
-        if (gen_k < NFR) return;                              /* 絵がまだ(普通は都市…ではなく中心の区間で作り終えている) */
-        if (t >= 60) { t = 0; if (++fr >= NFR - 1) { fr = NFR - 1; g_boss_state = BS_FIGHT; } }
+    if (g_boss_state == BS_ENTER) {                           /* 近づく(絵は zoom.c が流す) */
+        if (g_zm_done) g_boss_state = BS_FIGHT;
         return;
     }
     if (g_boss_state == BS_DYING) {
@@ -273,7 +210,7 @@ void b2_start(u8 k) {
     kind = k; t = 0; g_boss_state = BS_ENTER; g_boss_dmg = 0;
     if (k == B2_CW) { hp_l = hp_r = 30; g_boss_hp = 60; cw_y = -60; ang = 0; fire_t = 0; }
     else {
-        g_boss_hp = 60; fr = 0; fr_drawn = 0xFF; open_t = 0; lens_nx = 0xFFFF; cal_t = 0;
+        g_boss_hp = 60; kg_shown = 0; zoom_start(ASSET_KG_BANK, ASSET_KG_OFF, 64u * 128u + 64u); open_t = 0; lens_nx = 0xFFFF; cal_t = 0;
         for (i = 0; i < NSAT; i++) { sat_hp[i] = 2; sat_t[i] = 0; }
         for (i = 0; i < 64; i++) { orb_x[i] = (s8)((g_sin64[(u8)(i + 16) & 63] * 66) >> 7); orb_y[i] = (s8)((g_sin64[i] * 52) >> 7); }
         vdp_set_pal(2, 0, 0, 0); vdp_set_pal(3, 1, 1, 1); vdp_set_pal(4, 3, 3, 4); vdp_set_pal(5, 6, 6, 7);
@@ -295,18 +232,16 @@ void b2_draw(void) {
     if (kind == B2_CW) cw_draw(); else kg_draw();
 }
 
-/* VRAM の窓で: KILOGRAM の絵を作る段と、BG へ写す(大きさが変わったとき)/ 倒したら消す */
+/* VRAM の窓で: 近づく絵を流して BG へ写す / 倒したら消す */
 void b2_vram(void) {
-    if (gen_k < NFR) kg_gen();
     if (kind != B2_KG || g_boss_state == BS_NONE) { gq_pump(0); return; }
     if (g_boss_state == BS_DONE) {
-        if (fr_drawn != 0xFF && gq_free() >= 8) { ring_cmd(0, 0, KG_X - BIG_N / 2, KG_Y - BIG_N / 2, BIG_N, BIG_N, 1, 0x11); fr_drawn = 0xFF; }
-    } else if (gen_k >= NFR && fr != fr_drawn && s2_far_zero && !g_scroll_speed && gq_free() >= 8) {
-        /* ★遠景のずれが 0 に戻り、スクロールが止まってから(s2.c)。止まる前に写した最初の段は世界と一緒に流れ、試験 02 では 18 ドット
+        if (kg_shown && gq_free() >= 8) { ring_cmd(0, 0, KG_X - BIG_N / 2, KG_Y - BIG_N / 2, BIG_N, BIG_N, 1, 0x11); kg_shown = 0; }
+    } else if (g_boss_state == BS_ENTER && s2_far_zero && !g_scroll_speed && gq_free() >= 8 && zoom_step()) {
+        /* ★遠景のずれが 0 に戻り、スクロールが止まってから(s2.c)。止まる前に写した最初の段は世界と一緒に流れ、試験 02 では
            左に出て次の段で跳んだ(遊んでの指摘「2 回目の登場で初期位置がずれて拡大が不自然」) */
-        if (fr == BIG) ring_cmd(128, 512u + 64u, KG_X - BIG_N / 2, KG_Y - BIG_N / 2, BIG_N, BIG_N, 0, 0);
-        else ring_cmd((u16)((fr & 3) * 64u), (u16)(512u + (fr >> 2) * 64u), KG_X - 32, KG_Y - 32, 64, 64, 0, 0);
-        fr_drawn = fr;
+        ring_cmd(128, 512u + 64u, (s16)(KG_X - g_zm_w), (s16)(KG_Y - (g_zm_h >> 1)), (u8)(g_zm_w * 2), g_zm_h, 0, 0);
+        kg_shown = 1;
     }
     gq_pump(0);
 }

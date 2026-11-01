@@ -77,7 +77,7 @@ static void enter(u8 sec) {
     if (sec == SEC2_DOWN) warn("WARNING  GRAVITY  DOWN");    /* ★重力は予告の後(DOWN の 90 フレーム目)。M7 の後 */
     if (sec == SEC2_FLIP) warn("WARNING  GRAVITY  REVERSE");
     if (sec == SEC2_MID) { g_grav = GRAV_NONE; b2_start(B2_CW); }
-    if (sec == SEC2_CENTER) { g_grav = GRAV_NONE; if (!g_calib) { b2_prepare(); warn("WARNING  GRAVITY  WELLS"); } }
+    if (sec == SEC2_CENTER) { g_grav = GRAV_NONE; if (!g_calib) { warn("WARNING  GRAVITY  WELLS"); } }
     if (sec == SEC2_BOSS) { g_grav = GRAV_NONE; b2_start(B2_KG); }
     if (sec == SEC2_OUT) {
         u8 i;
@@ -105,7 +105,6 @@ void ovl_init(void) {
     }
     if (g_calib) {                                            /* 7 面の試験 02: 白い空間から中心の区間の終わりへ沈んで KILOGRAM */
         g_w0 = (u16)((g_wx >> 3) - (S2_COL_ARENA2 - 8 - 48));
-        b2_prepare();
         calib_begin(2);
         enter(SEC2_SINK);
         return;

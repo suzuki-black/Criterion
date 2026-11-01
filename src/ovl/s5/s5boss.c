@@ -406,12 +406,10 @@ void b5_vram(void) {
         rom_to_vram(ASSET_S5_SPR_BANK, (u16)(ASSET_S5_SPR_OFF + 256u), 1, (u16)(0xF800u + PAT_HANG * 32u), 96);
         spr_loaded = 1;
     }
-    /* ページ 2 へ: 主砲塔 16 向き(0..63 行)と遠くの戦艦(64..127 行)。1 フレーム 4 行、重いフレームは次へ */
-    if (sheet_row < 128 && (u16)(sys_timer() - g_frame_t0) < 150u * 16u)
-        for (n = 0; n < 2; n++, sheet_row++) {
-            if (sheet_row < 64) rom_to_vram(ASSET_TURRET_BANK, (u16)(ASSET_TURRET_OFF + sheet_row * 128u), 1, (u16)(sheet_row * 128u), 128);
-            else rom_to_vram(ASSET_FAR_BANK, (u16)(ASSET_FAR_OFF + (sheet_row - 64) * 128u), 1, (u16)(sheet_row * 128u), 128);
-        }
+    /* ページ 2 へ: 主砲塔 16 向き(0..63 行)。1 フレーム 4 行、重いフレームは次へ(64..127 行は遠くの戦艦の作業の場所。zoom.c) */
+    if (sheet_row < 64 && (u16)(sys_timer() - g_frame_t0) < 150u * 16u)
+        for (n = 0; n < 2; n++, sheet_row++)
+            rom_to_vram(ASSET_TURRET_BANK, (u16)(ASSET_TURRET_OFF + sheet_row * 128u), 1, (u16)(sheet_row * 128u), 128);
     if (gauge_ld < 84 && (u16)(sys_timer() - g_frame_t0) < 150u * 16u)   /* GAUGE BLOCK(主砲塔の場所へ上書き) */
         for (n = 0; n < 4 && gauge_ld < 84; n++, gauge_ld++)
             rom_to_vram(ASSET_GAUGE_BANK, (u16)(ASSET_GAUGE_OFF + gauge_ld * 56u), 1, (u16)(gauge_ld * 128u), 56);

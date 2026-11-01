@@ -95,7 +95,7 @@ $(BUILD)/assets.stamp: tools/pack_assets.py $(BUILD)/spr_col.bin $(BUILD)/spr_pa
 	python3 tools/pack_assets.py $(BUILD)/assets.bin $(BUILD)/assets.h \
 	    TITLE_EVEN=$(BUILD)/title_even.bin TITLE_ODD=$(BUILD)/title_odd.bin LOGO=$(BUILD)/logo.bin \
 	    TDF=$(BUILD)/tdf.bin CITY_STRIPS=$(BUILD)/city_strips.bin CITY_MAP=$(BUILD)/city_map.bin \
-	    BOB=$(BUILD)/bob.bin S2_STRIPS=$(BUILD)/s2_strips.bin S2_MAP=$(BUILD)/s2_map.bin KG=$(BUILD)/kg.bin KG96=$(BUILD)/kg96.bin \
+	    BOB=$(BUILD)/bob.bin S2_STRIPS=$(BUILD)/s2_strips.bin S2_MAP=$(BUILD)/s2_map.bin KG=$(BUILD)/kg.bin \
 	    S3_STRIPS=$(BUILD)/s3_strips.bin S3_MAP=$(BUILD)/s3_map.bin TACHO=$(BUILD)/tacho.bin \
 	    S4_STRIPS=$(BUILD)/s4_strips.bin S4_MAP=$(BUILD)/s4_map.bin FACE=$(BUILD)/face.bin S4_PARTS=$(BUILD)/s4_parts.bin \
 	    S5_STRIPS=$(BUILD)/s5_strips.bin S5_MAP=$(BUILD)/s5_map.bin TURRET=$(BUILD)/turret.bin FAR=$(BUILD)/far.bin \
@@ -134,7 +134,7 @@ GAME_CODE0_CORE := $(CODE0_CORE:%=$(BUILD)/%.rel)
 $(BUILD)/g_music.rel: src/game/music.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) --opt-code-size $(DEFS) --codeseg CODE0 --constseg CODE0 -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 # 毎フレームの重い経路を自分では持たないファイルは大きさを優先する(常駐の空き。M7 の後。hud.c は逆に太ったので外した)
-SIZE_FIRST := main bg restore
+SIZE_FIRST := main bg restore zoom
 $(BUILD)/g_%.rel: src/game/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(SIZE_FIRST),$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
