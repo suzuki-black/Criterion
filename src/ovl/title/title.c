@@ -185,6 +185,7 @@ static void enter(u8 ph) {
         loop_keep = 0;
         g_pl.x = FX(40); g_pl.y = FX(y); g_pl.invul = 0;      /* タイトルで飛んでいた位置からそのまま操作 */
         g_pl.alive = 1;
+        weap_init();                                      /* ★分身の軌跡を今の位置へ(2 周目は強化を引き継ぐので、終幕の位置に分身が残り、ロゴの拡大の帯で 2 倍に見えた。遊んでの指摘) */
     }
 }
 
