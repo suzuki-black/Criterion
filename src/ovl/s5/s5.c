@@ -159,6 +159,8 @@ void ovl_update(void) {
     case SEC5_BOW:
         if (g_calib) {
             if (sec_t == 120) { cam_to = S_DECKVIEW * 16; b5_gauge_load(); }   /* 短冊が揃ってから降りる */
+            /* ★降り切ったら画面の上まで面の空にする(このカメラは s < 0 が見えるので、測定空間の白が甲板の上に残り続けた。遊んでの指摘) */
+            if (sec_t > 120 && g_scam_q == cam_to) g_bands_all = 1;
             if (col_of_screen() + 8 >= S5_COL_BOSS + 8) { g_scroll_speed = 0; enter(SEC5_BOSS); }
             break;
         }
@@ -268,11 +270,11 @@ void ovl_vram(void) {
 void ovl_bands(s16 sc, u16 nx) {
     if (g_bands_all) {
         if (g_sec == SEC5_BOSS) { b5_gauge_bands(sc, nx); return; }
-        return;
+        if (g_sec != SEC5_BOW) return;
     }
     if (g_sec < SEC5_SINK) return;
     /* 空のグラデーション(色 1)と雲海。接近の間は雲の帯だけ流れる */
-    stage_ev_pal((s16)(0 - sc), sky0);
+    stage_ev_pal(g_bands_all ? 0 : (s16)(0 - sc), sky0);
     if (g_sec <= SEC5_APPROACH) {
         stage_ev_pal((s16)(28 - sc), sky1); stage_ev_pal((s16)(56 - sc), sky2); stage_ev_pal((s16)(84 - sc), sky3);
     }
