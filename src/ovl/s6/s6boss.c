@@ -151,6 +151,12 @@ static const u8 num_len[12] = { 1, 2, 3, 2, 1, 2, 3, 4, 2, 1, 2, 3 };
 static u8 nm_hp[S6_NNUM], nm_drawn[S6_NNUM];
 #define NUM_S 34
 static s16 num_x(u8 i) { return (s16)(s6_sx(s6_num[i]) + 12 - num_len[i] * 4); }
+u8 b6_num_alive(u16 col) {
+    u8 i;
+    if (g_sec != SEC6_DIAL) return 0;
+    for (i = 0; i < S6_NNUM; i++) if ((u16)(col - s6_num[i]) < 3) return nm_hp[i];
+    return 0;
+}
 static void num_update(void) {
     u8 i;
     for (i = 0; i < S6_NNUM; i++) {

@@ -81,7 +81,7 @@ for i, k in enumerate((20, 21, 22)):                     # 数字の台座(数�
             c = 14 if y >= 52 else 9 if 0 < x + i * 8 < 23 else 2
             if y == 44: c = 15
             put(x0 + x, y, c)
-    TOP[k] = 30
+    TOP[k] = 44
 for k in range(23, 27):                                  # 指針の間の床
     x0 = base(k, stars=False)
     for x in range(8):

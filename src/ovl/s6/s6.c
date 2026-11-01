@@ -84,7 +84,9 @@ static void terrain(void) {
     for (c = c0; c <= (u16)(c0 + 2); c++) {
         s16 t;
         if (c >= S6_COLS) continue;
-        t = (s16)(s6_top[g_map[c]] - 16 - g_scam);
+        /* ★数字が残っている台座だけ数字の上まで(表は台座の絵の上端。数字のぶんも表に入れていた間は、壊した後も台座の上に見えない床が
+           残り、下へ行くと押し上げられた。遊んでの指摘) */
+        t = (s16)((b6_num_alive(c) ? NUM_TOP : s6_top[g_map[c]]) - 16 - g_scam);
         if (t < hi) hi = t;
     }
     if (hi < lo) hi = lo;
