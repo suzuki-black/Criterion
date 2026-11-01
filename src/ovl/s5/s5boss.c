@@ -291,7 +291,7 @@ static void hangar_vram(void) {
 
 /* ======== GAUGE BLOCK ======== */
 #define G_AX   184                 /* 塔の中心の画面の x */
-static const s8 g_row_s[6] = { 20, 6, -14, -28, -42, -56 };   /* 段 0(下)..5(上)の上端の行(s)。0..5 は避ける */
+static const s8 g_row_s[6] = { 20, 6, -8, -22, -36, -50 };    /* 段 0(下)..5(上)の上端の行(s)。隙間なく積む(艦橋の塔に見せる) */
 static u8  g_order[6];             /* 段 k に置いたブロックの番号(長さは s5_glen) */
 static s16 g_off[6];               /* 段のすべり(ドット。正 = 右へ) */
 static u8  g_drawn;                /* 描いた段の数(登場) */
@@ -309,13 +309,20 @@ static void gauge_row(u8 k) {      /* 段 k を描く: 空で塗ってからブ�
     s16 y = s5_sy(g_row_s[k]);
     ring_cmd(0, 0, G_AX - 56, y, 112, 14, 1, 0x11);
     ring_cmd(0, (u16)(512u + n * 14u), (s16)(G_AX - (L >> 1)), y, L, 14, 0, 0);
+    if (k == 5) {                  /* いちばん上の段に測距儀とマスト */
+        ring_cmd(0, 0, G_AX - 12, (s16)(y - 3), 24, 3, 1, 0x22);
+        ring_cmd(0, 0, G_AX - 2, (s16)(y - 8), 4, 5, 1, 0x33);
+    }
 }
 static void gauge_update(void) {
     u8 k;
     if (g_boss_state == BS_ENTER) { if (g_drawn >= 6) g_boss_state = BS_FIGHT; return; }
     if (g_boss_state == BS_DYING) {
         if (!(boss_t & 3)) fx_spawn(FX(G_AX - 40 + (rnd8() & 79)), FX(s5_sy(g_row_s[(rnd8() & 3) + 1]) + 6));
-        if (++boss_t == 100) for (k = 0; k < 6; k++) ring_cmd(0, 0, G_AX - 56, s5_sy(g_row_s[k]), 112, 14, 1, 0x11);
+        if (++boss_t == 100) {
+            for (k = 0; k < 6; k++) ring_cmd(0, 0, G_AX - 56, s5_sy(g_row_s[k]), 112, 14, 1, 0x11);
+            ring_cmd(0, 0, G_AX - 12, (s16)(s5_sy(g_row_s[5]) - 8), 24, 8, 1, 0x11);
+        }
         if (boss_t > 120) g_boss_state = BS_DONE;
         return;
     }

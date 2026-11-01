@@ -197,10 +197,13 @@ x0 = base(24); interior(x0, True, True); LIM[24] = (2, CEIL, FLOOR)
 x0 = base(25); interior(x0, True, True, pipes=False); LIM[25] = (2, CEIL, FLOOR)    # 歯
 x0 = base(26); interior(x0, False, False, pipes=False); LIM[26] = (2, CEIL, FLOOR)  # 溝
 x0 = base(27); interior(x0, False, True, shaft=True); LIM[27] = (2, 4, FLOOR)       # 出口の縦穴(上が開く)
-for i, k in enumerate((28, 29, 30)):                     # 艦橋の土台
-    x0 = base(k); clouds(x0, 0); hull(x0, deck_c=12)
+for i, k in enumerate((28, 29, 30)):                     # 艦橋の土台(甲板から立ち上がる箱。窓が並ぶ)
+    x0 = base(k); clouds(x0, 0); hull(x0, deck_c=14)
     for x in range(8):
-        for y in range(DECK - 6, DECK): put(x0 + x, y, 9 if y > DECK - 6 else 15)
+        for y in range(DECK - 6, DECK + 1):
+            c = 15 if y == DECK - 6 else 2 if y == DECK - 5 else 14 if y >= DECK - 1 else 12 if (x + i * 3) % 4 == 1 else 3
+            if k == 28 and x < 2: c = 3
+            put(x0 + x, y, c)
     LIM[k] = (1, DECK - 6, HULL_B)
 x0 = base(31); clouds(x0, 0)                             # 艦尾(低くなる)
 for x in range(8):
@@ -246,7 +249,7 @@ for i in range(87):
     j = i % 12
     cmap.append(25 if j < 4 else 26 if j < 8 else 24)
 cmap += [27] * 8
-sec('BOSS'); cmap += [11] * 8 + [28, 29, 30, 29, 30, 29, 30, 28] + [11] * 24
+sec('BOSS'); cmap += [11] * 4 + [6, 7] + [12, 11] + [4, 5] + [11] * 5 + [28] + [29, 30] * 7 + [28] + [11] * 9   # 塔(画面の x 184)の真下に土台
 sec('STERN'); cmap += [12] * 12 + [31] * 4
 SEC['END'] = len(cmap)
 assert len(cmap) == 640, len(cmap)
@@ -381,15 +384,28 @@ def spr_frames():
 # ---- GAUGE BLOCK のブロック(長さ 32..112、高さ 14) ----
 GLEN = [112, 64, 96, 32, 80, 48]
 def gauge_sheet():
+    """ブロック = 艦橋の 1 層: 屋根 / 張り出した窓の帯 / 手すり / 壁(内へ引く)。一番短い 32 は弱点で窓が赤い"""
     s = [[0] * 112 for _ in range(84)]
     for i, L in enumerate(GLEN):
+        win = 13 if L == 32 else 12
         for y in range(14):
+            inset = 0 if y < 2 else 1 if y < 8 else 5 if y < 13 else 6
             for x in range(112):
                 c = 1
-                if x < L:
-                    c = 15 if y == 0 else 2 if y == 13 else 14
-                    if x in (0, L - 1): c = 9
-                    if y in (6, 7) and x % 16 == 8: c = 12           # 刻印
+                if inset <= x < L - inset:
+                    if y == 0: c = 15
+                    elif y == 1: c = 14
+                    elif y == 2: c = 2
+                    elif y < 7:
+                        c = 2 if y in (3, 6) else win if x % 6 in (2, 3) else 2
+                        if x in (inset, L - inset - 1): c = 3
+                    elif y == 7: c = 15 if x & 1 else 3
+                    elif y < 12:
+                        c = 2 if y == 8 else 14 if (x + y) & 3 else 3
+                        if x % 16 == 8: c = 3
+                        if y == 10 and x % 8 == 4: c = 2
+                    elif y == 12: c = 3
+                    else: c = 2
                 s[i * 14 + y][x] = c
     return s
 
