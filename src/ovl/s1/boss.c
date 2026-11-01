@@ -105,8 +105,10 @@ static s16 anchor_y;
 static u8  spin;
 static u8  gen_done;               /* 絵ができた(作るのは第 4 バンクの plumb_gen) */
 /* 測定ビーム(指示書 5.1。★前は弾 3 発だった): 先端から歩道まで。1..24 = 赤い細い線の予告(当たらない)、25..44 = 白い太い線(当たる)、
-   45 で空の色に塗って消す(広場の背景は空)。描いた位置に残る(振り子は振れ続ける)。2 個のときは 1 個目だけ */
-static u8  bm_t, bm_dr;            /* 経過(0 = 無し)/ 描いてある段(0 = 無し、1 = 予告、2 = 発射) */
+   45 で背景へ描き戻して消す。2 個のときは 1 個目だけ */
+#define BM_DX 88                   /* 振り切ったときの先端の吊り元からの横の距離 */
+#define BM_Y  97
+static u8  bm_t, bm_dr, bm_n;      /* 経過(0 = 無し)/ 描いてある段(0 = 無し、1 = 予告、2 = 発射) */
 static s16 ch_x[CHAIN_N], ch_y[CHAIN_N], ch_px, ch_py;   /* 鎖の節の位置と、それを求めたときの絵の位置 */
 static u8  ch_pf;
 static s16 bm_x, bm_y;
@@ -119,7 +121,7 @@ static void pl_save(u8 i) { pl_cp((u8 *)&pl[i], (const u8 *)&P); }
 static void pl_load(u8 i) { pl_cp((u8 *)&P, (const u8 *)&pl[i]); cur_pl = i; }
 /* 場面の始め(game_start): 何も作っていない状態へ */
 void boss_reset(void) {
-    g_boss_state = BS_NONE; kind = 0xFF; gen_done = 1; bm_t = 0; bm_dr = 0; ch_pf = 0xFF; dr_w = 0; broken = 0;
+    g_boss_state = BS_NONE; kind = 0xFF; gen_done = 1; bm_t = 0; bm_dr = 0; bm_n = 0; ch_pf = 0xFF; dr_w = 0; broken = 0;
 }
 
 void boss_start(u8 k) {
@@ -387,7 +389,13 @@ static void plumb_update(void) {
             fx_spawn(FX(pivot), FX(anchor_y + 40));
         }
         if (++aim_t >= 45) { aim_t = 0; enemy_shoot(FX(bx), FX(by + 20)); }
-        if ((t & 127) == 64 && cur_pl == 0 && !bm_t) { bm_t = 1; bm_x = (s16)(bx & ~1); bm_y = (s16)(by + 24); }   /* 測定ビーム: 先端から下へ */
+        /* 測定ビーム: 振り切った位置の先端から下へ。振れの端は 34 フレーム後(t & 127 = 62 なら左の端、126 なら右の端)で、発射の間ちょうど
+           そこに止まっている。★真ん中を通るときに出していた間は、発射の間に球が端まで去り、線だけが宙に残った(指摘)。192 フレームごとで左右が交互 */
+        if ((t & 63) == 62 && cur_pl == 0 && !bm_t && ++bm_n >= 3) {
+            s16 x = (s16)(pivot + ((t & 64) ? BM_DX : -BM_DX));
+            bm_n = 0;
+            if (x >= 30) { bm_t = 1; bm_x = x; bm_y = BM_Y; }
+        }
     } else {
         s8 d = g_sin64[(u8)(t >> 1) & 63];                    /* 遠近: 近い(等倍)〜遠い(0.55) */
         fx += fvx; fy += fvy; fvy += 2;
@@ -471,17 +479,16 @@ void boss_vram(void) {
         if (!gen_done && (u16)(sys_timer() - g_frame_t0) <= (g_boss_state == BS_ENTER ? 200u * 16u : 150u * 16u)) boss_vram_gen();
     }
     if (kind != BOSS_PLUMB || !gen_done) { gq_pump(0); return; }   /* 絵ができるまでは写さない */
-    {   /* 測定ビーム: 段が替わったら、太い線の幅を空の色に塗り、次の回で描く。★PLUMB を写す偶数フレームを避け、残りが少なければ
+    {   /* 測定ビーム: 段が替わったら描く。★PLUMB を写す偶数フレームを避け、残りが少なければ
            次へ(写しと同じフレームにまとめて出すと m5 で遅れた) */
         u8 w = !bm_t || bm_t > 44 ? 0 : bm_t > 24 ? 2 : 1;
         s16 h = (s16)(SKY_BOT - bm_y);
         if (w != bm_dr && (t & 1) && gq_free() >= 24 && h > 0 && (u16)(sys_timer() - g_frame_t0) < 150u * 16u) {
-            if (bm_dr) { ring_cmd(0, 0, (s16)(bm_x - 2), bm_y, 6, (u8)h, 1, 0x11); bm_dr = 0; }
-            else {
-                if (w == 1) ring_cmd(0, 0, bm_x, bm_y, 2, (u8)h, 1, 0xDD);
-                else ring_cmd(0, 0, (s16)(bm_x - 2), bm_y, 6, (u8)h, 1, 0xFF);
-                bm_dr = w;
-            }
+            /* ★太い線は細い線に重ねるので消さない。消すのは背景へ描き戻す(ビルの前を通る。空の色で塗っていた間は真ん中にしか撃たなかった) */
+            if (!w) stage_restore((s16)(bm_x - 2), bm_y, 6, (u8)h);
+            else if (w == 1) ring_cmd(0, 0, bm_x, bm_y, 2, (u8)h, 1, 0xDD);
+            else ring_cmd(0, 0, (s16)(bm_x - 2), bm_y, 6, (u8)h, 1, 0xFF);
+            bm_dr = w;
         }
     }
     /* ★1 回の描き替えは最大 20 コマンド(写し 4 + 消し 4 方向 × リングの継ぎ目)。入りきらないときは見送る
