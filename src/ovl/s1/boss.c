@@ -39,7 +39,7 @@ static u16 t;
          進んで鎖が 1 つ前に残った) */
 typedef struct {
     s16 bx, by, fx, fy, fvx, fvy, dr_x, dr_y, pivot, sh_x, sh_y, pd_x, pd_y;
-    s8  swing;
+    s8  swing, yo;
     u8  broken, cur_fr, dr_w, dr_h, ph, sh_fr, pd_fr, pd_mk, pd_n;
 } Plumb;
 static Plumb P;
@@ -55,6 +55,7 @@ static Plumb P;
 #define dr_h P.dr_h
 #define pivot P.pivot              /* 吊り元の x(普段は 128) */
 #define swing P.swing
+#define yo P.yo                    /* 高さの補正(再校正版の 2 個。差 68 は枠の 64 より広い) */
 #define broken P.broken            /* 鎖が切れた(fx..fvy は切れてから。固定小数点) */
 #define cur_fr P.cur_fr
 #define ph P.ph                    /* 振れの位相 */
@@ -116,6 +117,7 @@ static s16 bm_x, bm_y;
    2 個ぶん動かす(体力は共有) */
 static Plumb pl[2];
 static u8 npl, cur_pl;
+static s16 bnc_r;                  /* 鎖が切れてから跳ねる範囲(pivot からの幅) */
 static void pl_cp(u8 *d, const u8 *src) { u8 n = sizeof(Plumb); while (n--) *d++ = *src++; }
 static void pl_save(u8 i) { pl_cp((u8 *)&pl[i], (const u8 *)&P); }
 static void pl_load(u8 i) { pl_cp((u8 *)&P, (const u8 *)&pl[i]); cur_pl = i; }
@@ -134,11 +136,11 @@ void boss_start(u8 k) {
         for (i = 0; i < 5; i++) sway[i] = 0;
     } else {
         g_boss_hp = PLUMB_HP; bx = 128; anchor_y = -110; broken = 0; aim_t = 0; spin = 0; dr_w = 0; sh_fr = 0xFF; pd_n = 0;
-        cur_fr = FR_UP; swing = 0; pivot = 128; ph = 0; npl = 1; cur_pl = 0;
-        if (RECAL) {                                        /* 再校正版: 2 個 */
+        cur_fr = FR_UP; swing = 0; pivot = 128; ph = 0; npl = 1; cur_pl = 0; yo = 0; bnc_r = 88;
+        if (RECAL) {                                        /* 再校正版: 2 個(ビームは 1 個目 = 下の 1 個が撃つ) */
             npl = 2;
-            pivot = 100; ph = 0; pl_save(0);
-            pivot = 156; ph = 32; pl_save(1);
+            pivot = 100; ph = 0; yo = 40; pl_save(0);
+            pivot = 156; ph = 32; yo = -28; pl_save(1);
             pl_load(0);
         }
     }
@@ -355,7 +357,7 @@ static void plumb_pos(void) {
     swing = (s8)(g_sin64[(u8)((t >> 1) + ph) & 63] >> 4);    /* 振れ角 ±7(64 で一周)≒ ±40 度 */
     sx = g_sin64[(u8)swing & 63]; cx = g_sin64[(u8)(swing + 16) & 63];
     bx = (s16)(pivot + ((sx * CHAIN_L) >> 7));
-    by = (s16)(anchor_y + ((cx * CHAIN_L) >> 7));
+    by = (s16)(anchor_y + ((cx * CHAIN_L) >> 7) + yo);   /* ★2 個は高さを分ける。枠は地の色ごと写すので、同じ高さですれ違うと互いの絵を削り、細切れに見えた(指摘) */
     cur_fr = (u8)(FR_UP - ((swing + (swing < 0 ? -1 : 1)) >> 1));   /* 右へ振れたら吊り輪は左上(角度は逆) */
     if (cur_fr > 6) cur_fr = swing > 0 ? 0 : 6;
 }
@@ -387,6 +389,7 @@ static void plumb_update(void) {
         if (g_boss_hp <= PLUMB_HALF) {                        /* 鎖が切れる: 跳ね回る */
             broken = 1; fx = FX(bx); fy = FX(by); fvx = bx < 128 ? 24 : -24; fvy = 0;
             fx_spawn(FX(pivot), FX(anchor_y + 40));
+            if (npl > 1) { pivot = (bx & 128) ? 189 : 67; bnc_r = 27; }   /* 2 個は左右の半分ずつで跳ねる(枠を重ねない)。pivot は範囲の中心に使い回す */
         }
         if (++aim_t >= 45) { aim_t = 0; enemy_shoot(FX(bx), FX(by + 20)); }
         /* 測定ビーム: 振り切った位置の先端から下へ。振れの端は 34 フレーム後(t & 127 = 62 なら左の端、126 なら右の端)で、発射の間ちょうど
@@ -394,7 +397,7 @@ static void plumb_update(void) {
         if ((t & 63) == 62 && cur_pl == 0 && !bm_t && ++bm_n >= 3) {
             s16 x = (s16)(pivot + ((t & 64) ? BM_DX : -BM_DX));
             bm_n = 0;
-            if (x >= 30) { bm_t = 1; bm_x = x; bm_y = BM_Y; }
+            if (x >= 30) { bm_t = 1; bm_x = x; bm_y = BM_Y + yo; }
         }
     } else {
         s8 d = g_sin64[(u8)(t >> 1) & 63];                    /* 遠近: 近い(等倍)〜遠い(0.55) */
@@ -403,8 +406,9 @@ static void plumb_update(void) {
             fy = FX(FLOOR2); fvy = -56;
             enemy_bullet(fx, fy, -32, -8); enemy_bullet(fx, fy, -28, -20); enemy_shoot(fx, fy);
         }
-        if (fx < FX(40) || fx > FX(216)) fvx = (s16)-fvx;
         bx = PX(fx); by = PX(fy);
+        if (bx < (s16)(pivot - bnc_r)) fvx = 24;
+        if (bx > (s16)(pivot + bnc_r)) fvx = -24;
         cur_fr = d < 32 ? FR_UP : (u8)(FR_FAR + ((u8)(d - 32) >> 5));
     }
     {
@@ -494,7 +498,9 @@ void boss_vram(void) {
     /* ★1 回の描き替えは最大 20 コマンド(写し 4 + 消し 4 方向 × リングの継ぎ目)。入りきらないときは見送る
        (途中まで積むと、消し残しや描き残しが出る) */
     /* ★残りが少ないフレーム(曲の小節の頭に FM の書き込みが集中した)は次のフレームへ(写しは 30Hz なので見た目は変わらない。m3 で 1 フレーム遅れた) */
-    if (gq_free() >= 20 && (u16)(sys_timer() - g_frame_t0) < 170u * 16u) {
+    /* ★2 個(7 面の試験 01)はここへ来るのが 180 ライン前後で、170 では 15 フレームほど見送り続けて絵が止まっては飛んだ(指摘「書き換えているのがわかる」)。
+       フレームの終わりまでは 60 ライン前後空いていたので 2 個は 200 まで(1 個は 168。npl は 1 か 2) */
+    if (gq_free() >= 20 && (u16)(sys_timer() - g_frame_t0) < (u16)(((u16)npl << 9) + 2176u)) {
         u8 i = npl > 1 ? (u8)(t & 1) : 0;                     /* 2 個のときは 1 フレームおきに交互 */
         if (npl > 1) pl_load(i);
         if (g_boss_state == BS_DONE || g_boss_state == BS_NONE) {
