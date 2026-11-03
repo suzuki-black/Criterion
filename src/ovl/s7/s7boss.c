@@ -82,7 +82,7 @@ void b7_update(void) {
     if (g_boss_state == BS_ENTER) {                           /* 画面がページ 0 にそろうまで流してから止める */
         if ((g_wx & 511u) < 4) {
             g_scroll_speed = 0;
-            if ((g_wx & 511u) == 0 && post) { g_boss_state = BS_FIGHT; stage_banner_c("HINT: USE LIMIT BREAK", 13); }   /* ★倒し方の合図 */
+            if ((g_wx & 511u) == 0 && post) { g_boss_state = BS_FIGHT; stage_banner_c("USE LIMIT BREAK, SHOOT THE CORE", 13); }   /* ★倒し方の合図 */
         }
         g_boss_dmg = 0;
         return;
