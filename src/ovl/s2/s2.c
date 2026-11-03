@@ -105,6 +105,8 @@ void ovl_init(void) {
     }
     if (g_calib) {                                            /* 7 面の試験 02: 白い空間から中心の区間の終わりへ沈んで KILOGRAM */
         g_w0 = (u16)((g_wx >> 3) - (S2_COL_ARENA2 - 8 - 48));
+        for (i = 0; i < 64; i++) g_map[S2_COL_ARENA2 - 64 + i] = g_map[S2_COL_ARENA2 + (i & 31)];   /* ★手前も広場の薄い壁に(中心の区間の厚い
+                                                                 壁が白い空間に浮き、戦いの間も左の隅に切れ端が残った。遊んでの指摘) */
         calib_begin(2);
         enter(SEC2_SINK);
         return;
