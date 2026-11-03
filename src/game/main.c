@@ -54,6 +54,16 @@ static u8 slow_next;
 u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
 #define HUD_DEADLINE (150u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
 #define HUD_DEADLINE2 (110u * 16u) /* これを過ぎていたら HUD の文字は 1 行だけ */
+/* ★強化の名前(取ったときのカーソルの行き先)だけは、これまでなら 1 回ぶん書く。3 面の空中戦で ECHO などを持つと、ここへ来る時点が
+   150〜210 ラインでほぼ毎フレーム締め切りを過ぎ、Quanta を取ってから名前が書き替わるまで 1〜2 秒かかった(遊んでの指摘)。
+   フレームの仕事はその場面でも 245 ラインまでに終わっている。★書くものがあるときだけ呼ぶ(毎フレーム呼ぶと、何もしない呼び出しの
+   数ラインでも 1 面の中ボスの上限すれすれのフレームが押し出され、m3 で 1 フレーム遅れた) */
+#define HUD_DEADLINE_GAUGE (190u * 16u)
+u8 g_hud_pend;                     /* 第 3 バンクの hud.c が書く: 強化の名前を書き終えていない */
+static u8 hud_sig;                 /* 最後に hud_update を呼んだときのゲージ(gauge_sig) */
+static u8 gauge_sig(void) {
+    return (u8)(g_gauge.cursor + (g_gauge.armed << 3) + ((g_gauge.thrust + g_gauge.echo + g_gauge.aegis + g_gauge.drop + g_gauge.split + g_gauge.ray) << 4));
+}
 #define SPR_LIMIT    (245u * 16u)  /* スプライトの段の時点の経過 + 前に描いたフレームの「段からフレームの終わりまで」がこれを越えるなら描き直さない */
 #define SPR_SKIP_MAX 3             /* スプライトを続けて飛ばすのはここまで(その次は SPR_FORCE までなら描く) */
 #define SPR_FORCE    (200u * 16u)
@@ -356,7 +366,9 @@ void main(void) {
         }
         {   /* ★残りが少なければ 1 行だけ(1 行 ≒ 12 ライン、VDP のコマンドと重なるとその倍) */
             u16 el = (u16)(sys_timer() - g_frame_t0);
-            if (g_hud_on && (g_phase < PH_AIR || el < HUD_DEADLINE)) hud_update(g_phase < PH_AIR || el < HUD_DEADLINE2 ? 2 : 1);
+            u8 sig = gauge_sig();
+            if (g_hud_on && (g_phase < PH_AIR || el < HUD_DEADLINE)) { hud_update(g_phase < PH_AIR || el < HUD_DEADLINE2 ? 2 : 1); hud_sig = sig; }
+            else if (g_hud_on && el < HUD_DEADLINE_GAUGE && (g_hud_pend || sig != hud_sig)) { hud_update(HUD_GAUGE_ONLY | 1); hud_sig = sig; }
         }
         if (g_phase <= PH_SORTIE) { title_vram(); title_build(); }
         else { stage_vram(); stage_build(); }

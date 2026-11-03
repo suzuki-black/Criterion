@@ -137,7 +137,9 @@ void title_build(void);             /* その場面のラスターリスト */
 void title_start(void);             /* 起動ロゴから始める */
 void game_start(void);              /* 自機・敵・ゲージを最初の状態に(main.c) */
 void hud_init(void);
-void hud_update(u8 rows);           /* 変わったところだけ書く(1 フレームに rows 行) */
+void hud_update(u8 rows);           /* 変わったところだけ書く(1 フレームに rows 行。HUD_GAUGE_ONLY を足すと強化の名前だけ) */
+#define HUD_GAUGE_ONLY 0x80
+extern u8 g_hud_pend;               /* 強化の名前を書き終えていない(第 3 バンクの hud.c が書く) */
 void hud_sprites(void);             /* ゲージのカーソル光点 */
 void gauge_quanta(void);            /* Quanta を取った */
 void gauge_shard(void);             /* Infinity Shard を取った(カーソルを ∞ へ) */

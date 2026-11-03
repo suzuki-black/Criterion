@@ -89,8 +89,9 @@ static void init_step(void) {
    1 行を左右 2 回に分ける(1 行を 1 回で書くと得点の 2 倍かかり、m4 で遅れたフレームが増えた) */
 #define SEG_W 6
 static void jobs_run(u8 rows) {
-    u8 j;
-    for (j = NJOB; j-- && rows;) {
+    u8 j, lo = rows & HUD_GAUGE_ONLY ? J_NODE : 0;
+    rows &= (u8)~HUD_GAUGE_ONLY;
+    for (j = NJOB; j-- > lo && rows;) {
         TextJob *t = &job[j];
         while (t->row < 8 && rows) {
             char *p = t->text + t->seg, c = p[SEG_W];
@@ -120,7 +121,7 @@ void hud_update(u8 rows) {
     u8 *lv = level_of(node);
     u8 lvv = lv ? *lv : 0;
     char buf[16];
-    if (init_stage) { init_step(); return; }
+    if (init_stage) { if (!(rows & HUD_GAUGE_ONLY)) init_step(); return; }
     /* ★得点は描きかけを描き終えてから次の値を取る(変わるたびに 0 行目から描き直していた間は、ボス戦で毎フレーム得点が
        入ると上の 2 行だけを書き続け、数字が新旧混ざったまま 1 フレームに 2 行の仕事が続いた。8 面の第 2 形態で遅れた) */
     if (g_pl.score != shown_score && job[J_SCORE].row >= 8) {
@@ -147,6 +148,7 @@ void hud_update(u8 rows) {
         }
     }
     jobs_run(rows);
+    g_hud_pend = job[J_NODE].row < 8;
 }
 
 void hud_sprites(void) {
