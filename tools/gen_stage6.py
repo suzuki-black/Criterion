@@ -13,7 +13,7 @@
 2. s6_map.bin: 地図 640 列(空 64 → 外壁 160 → 影 128 → 砂時計 32 → 文字盤 128 → 指針 56 → 残り)
 3. s6_data.h: 区間の列、短冊ごとの上端(自機の当たり)、歯車・砂粒虫・数字の列
 4. yjk_even.bin / yjk_odd.bin: 惑星の帯(256x48 の YJK)。偶数バイト → ページ 0、奇数バイト → ページ 2 の 0..47 行
-5. gear.bin: ROTOR の元(64x64、4bpp)。hg96.bin: 砂時計の 96x96 の 5 コマ(C3。ROTOR を使わず写す)
+5. gear.bin: ROTOR の元(64x64、4bpp)。hg96.bin: 砂時計の 96x96 の 9 コマ(C3。ROTOR を使わず写す)
 6. s6_spr.bin: スプライト 2 枚(砂粒虫・影の中の目)
 """
 import math, os, random, sys
@@ -177,10 +177,11 @@ def hg_dot(dx, dy, k=1):
     if abs(dx) > 18 * k and abs(dx) < 21 * k and abs(dy) <= 25 * k: c = 3   # 支柱
     return c
 
-HG96_ANG = (0, 6, 13, 19, 26)      # 64 で一周(s6boss.c の HG_NF = 5 コマ)
+HG96_ANG = [k * 32 / 9 for k in range(9)]   # 64 で一周。180° を 9 コマ = 20° ずつ(s6boss.c の HG_NF)。
+                                            # ★5 コマ(37° ずつ)では回転がかくかくに見えた(遊んでの指摘)
 
 def hourglass96():
-    """C3: 96x96 の 5 コマを直に描く(ROTOR で 1.5 倍にすると縁が角ばる)。回り方は ROTOR と同じ
+    """C3: 96x96 の 9 コマを直に描く(ROTOR で 1.5 倍にすると縁が角ばる)。回り方は ROTOR と同じ
        (写し先の (x, y) → 元の (cos・x + sin・y, -sin・x + cos・y))"""
     out = b''
     for a in HG96_ANG:

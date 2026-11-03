@@ -107,7 +107,8 @@ void ovl_update(void) {
         if (g_scam_q < S6_CAM * 16) g_scam_q += 16;
         if (g_scam_q >= S6_CAM * 16 && yjk_row >= 96) {
             if (g_split_n < SPLIT_H) g_split_n = (u8)(g_split_n < 8 ? 8 : g_split_n + 2);
-            else enter(SEC6_WALL);
+            else { g_blk_skip = 14; enter(SEC6_WALL); }       /* ★ここから帯を畳むまでカメラは動かないので、見えないリングの 48..111 行も
+                                                                 列で描かない(砂時計のコマの置き場。s6boss.c の hg_slot) */
         }
         break;
     case SEC6_WALL:   if (c + 32 >= S6_COL_SHADOW + 8) enter(SEC6_SHADOW); break;
