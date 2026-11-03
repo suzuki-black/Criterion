@@ -86,7 +86,7 @@ static void hg_slot(u8 g) {
 extern u16 g_frame_t0;             /* main.c: このフレームの始まり */
 static u8 rj, rph, rrow;           /* 仕事の番号 / 0 = 元を読む、1 = 回す、2 = VRAM へ / 進んだ行 */
 static void rot_update(void) {
-    if (rj >= RJ_END || g_sec < SEC6_SINK) return;
+    if (rj >= RJ_END || g_sec < SEC6_SINK || g_calib) return;   /* ★試験 06 は歯車も砂時計も出ない(作るとリングの見える行に書いた) */
     if (rph == 0) {
         if (rj >= 8) { rrow = 0; rph = 2; return; }           /* 砂時計: 描いた絵(ROM)を写すだけ */
         if (rj == 0 && rrow < 4) {                            /* 元の絵(2KB)は 4 回に分けて(★1 回で読むと約 80 ライン、試験 6 で遅れた) */
@@ -106,7 +106,7 @@ static void rot_update(void) {
 static void rot_vram(void) {       /* 出来たコマを 8 行(砂時計は 4 行)ずつ VRAM へ(重いフレームは次へ) */
     u8 k, n = rj < 8 ? 32 : HG_N;
     if (rj >= RJ_END || rph != 2 || (u16)(sys_timer() - g_frame_t0) >= 150u * 16u) return;
-    if (rj >= RJ_FIX && g_sec < SEC6_WALL) return;            /* リングに置くコマは、その行を列で描かなくなってから(s6.c) */
+    if (rj >= RJ_FIX && (g_sec < SEC6_WALL || g_sec > SEC6_MID)) return;   /* リングに置くコマは、その行を列で描かない間だけ(s6.c) */
     for (k = rj < 8 ? 8 : 4; k && rrow < n; k--, rrow++) {    /* 砂時計(ROM から)は 4 行ずつ(8 行で約 50 ライン) */
         if (rj < 8) {
             vdp_write_addr17(1, (u16)(0x8000u + (u16)(68 + rrow) * 128u + rj * 16u));            /* ページ 3 の 68 行 */

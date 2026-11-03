@@ -10,6 +10,7 @@
    ・色 6 は空の色(ブロック 23)。
    ★読み込まれるのは 6 面の空中戦が始まってから(5 面のオーバレイが頼む)。 */
 #include "s6.h"
+extern s16 g_blk_tag[];          /* stage.c: リングのブロックに描いてある s(0x7FFF = 何も描いていない) */
 #include "ovl.h"
 #include "vdp.h"
 #include "rom.h"
@@ -107,8 +108,14 @@ void ovl_update(void) {
         if (g_scam_q < S6_CAM * 16) g_scam_q += 16;
         if (g_scam_q >= S6_CAM * 16 && yjk_row >= 96) {
             if (g_split_n < SPLIT_H) g_split_n = (u8)(g_split_n < 8 ? 8 : g_split_n + 2);
-            else { g_blk_skip = 14; enter(SEC6_WALL); }       /* ★ここから帯を畳むまでカメラは動かないので、見えないリングの 48..111 行も
+            else {                                            /* ★ここから帯を畳むまでカメラは動かないので、見えないリングの 48..111 行も
                                                                  列で描かない(砂時計のコマの置き場。s6boss.c の hg_slot) */
+                u8 k;
+                g_blk_skip = 14;
+                for (k = 6; k < 14; k++) g_blk_tag[k] = 0x7FFF;   /* ★印も消す(降りる途中に描いた空の印が残り、7 面で同じ高さの空に
+                                                                 戻ったとき描き直されず、砂時計の片が白い空間に出た) */
+                enter(SEC6_WALL);
+            }
         }
         break;
     case SEC6_WALL:   if (c + 32 >= S6_COL_SHADOW + 8) enter(SEC6_SHADOW); break;
