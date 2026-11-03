@@ -222,6 +222,12 @@ void enemy_kill(Enemy *e, u8 by_player) {
     u8 f = e->form;
     if (e->type >= E_BK && by_player) zako_killed(e);
     if (by_player) { fx_spawn(e->x, e->y); score_add(10); sfx(SFX_KILL); }   /* 画面外へ逃げた敵は爆発も得点もなし */
+    /* 2 周目: 倒した敵が自機へ 1 発撃ち返す(指示書 2 周目 + 指摘「打ち返しありに」)。目の前の敵は撃ち返さない(避けようがない)。
+       LIMIT BREAK で倒した分は、直後に limit_break が敵弾を消す */
+    if (by_player && g_loop) {
+        s16 dx = PX(e->x) - PX(g_pl.x), dy = PX(e->y) - PX(g_pl.y);
+        if (dx < -40 || dx > 40 || dy < -40 || dy > 40) enemy_shoot(e->x, e->y);
+    }
     if (f < MAX_FORM && form_left[f]) {
         form_left[f]--;
         if (!by_player) form_lost[f] = 1;
