@@ -63,6 +63,11 @@ u16 last_jiffy;
 u8  psg_mix = 0;                     /* 有効にしているもの(bit0..2 音 A..C、bit3..5 ノイズ A..C) */
 u8  psg_mix_w = 0xFF;                /* PSG R#7 に書いた値 */
 static s8  bend_w, detune_w;         /* 鳴っている音に反映済みの値 */
+/* ビブラート(旋律 = FM0 と、その重ねの PSG B)。音が鳴ってから g_vib_delay フレームたったら、約 6Hz で揺らし始め、
+   2 フレームに 1 段ずつ深くして g_vib_depth(1 段 ≒ 1.7 セント)まで。短い音はかかる前に終わる(歌の伸ばす音の作法)。
+   計算は第 4 バンク(bank4/music_sel.c の vib_frame。ページ 1 が満杯)、反映は vib_apply */
+u8  vib_t;                           /* 旋律の音が鳴ってからのフレーム(asm が音の頭で 0 にする) */
+s8  vib_fm, vib_psg;                 /* F-Number / PSG の周期に足す値(asm が読む。第 4 バンクの vib_frame が求める) */
 static u8  atten_w;
 
 /* ---- 書き込み ---- */
@@ -157,9 +162,11 @@ static void snd_unmap(void) __naked {
 }
 
 /* ---- 音程 ---- */
-/* OPLL の F-Number(ブロック内、C..B)と PSG の周期(o1、C..B。1.7897725MHz / 16 / f) */
-const u16 fm_fnum[12] = { 172, 182, 193, 204, 217, 230, 243, 258, 273, 289, 306, 325 };
-const u16 psg_per1[12] = { 3421, 3229, 3048, 2877, 2715, 2563, 2419, 2283, 2155, 2034, 1920, 1812 };
+/* OPLL の F-Number(ブロック内、C..B。A = 290 を基準に四捨五入。±5 セント以内)と PSG の周期の 16 倍(o1、C..B。
+   1.7897725MHz / 16 / f × 16。オクターブごとに右へずらして最後に四捨五入する)。
+   ★前の表は F-Number が −1〜−9 セントとばらつき、PSG は o1 の周期を切り捨てで縮めたので o6 で最大 +19 セント高かった */
+const u16 fm_fnum[12] = { 172, 183, 194, 205, 217, 230, 244, 258, 274, 290, 307, 326 };
+const u16 psg_per1[12] = { 54728, 51656, 48757, 46020, 43437, 40999, 38698, 36526, 34476, 32541, 30715, 28991 };
 
 /* PSG のエンベロープ(音色の番号): 何フレームごとに 1 下がるか(0 = 下がらない)、下限 */
 static const u8 env_rate[8] = { 0, 1, 2, 4, 8, 16, 3, 6 };
@@ -549,6 +556,13 @@ static void seq_core(void) __naked {
     no_nr:
         ld   6 (ix), b
         jr   nc, no_psg
+        ld   a, c                  ; 旋律(FM0)の新しい音: ビブラートを止めて数え直す(PSG B は後で同じ音を鳴らす)
+        or   a
+        jr   nz, no_v0
+        ld   (_vib_t), a
+        ld   (_vib_fm), a
+        ld   (_vib_psg), a
+    no_v0:
         ld   a, 10 (ix)
         and  #3
         cp   #3
@@ -667,6 +681,12 @@ static void seq_core(void) __naked {
         ld   a, (_g_snd_detune)
         call add_s8_de
         ld   a, c
+        or   a
+        jr   nz, ff_nv
+        ld   a, (_vib_fm)
+        call add_s8_de
+    ff_nv:
+        ld   a, c
         add  a, #0x10
         ld   l, e
         call _opll_w
@@ -730,20 +750,32 @@ static void seq_core(void) __naked {
         ld   d, (hl)
         ex   de, hl
         pop  de
+        ld   a, d                   ; 右へ (o - 1) + 4 回(o0 は o1 と同じ)
+        or   a
+        jr   z, pf4
+        dec  a
     pf4:
-        ld   a, d
-        cp   #2
-        jr   c, pf5
+        add  a, #4
+        ld   d, a
+    pf4b:
         srl  h
         rr   l
-        dec  d
-        jr   pf4
+        dec  d                      ; dec / jr は C を変えない
+        jr   nz, pf4b
+        jr   nc, pf5                ; 最後に出たビットで四捨五入
+        inc  hl
     pf5:
         ex   de, hl
         ld   a, 11 (ix)
         call add_s8_de
         ld   a, (_g_snd_detune)
         call add_s8_de
+        ld   a, b
+        dec  a                      ; PSG B(旋律の重ね)
+        jr   nz, pf_nv
+        ld   a, (_vib_psg)
+        call add_s8_de
+    pf_nv:
         ld   a, b
         add  a, a
         out  (0xA0), a
@@ -799,6 +831,23 @@ static void seq_core(void) __naked {
         pop  ix
         ret
 
+        ; ---- _vib_apply: 鳴っている FM0 と PSG B へビブラートを反映 ----
+    _vib_apply::
+        push ix
+        ld   ix, #_ch
+        ld   c, #0
+        bit  0, 10 (ix)
+        jr   z, va1
+        ld   e, #0x10
+        call fm_freq
+    va1:
+        ld   ix, #_ch + 8 * 14
+        ld   c, #8
+        bit  0, 10 (ix)
+        call nz, psg_freq_c
+        pop  ix
+        ret
+
         ; ---- _all_keyoff: 全チャンネルを切って止める ----
     _all_keyoff::
         push ix
@@ -824,6 +873,7 @@ void seq_run(void);
 void seq_events(void);
 void retune(void);
 void all_keyoff(void);
+void vib_apply(void);
 void psg_vol(u8 j, u8 v);
 
 /* 曲の頭を読んでチャンネルを張る(★曲のバンクを出している間に呼ぶ) */

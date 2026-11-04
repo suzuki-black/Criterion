@@ -6,6 +6,13 @@
 #include "snd_data.h"
 
 extern s8 snd_trans_next;                         /* snd.c */
+extern u8 ch[];                                    /* snd.c の Ch(14 バイト。+6 = 音、+10 = 印) */
+extern u8 vib_t;
+extern s8 vib_fm, vib_psg;
+extern const u16 fm_fnum[12], psg_per1[12];
+void vib_apply(void);
+u8 g_vib_delay, g_vib_depth;                       /* ★第 4 バンクの変数は初期値が付かない(sel_ok の初期化で入れる) */
+static u8 vib_ph;
 #define A_  0xF0   /* 空中戦(M03、面ごとに移調) */
 #define S_  0xF1   /* 面の曲 */
 #define MI  0xF2   /* 中ボス(M12) */
@@ -73,9 +80,40 @@ static void on_sec(u8 sec) {
     if (sec == 60) pcm_req(PCM_V04);                                 /* ラスボス(第 1 形態の始まり): UNMEASURABLE */
 }
 
+/* ビブラート(snd.c の vib_t の説明)。揺れ幅は音の高さに比例させる(F-Number・周期 × 段 / 1024)。★`*` `/` は使わない */
+static const s8 vib_sin[10] = { 0, 9, 15, 15, 9, 0, -9, -15, -15, -9 };   /* 16 倍、10 フレームで 1 周(6Hz) */
+static u16 vib_mul(u16 b, u8 n) { u16 r = 0; while (n--) r += b; return r; }
+static void vib_frame(void) {
+    s8 f = 0, p = 0;
+    if ((ch[10] & 1) && g_vib_depth) {
+        if (vib_t < 255) vib_t++;
+        if (vib_t > g_vib_delay) {
+            u8 k = (u8)(vib_t - g_vib_delay), amp, w, o = 0;
+            s8 sn;
+            if (k == 1) vib_ph = 0; else if (++vib_ph >= 10) vib_ph = 0;
+            amp = k >> 1;
+            if (amp > g_vib_depth) amp = g_vib_depth;
+            sn = vib_sin[vib_ph];
+            w = (u8)(vib_mul(amp, (u8)(sn < 0 ? -sn : sn)) >> 4);
+            if (w) {
+                s16 n = (s16)ch[6] + g_snd_trans + g_snd_bend;
+                u16 bp;
+                if (n < 24) n = 24; else if (n > 95) n = 95;
+                while (n >= 12) { n -= 12; o++; }
+                f = (s8)((vib_mul(fm_fnum[n], w) + 512) >> 10);
+                bp = psg_per1[n] >> (o + 2);            /* 周期の 2 倍(o - 1 + 4 - 1 回ずらす) */
+                p = (s8)((vib_mul(bp, w) + 1024) >> 11);
+                if (sn < 0) f = -f; else p = -p;      /* 周期は短いほど高い */
+            }
+        }
+    }
+    if (f != vib_fm || p != vib_psg) { vib_fm = f; vib_psg = p; vib_apply(); }
+}
+
 void music_frame(u8 over) {
     u8 w, st = 0, sec = g_sec;
-    if (sel_ok != 0x5A) { want = 0xFE; sec_prev = 0xFF; ph_prev = 0xFF; bs_prev = 0; calib_prev = 0; mt = 0; v04 = 0; motif_t = 0; sel_ok = 0x5A; }
+    if (sel_ok != 0x5A) { want = 0xFE; sec_prev = 0xFF; ph_prev = 0xFF; bs_prev = 0; calib_prev = 0; mt = 0; v04 = 0; motif_t = 0; sel_ok = 0x5A;
+                         g_vib_delay = 15; g_vib_depth = 20; }
     if (sec >= NSEC) sec = NSEC - 1;
     while (sec >= sec_first[st]) st++;
     if (over) w = SONG_M17;
@@ -121,6 +159,7 @@ void music_frame(u8 over) {
         sec_prev = 0xFF;
         g_snd_bend = 0; g_snd_detune = 0; g_snd_tempo = 128; g_snd_atten = 0; g_snd_mute = 0;
     }
+    vib_frame();
     if (w == want) return;
     want = w;
     if (w == SONG_M17) pcm_req(PCM_V05);                         /* ゲームオーバー: 声「GAME OVER」 */
