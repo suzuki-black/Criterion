@@ -523,6 +523,78 @@ def _psg_drums(rhy):
         elif g[6]: out.append('L')
     return 'N1 @1 ' + ' '.join(out) if hits else None
 
+# ================================================================ 伴奏を旋律の半音から逃がす(2026-11-05)
+# ★「微妙に音痴」の指摘。パッドとアルペジオを旋律と同じ音域で鳴らしているので、旋律の和音の外の音(経過音・倚音)が伴奏の音と
+#   半音(短 2 度・短 9 度)で重なって濁った(アボイドノート)。旋律と半音で重なる伴奏の音を、その小節の伴奏にある和音の音のうち
+#   すぐ下のものへ替える。長 7 度(伴奏が下)はそのまま。低音(o3 以下)は触らない。
+#   weak = False: 拍の頭か 4 分以上の旋律の音だけ / True: 弱拍の経過音にも(アルペジオの 1 音ずつだけ。パッドは小節ごとなので強拍だけ)
+_MEL = _re.compile(r'\s+|\||o(\d)|([a-g])([+#-]*)(%\d+|\d+)?(\.*)&?|r(%\d+|\d+)?(\.*)|l(%\d+|\d+)(\.*)|[@vqDNT]-?\d+|P\w+|L|(<)|(>)')
+_ACC = _re.compile(r'o(\d)([a-g]\+?)%(\d+)|r%(\d+)')
+
+def _mel_notes(mml):
+    out, t, o, dl, i = [], 0, 4, 24, 0
+    while i < len(mml):
+        m = _MEL.match(mml, i)
+        if not m or m.end() == i:
+            raise ValueError('旋律が読めない: ' + mml[i:i + 20])
+        i = m.end(); g = m.groups()
+        if g[0]: o = int(g[0])
+        elif g[1]:
+            d = _ticks(g[3], len(g[4])) if g[3] else dl
+            n = o * 12 + NAMES.index(g[1]) + sum(1 if a in '+#' else -1 for a in g[2])
+            out.append((t, d, n)); t += d
+        elif g[5] is not None or m.group(0).startswith('r'):
+            t += _ticks(g[5], len(g[6])) if g[5] else dl
+        elif g[7]: dl = _ticks(g[7], len(g[8]))
+        elif g[9]: o -= 1
+        elif g[10]: o += 1
+    return out
+
+def _semi(a, b):
+    """b が a と半音で当たる(短 2 度・短 9 度。長 7 度は当てない)"""
+    return abs(a - b) % 12 == 1
+
+def _avoid(song, weak=False):
+    mel = _mel_notes(song.ch['FM0'])
+    acc = {}
+    for k in ('FM1', 'FM2', 'FM3', 'PSGA'):
+        if k not in song.ch: continue
+        toks, t = [], 0
+        for m in _ACC.finditer(song.ch[k]):
+            if m.group(4):
+                t += int(m.group(4)); continue
+            d = int(m.group(3))
+            toks.append([m.start(), m.end(), t, d, int(m.group(1)) * 12 + NAMES.index(m.group(2))])
+            t += d
+        acc[k] = toks
+    bar = song.bar
+    pcs = {}
+    for toks in acc.values():
+        for _, _, t, d, n in toks:
+            if n >= 48: pcs.setdefault(t // bar, set()).add(n % 12)
+    for k, toks in acc.items():
+        for tk in toks:
+            _, _, t, d, n = tk
+            if n < 48: continue
+            hit = [m for m in mel if m[0] < t + d and t < m[0] + m[1] and _semi(m[2], n)
+                   and (m[1] >= 24 or (m[0] % 24 == 0 and m[1] >= 12) or (weak and d < bar))]
+            if not hit: continue
+            span = [m for m in mel if m[0] < t + d and t < m[0] + m[1]]
+            c = n - 1
+            while c >= 48 and not (c % 12 in pcs[t // bar] and not any(_semi(m[2], c) for m in span)):
+                c -= 1
+            if c >= 48: tk[4] = c
+        src, out, at = song.ch[k], [], 0
+        for a, b, t, d, n in toks:
+            out.append(src[at:a]); out.append(nn(n, '%%%d' % d)); at = b
+        out.append(src[at:])
+        song.ch[k] = ''.join(out)
+
+AVOID = {'M03': True, 'M04': True}                 # 曲 → weak(2026-11-05、空中戦と 1 面で 3 案を聴き比べて weak に)
+for _s in SONGS:
+    if _s.id in AVOID:
+        _avoid(_s, AVOID[_s.id])
+
 for _s in SONGS:
     if _s.id == 'M01' or 'FM0' not in _s.ch or not _s.ch['FM0'].strip():
         continue                                   # M01 は手で書いた / J02 は PSG だけの曲
