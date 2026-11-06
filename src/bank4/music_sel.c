@@ -80,9 +80,11 @@ static void on_sec(u8 sec) {
     if (sec == 60) pcm_req(PCM_V04);                                 /* ラスボス(第 1 形態の始まり): UNMEASURABLE */
 }
 
-/* ビブラート(snd.c の vib_t の説明)。揺れ幅は音の高さに比例させる(F-Number・周期 × 段 / 1024)。★`*` `/` は使わない */
-static const s8 vib_sin[10] = { 0, 9, 15, 15, 9, 0, -9, -15, -15, -9 };   /* 16 倍、10 フレームで 1 周(6Hz) */
-static u16 vib_mul(u16 b, u8 n) { u16 r = 0; while (n--) r += b; return r; }
+/* ビブラート(snd.c の vib_t の説明)。揺れ幅は音の高さに比例させる(F-Number・周期 × 段 / 1024)。★`*` `/` は使わない。
+   値を変えるのは 2 フレームに 1 回(5 点で 1 周 = 6Hz)。★毎フレーム・足し算の繰り返しで掛けていた間は、1 面の重い場面(m3 の区間 3)で
+   2 フレーム遅れた */
+static const s8 vib_sin[5] = { 0, 15, 9, -9, -15 };   /* 16 倍 */
+static u16 vib_mul(u16 b, u8 n) { u16 r = 0; while (n) { if (n & 1) r += b; b <<= 1; n >>= 1; } return r; }
 static void vib_frame(void) {
     s8 f = 0, p = 0;
     if ((ch[10] & 1) && g_vib_depth) {
@@ -90,7 +92,8 @@ static void vib_frame(void) {
         if (vib_t > g_vib_delay) {
             u8 k = (u8)(vib_t - g_vib_delay), amp, w, o = 0;
             s8 sn;
-            if (k == 1) vib_ph = 0; else if (++vib_ph >= 10) vib_ph = 0;
+            if (!(k & 1)) return;
+            if (k == 1) vib_ph = 0; else if (++vib_ph >= 5) vib_ph = 0;
             amp = k >> 1;
             if (amp > g_vib_depth) amp = g_vib_depth;
             sn = vib_sin[vib_ph];
