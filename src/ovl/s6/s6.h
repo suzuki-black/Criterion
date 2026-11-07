@@ -24,5 +24,6 @@ void b6_bands(void);               /* ボスの帯(今は無し) */
 void b6_mid_start(void);
 void b6_boss_start(void);
 u8   b6_num_alive(u16 col);        /* この列の台座に数字が残っている */
+extern u8 g_hg_disp;               /* 砂時計: 見せているリングの半分(1 = +256) */
 
 #endif /* S6_H */

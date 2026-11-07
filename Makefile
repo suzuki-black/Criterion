@@ -170,7 +170,7 @@ OVL_s8b_HDR    := stage
 OVL_ed_RELS    := $(patsubst src/ovl/ed/%.c,$(BUILD)/ov_ed_%.rel,$(wildcard src/ovl/ed/*.c))
 OVL_ed_HDR     := stage
 OVL_s1_HDR     := stage
-OVL_SIZE_FIRST := s1_s1 s1_boss s5_s5 s5_s5boss   # 1 面・5 面のオーバレイの空き(遠景・砲台の撃つ条件。重い経路の pawn.c は速さのまま)
+OVL_SIZE_FIRST := s1_s1 s1_boss s5_s5 s5_s5boss s6_s6 s6_s6boss   # 1 面・5 面・6 面のオーバレイの空き(遠景・砲台の撃つ条件・砂時計の二重の絵。重い経路の pawn.c は速さのまま)
 OVL_BINS := $(OVLS:%=$(BUILD)/ovl_%.bin)
 
 $(BUILD)/ov_title_%.rel: src/ovl/title/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
@@ -191,7 +191,7 @@ $(BUILD)/ov_s5_%.rel: src/ovl/s5/%.c src/ovl/s5/s5.h $(HDRS) src/game/game.h $(G
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(OVL_SIZE_FIRST),s5_$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ov_s6_%.rel: src/ovl/s6/%.c src/ovl/s6/s6.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
-	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
+	sdcc -m$(strip $(TARGET)) -c $(OPT) $(if $(filter $(OVL_SIZE_FIRST),s6_$*),--opt-code-size) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
 
 $(BUILD)/ov_s7_%.rel: src/ovl/s7/%.c src/ovl/s7/s7.h $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
@@ -303,7 +303,7 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/r
 	done
 
 GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/snd.bin $(OVL_BINS) $(BUILD)/bank.bin $(BUILD)/bank3.bin $(BUILD)/bank4.bin tools/rompack.mjs
-	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 64 $(BUILD)/snd.bin \
+	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 84 $(BUILD)/snd.bin \
 	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin --asset 100 $(BUILD)/bank4.bin --asset 102 $(BUILD)/bank3.bin --asset 126 $(BUILD)/bank.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、

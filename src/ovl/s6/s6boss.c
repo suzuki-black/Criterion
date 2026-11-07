@@ -1,9 +1,9 @@
 /* s6boss.c — 6 面の歯車・砂粒虫・数字の砲台、中ボス HOURGLASS、ボス GNOMON(指示書 5.6)。
-   ・歯車(ROTOR で回す)と砂時計(ROM の絵)のコマを面の入りで作ってページ 3(68 行から下: 6 面の短冊は 0..67 行しか
-     使わない)とページ 2 に置き、HMMM で表示リングへ写す(歯車 8 コマ = 45°(歯 8 枚)で一周、30fps。砂時計 9 コマ = 0..160°)。
+   ・歯車(ROTOR で回す)のコマを面の入りで作ってページ 3(68 行から下: 6 面の短冊は 0..67 行しか使わない)に置き、HMMM で
+     表示リングへ写す(歯車 8 コマ = 45°(歯 8 枚)で一周、30fps)。砂時計は ROM から直に書く(hg_vram)。
    ・砂粒虫: 外壁の棚のスプライト。砂粒(落ちる弾)をこぼす。影の中では敵の体の色(12)が暗くなり、目(弾の色 8 の
      スプライト)だけが光る。
-   ・HOURGLASS: 96x96(C3)。3 秒ごとに 180° 回り(20° ずつ 9 コマ)、回っている間だけ括れ
+   ・HOURGLASS: 96x96(C3)。2 秒止まっては 180° 回り(1.5° ずつ 120 コマを 5 フレームずつ、10 秒)、横を向いている間だけ括れ
      (弱点)が出る。回り終えると上の砂が括れからこぼれる(落ちる弾)。
    ・数字の砲台: 文字盤の台座の上の I..XII(フォントで BG に描く。壊すと空で塗る)。
    ・GNOMON: 画面のリングがページ 0 にそろう位置で止め、根元(BG)を軸に長さ 120 の針を VDP の LINE で描く
@@ -58,37 +58,18 @@ static void touch_rect(s16 x, s16 y, u8 w, u8 h) {
 }
 
 /* ======== ROTOR のコマ(面の入りで作る) ======== */
-/* 0..7 歯車(32x32、元の半分の大きさ。ROTOR)、8..16 砂時計(96x96。★C3: 64x64 から大きくした。ROTOR で 1.5 倍にすると
-   縁が角ばるので、gen_stage6.py で 9 つの角度を描き直して ROM に置き、写すだけ。角度は HG96_ANG = 0..160°) */
+/* 0..7 歯車(32x32、元の半分の大きさ。ROTOR)。砂時計(96x96)は gen_stage6.py が 120 の角度(0..178.5°、1.5° ずつ)を描いて ROM に置き
+   (0° は丸ごと、ほかは 2 つ前のコマとの差分)、回るたびに ROM から見えない半分へ直に書く(hg_vram)。★9 コマを 48x16 の片にして
+   VRAM の空き(ページ 2・3、リングの見えない行)に置いていた間はそれ以上増やせず、18 コマを丸ごと書いても 1 コマ 12 フレームかかって、
+   回っているように見えなかった(遊んでの指摘)。36 コマ(5° ずつ)でも縁が 1 回に 4 ドット飛んで、まだ回って見えなかった */
 #define HG_N    96
-#define HG_NF   9                  /* 砂時計のコマ(★5 コマ = 37° ずつでは回転がかくかくに見えた。遊んでの指摘) */
-#define HG_FIX  6                  /* 決まった場所に置くコマ(残りは画面を止めてからリングの見えない行へ) */
-#define RJ_FIX  (8 + HG_FIX)
-#define RJ_END  (8 + HG_NF)
-/* 砂時計のコマは 48x16 の片に分けて置く(片 g = コマ × 12 + 段 × 2 + 左右)。48 幅の列 5 本 × 行:
-   ページ 2 の 48..207 行(10 行 = 片 50)、ページ 3 の 100..179 行(5 行 = 25)、表示リングの 48..111 行(ページ 0 と 1 の
-   4 行ずつ = 40)。リングの 48..115 行(s ≡ 116..183)は、カメラが衛星の上にある間(外壁から帯を畳むまで)プレイエリアにも
-   YJK の帯にも出ないので、外壁に入ったら列で描くのをやめて(g_blk_skip、s6.c)置き場にする。★画面を止めてから置くと、
-   戦いの間はフレームの残りが無く、読み終えるまで 5 秒ほど回り出さなかった。
-   ★ページ 2 の 160..183 行は面の開始表示の帯でも使うが、砂時計を作るのは 6 面の帯が終わってからで、次の面の帯は
-   砂時計の後。ページ 3 の 180 行より先と 192 行〜は使わない */
-static u16 hg_sy;
-static u8  hg_sx;
-static void hg_slot(u8 g) {
-    u8 r = 0;
-    while (g >= 5) { g -= 5; r++; }                           /* g / 5(割り算はライブラリ呼び出し) */
-    hg_sx = (u8)(g * 48);
-    if (r < 10) hg_sy = (u16)(512 + 48 + r * 16u);
-    else if (r < 15) hg_sy = (u16)(768 + 100 - 160 + r * 16u);
-    else if (r < 19) hg_sy = (u16)(48 - 240 + r * 16u);
-    else hg_sy = (u16)(256 + 48 - 304 + r * 16u);
-}
+#define HG_NF   S6_HG_NF           /* 砂時計のコマ */
+#define RJ_END  8
 extern u16 g_frame_t0;             /* main.c: このフレームの始まり */
 static u8 rj, rph, rrow;           /* 仕事の番号 / 0 = 元を読む、1 = 回す、2 = VRAM へ / 進んだ行 */
 static void rot_update(void) {
     if (rj >= RJ_END || g_sec < SEC6_SINK || g_calib) return;   /* ★試験 06 は歯車も砂時計も出ない(作るとリングの見える行に書いた) */
     if (rph == 0) {
-        if (rj >= 8) { rrow = 0; rph = 2; return; }           /* 砂時計: 描いた絵(ROM)を写すだけ */
         if (rj == 0 && rrow < 4) {                            /* 元の絵(2KB)は 4 回に分けて(★1 回で読むと約 80 ライン、試験 6 で遅れた) */
             rom_to_ram(ASSET_GEAR_BANK, (u16)(ASSET_GEAR_OFF + rrow * 512u), ROTOR_SRC + rrow * 512u, 512);
             rrow++;
@@ -103,24 +84,14 @@ static void rot_update(void) {
         if (rrow >= 32) { rph = 2; rrow = 0; }
     }
 }
-static void rot_vram(void) {       /* 出来たコマを 8 行(砂時計は 4 行)ずつ VRAM へ(重いフレームは次へ) */
-    u8 k, n = rj < 8 ? 32 : HG_N;
+static void rot_vram(void) {       /* 出来たコマを 8 行ずつ VRAM へ(重いフレームは次へ) */
+    u8 k;
     if (rj >= RJ_END || rph != 2 || (u16)(sys_timer() - g_frame_t0) >= 150u * 16u) return;
-    if (rj >= RJ_FIX && (g_sec < SEC6_WALL || g_sec > SEC6_MID)) return;   /* リングに置くコマは、その行を列で描かない間だけ(s6.c) */
-    for (k = rj < 8 ? 8 : 4; k && rrow < n; k--, rrow++) {    /* 砂時計(ROM から)は 4 行ずつ(8 行で約 50 ライン) */
-        if (rj < 8) {
-            vdp_write_addr17(1, (u16)(0x8000u + (u16)(68 + rrow) * 128u + rj * 16u));            /* ページ 3 の 68 行 */
-            vdp_out_block(16, ROTOR_DST + (u16)rrow * 16u);
-        } else {
-            u8 h;
-            for (h = 0; h < 2; h++) {                         /* 1 行を左右の片へ */
-                hg_slot((u8)((rj - 8) * 12 + (rrow >> 4) * 2 + h));
-                rom_to_vram(ASSET_HG96_BANK, (u16)(ASSET_HG96_OFF + ((u16)(rj - 8) * HG_N + rrow) * (HG_N / 2) + h * 24u),
-                            (u8)(hg_sy >> 9), (u16)((u16)((hg_sy & 511) + (rrow & 15)) * 128u + (hg_sx >> 1)), 24);
-            }
-        }
+    for (k = 8; k && rrow < 32; k--, rrow++) {
+        vdp_write_addr17(1, (u16)(0x8000u + (u16)(68 + rrow) * 128u + rj * 16u));            /* ページ 3 の 68 行 */
+        vdp_out_block(16, ROTOR_DST + (u16)rrow * 16u);
     }
-    if (rrow >= n) { rj++; rph = 0; }
+    if (rrow >= 32) { rj++; rph = 0; }
 }
 
 /* ======== 歯車 ======== */
@@ -208,8 +179,24 @@ static void num_vram(void) {       /* 1 フレーム 1 個(CPU で VRAM を書�
 /* ======== HOURGLASS ======== */
 #define HG_X  112                  /* 画面の左上(リングの見えない半分から寄せず、止めた画面に描く。中心は 160) */
 #define HG_S  (-68)                /* 上端の行(空の行。ブロック 23 と YJK の行を避ける) */
-static u8  hg_f, hg_shown, hg_chunk, hg_ph, hg_drawing, hg_hit;
+static u8  hg_f, hg_shown, hg_chunk, hg_ph, hg_hit;   /* hg_chunk = 書いた行。★コマは見せてから進める(hg_update)ので、書いている途中では替わらない */
 static u16 hg_t;
+static u8  hg_j, hg_ok;            /* 今のコマを見せ始めた JIFFY / 1 = 次のコマを書き終えて見せる時刻を待っている
+                                      (★処理落ちのフレームは hg_update が飛ぶので、フレームの数では間隔がばらついた) */
+#define JIFFY (*(volatile u8 *)0xFC9E)
+/* ★回る絵は二重にして写す(写している途中の、立っている砂時計と傾いた砂時計が混ざったコマが見えた。遊んでの指摘)。
+   画面は止まっているので、リングの見えない半分(+256)にプレイエリアの写しを作り(hg_mir)、次のコマは見えていない方へ描いて、
+   VDP が書き終えたら帯の横スクロールを 256 ずらして見せる(g_hg_disp。s6.c の ovl_bands)。BG に描くもの(砂の山・消すとき)は両方へ */
+u8  g_hg_disp;                     /* 見せている半分(1 = +256) */
+static u8  hg_mir, hg_q, hg_rd;    /* 写しの進み(0 = 写す、1 = 書き終えを待つ、HG_MIR = 済み) / 積んだ物の印(gq_done) / 戦いの後に描き直した列 */
+#define HG_MIR 2
+static u8  hg_first;               /* 1 = 入りの 1 回目の回転(コマ 1 は 0 → 1 の差分) */
+static u16 hg_blk;                 /* 次に読む hg96.bin の塊 */
+static u16 hg_mx;                  /* 写しの次の矩形(画面の x, y) */
+static u8  hg_my;
+#define HG_STEP 5                  /* 1 コマを見せる JIFFY(12Hz)。∞ の紋章のように一定の間隔で細かく替えると滑らかに見える。書くのに 3〜4 フレーム
+                                      (VRAM の窓に間に合うのは処理落ちで論理を飛ばしたフレームだけで、ふつうのフレームは論理の後の 9.5ms から)。
+                                      ★書き終えたらすぐ替えていた間は 3〜6 フレームでばらつき、回り方がぎくしゃくした */
 static u8  b_t;
 static const s8 hg_ring[8][2] = { { 24, 0 }, { 17, 17 }, { 0, 24 }, { -17, 17 }, { -24, 0 }, { -17, -17 }, { 0, -24 }, { 17, -17 } };
 /* ======== 砂(指示書 5.6「上部に溜まった砂(BG のドット粒子)が下部へ落ちる」。2026-10-29) ========
@@ -245,7 +232,11 @@ static void sand_update(void) {
         fy = (s16)(s6_sy(s6_top[g_map[s6_col_at(x)]]) - pile[c]);
         if (y < fy) continue;
         sd_on[i] = 0;                                         /* 着いた: 積もる */
-        if (pile[c] < 24 && gq_free() >= 4) { ring_cmd(0, 0, (s16)(x & ~3), (s16)(fy - 2), 4, 2, 1, 0x77); pile[c] += 2; }
+        if (pile[c] < 24 && gq_free() >= 4) {
+            ring_cmd(0, 0, (s16)(x & ~3), (s16)(fy - 2), 4, 2, 1, 0x77);
+            ring_cmd(0, 0, (s16)((x & ~3) + 256), (s16)(fy - 2), 4, 2, 1, 0x77);   /* 見えない半分の写しにも */
+            pile[c] += 2;
+        }
     }
 }
 static void sand_draw(void) {
@@ -253,14 +244,14 @@ static void sand_draw(void) {
     for (i = 0; i < NSAND; i++) if (sd_on[i]) spr_put(PX(sd_x[i]) - 8, PX(sd_y[i]) - 8, PAT_EBUL, G_EBUL, 0);
 }
 
-void b6_mid_start(void) { { u8 i; for (i = 0; i < NSAND; i++) sd_on[i] = 0; for (i = 0; i < 64; i++) pile[i] = 0; } hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_drawing = 0; hg_hit = 0; hg_ph = 0; hg_t = 0; g_boss_state = BS_ENTER; g_boss_hp = 16; b_t = 0; }
+void b6_mid_start(void) { { u8 i; for (i = 0; i < NSAND; i++) sd_on[i] = 0; for (i = 0; i < 64; i++) pile[i] = 0; } hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_hit = 0; hg_ph = 0; hg_t = 0; g_hg_disp = 0; hg_mir = 0; hg_rd = 0; hg_mx = 0; hg_my = SPLIT_H; hg_first = 1; hg_blk = 0; hg_ok = 0; g_boss_state = BS_ENTER; g_boss_hp = 16; b_t = 0; }
 static void hg_update(void) {
     s16 cy = s6_sy(HG_S + HG_N / 2), cx = HG_X + HG_N / 2;
-    if (g_boss_state == BS_ENTER) { if (rj >= RJ_FIX && hg_shown == 0) g_boss_state = BS_FIGHT; return; }
+    if (g_boss_state == BS_ENTER) { if (hg_mir >= HG_MIR) g_boss_state = BS_FIGHT; return; }
     if (g_boss_state == BS_DYING) {
         if (!(b_t & 3)) fx_spawn(FX(HG_X + (rnd8() & 63) + (rnd8() & 31)), FX(s6_sy(HG_S) + (rnd8() & 63) + (rnd8() & 31)));
         if (++b_t == 90) hg_f = 0xFE;                         /* 空で塗る(b6_vram) */
-        if (b_t > 100 && hg_shown == 0xFE) g_boss_state = BS_DONE;
+        if (b_t > 100 && hg_shown == 0xFE && hg_rd >= 32) g_boss_state = BS_DONE;   /* 見えない半分を描き直してから流す */
         return;
     }
     hg_t++;
@@ -269,18 +260,21 @@ static void hg_update(void) {
         /* ★真下に砂を落とすだけだった(遊んでの指摘「ずっと真下に球を吐いている」)。砂は前半だけ、狙い撃ちと回り終わりの 8 方向を足す */
         if (hg_t < 64 && !(hg_t & 3)) sand_spawn((s16)(cx - 2 + (rnd8() & 3)), (s16)(cy + 4), (s8)((rnd8() & 7) - 4), FX(1), (u8)(cy + 26));   /* 括れから下の砂へこぼれる */
         if (hg_t == 30 || hg_t == 80) { enemy_shoot(FX(cx), FX(cy - 28)); enemy_shoot(FX(cx), FX(cy + 28)); }
-        if (hg_t >= 120 && rj >= RJ_END) { hg_ph = 1; hg_t = 0; }   /* 残りのコマ(リング)を置き終えてから */
-    } else {                                                  /* 180° 回る(コマ 1..8、6 フレームずつ)→ 0 */
-        u8 f = 1;
-        u16 tt = hg_t;
-        while (tt >= 6) { tt -= 6; f++; }                     /* hg_t / 6(割り算はライブラリ呼び出し) */
-        if (f >= HG_NF) {                                     /* 回り終わり: 括れから 8 方向へ砂を散らす */
-            u8 k;
-            f = 0; hg_ph = 0; hg_t = 0;
-            for (k = 0; k < 8; k++) sand_spawn(cx, cy, (s8)(hg_ring[k][0] + (rnd8() & 15) - 8), hg_ring[k][1], 0);   /* 外へ飛んで床に積もる(向きを揺らして山をならす) */
+        if (hg_t >= 120) { hg_ph = 1; hg_t = 0; hg_f = 1; hg_j = JIFFY; }
+    } else {                                                  /* 180° 回る(コマ 1..HG_NF-1 → 0)。前のコマを見せたら次を書き始める
+                                                                 (★時間で進めていた間は、写し終える前に次のコマになって途中が見えた) */
+        u8 f = hg_f;
+        if (hg_shown == f) {                                  /* 見せたら次のコマを書き始める(見せる間隔は hg_vram) */
+            hg_t = 0;
+            if (++f >= HG_NF) {                               /* 回り終わり: 括れから 8 方向へ砂を散らす */
+                u8 k;
+                f = 0; hg_ph = 0;
+                for (k = 0; k < 8; k++) sand_spawn(cx, cy, (s8)(hg_ring[k][0] + (rnd8() & 15) - 8), hg_ring[k][1], 0);   /* 外へ飛んで床に積もる(向きを揺らして山をならす) */
+            }
+            hg_f = f;
         }
-        hg_f = f;
-        if (f >= 3 && f <= 6) {                               /* 括れ(弱点)が横を向いている(60°..120°。24 フレーム) */
+        if (f >= HG_NF * 8 / 18 && f <= HG_NF * 10 / 18) {    /* 括れ(弱点)が横を向いている(80°..100°。約 70 フレーム。★36 コマで 20 フレーム
+                                                                 だった間は弾が届く前に閉じて、m5 で倒せなかった) */
             g_boss_aim = cy;
             if (shot_rect(cx - 12, cy - 12, 24, 24)) {
                 hg_hit = 4;                                   /* ★当たった印(当てても光らなかった。遊んでの指摘) */
@@ -292,23 +286,221 @@ static void hg_update(void) {
     if (hg_ph == 0) shot_rect(HG_X, s6_sy(HG_S), HG_N, HG_N); /* 止まっている間はガラスが弾を止める(回っている間は括れまで届く) */
     touch_rect(HG_X + 9, s6_sy(HG_S) + 6, 78, 84);
 }
-static void hg_vram(void) {        /* コマが替わったら 48x16 の片を 1 フレーム 6 つずつ(12 片 = 2 フレーム)写す(★4 つずつでは上下で新旧のコマが混ざる間が長かった) */
-    u8 f = hg_f, k;
-    if (g_boss_state == BS_NONE || g_boss_state == BS_DONE || rj < RJ_FIX || gq_free() < 6) return;
+/* プレイエリア(SPLIT_H..PLAY_H-1 行)を見えない半分へ写す 1 つ(64x16 ずつ。戻り値 1 = 写し終えた)。見えている半分の列 c と +256 の列は
+   同じ x の別のページなので、リングの継ぎ目(写し元のページが替わる画面の x = xa、256 行を越える画面の y = ya)で切れば、写し元と
+   写し先は同じ形の矩形になる。★1 つを大きくすると(256x140 で約 90ms)上の帯(SCREEN 12)の間までコマンドが続き、化けて片の置き場を壊した */
+static u8 hg_mirror(void) {
+    u16 xa = (u16)(256 - (g_wx & 255)), ya = (u16)((256 - g_vscroll) & 255);
+    u16 x1 = (u16)((hg_mx & ~63u) + 64), y1 = (u16)((hg_my & ~15u) + 16), rx, ry;
+    if (hg_mx < xa && x1 > xa) x1 = xa;
+    if (hg_my < ya && y1 > ya) y1 = ya;
+    if (y1 > PLAY_H) y1 = PLAY_H;
+    rx = (u16)((g_wx + hg_mx) & 511u); ry = (u16)((hg_my + g_vscroll) & 255);
+    gq_hmmm(rx & 255, rx >= 256 ? 256u + ry : ry, rx & 255, rx >= 256 ? ry : 256u + ry, x1 - hg_mx, y1 - hg_my);
+    hg_mx = x1;
+    if (hg_mx >= 256) { hg_mx = 0; hg_my = (u8)y1; }
+    return (u8)(hg_my >= PLAY_H);
+}
+/* 砂時計を書く: 塊(256 バイト)を RAM に読み、記録ごとに(行・バイトの位置・長さ・中身)リングの半分 h へ書く(入りの 0° は 1 行丸ごとの
+   記録、回る間は 2 つ前のコマとの差分)。リングの 256 / 512 列の継ぎ目で 2 つに分ける */
+static u8  hg_pos, hg_sy0, hg_k, hg_kn, hg_r14;   /* hg_kn = 時刻を見る記録の間隔 */
+static u16 hg_budget;               /* 書いてよいフレームの頭からの時刻(タイマのカウント) */
+static u16 hg_rx0;                 /* 半分 h の砂時計の左端のリングの x(偶数) */
+static u8  hg_buf[256];
+static void hg_load(void) {        /* 塊 hg_blk を hg_buf へ */
+    u16 off = (u16)(ASSET_HG96_OFF + ((hg_blk & 31) << 8));
+    u8 bank = (u8)(ASSET_HG96_BANK + (hg_blk >> 5));
+    if (off >= 8192) { off -= 8192; bank++; }
+    rom_to_ram(bank, off, hg_buf, 256);
+    hg_pos = 0;
+}
+/* hg_buf[hg_pos] から記録を書く(asm)。戻り値 0 = 時間切れ、0xFE = 塊の終わり、0xFF = コマの終わり(hg_pos はその印を指す)。
+   ★C で書いていた間は 1 記録に約 200us(中身は平均 4 バイト = 約 35us)かかり、120 コマの差分 1 コマに 9 フレームかかった。
+   番地は VDP の 2〜4 回の書き込みだけにし、時刻を見る(と PCM の送出口を呼ぶ)のは回る間は 4 記録に 1 回。
+   VRAM の番地 = 半分(リングの x の 256 の位) << 15 | 行 << 7 | バイトの位置(R#14 = 番地 >> 14) */
+#define HG_BUDGET_IN  (225u * 16u)  /* 入りの 0°: フレームの頭から 225 ライン(VRAM の窓は約 98 ラインから、上の帯(SCREEN 12)は 294 ラインから。
+                                        ★240 では 0°(1 記録 48 バイト。4 記録ごとに時刻を見るので超えうる)を書く 6 フレームが遅れた(m5)) */
+#define HG_BUDGET_ROT (225u * 16u)  /* 回る間の差分。★240 では処理落ち(敵と砂が止まる)が増えた。220 以下では書くのが 5 フレームに間に合わないコマが 3 分の 1 を超えた */
+static u8 hg_run(void) __naked {
+    __asm
+        ld   a, (_hg_pos)
+        ld   e, a
+        ld   d, #0
+        ld   hl, #_hg_buf
+        add  hl, de
+        ld   a, #1
+        ld   (_hg_k), a
+        ld   a, #0xFF
+        ld   (_hg_r14), a          ; R#14 はほかの書き込みが替えるので、呼ぶたびに覚え直す
+    00010$:
+        ld   a, (hl)
+        cp   #0xFE
+        jp   nc, 00090$            ; 塊・コマの終わり
+        ld   a, (_hg_k)
+        dec  a
+        ld   (_hg_k), a
+        jr   nz, 00020$
+        ld   a, (_hg_kn)
+        ld   (_hg_k), a
+        push hl
+        ld   hl, (_g_vdp_wait_hook)
+        ld   a, h
+        or   l
+        call nz, 00099$            ; PCM の送出口
+        call _sys_timer            ; DE = 今
+        ld   hl, (_g_frame_t0)
+        ex   de, hl
+        or   a
+        sbc  hl, de
+        ld   de, (_hg_budget)
+        or   a
+        sbc  hl, de
+        pop  hl
+        jr   c, 00020$
+        xor  a                     ; 時間切れ
+        jp   00090$
+    00020$:
+        ld   a, (_hg_sy0)
+        add  a, (hl)
+        ld   b, a                  ; B = リングの行
+        inc  hl
+        ld   a, (hl)               ; バイトの位置
+        inc  hl
+        add  a, a
+        ld   e, a
+        ld   a, #0
+        adc  a, a
+        ld   d, a                  ; DE = バイトの位置 * 2
+        ld   c, (hl)               ; C = 長さ
+        inc  hl                    ; HL = 中身
+        push hl
+        ld   hl, (_hg_rx0)
+        add  hl, de
+        ld   a, h
+        and  #1
+        ld   d, a                  ; D = 半分(ページ 0 / 1)
+        ld   a, l
+        srl  a
+        ld   e, a                  ; E = その行のバイト
+        pop  hl
+        ld   a, #128
+        sub  e                     ; A = ページの継ぎ目までのバイト
+        cp   c
+        jr   c, 00030$
+        call 00080$
+        ld   b, c
+        ld   c, #0x98
+        otir
+        jp   00010$
+    00030$:                        ; 継ぎ目をまたぐ: 2 つに分ける
+        push af
+        call 00080$
+        pop  af
+        push bc
+        ld   b, a
+        ld   c, #0x98
+        otir
+        pop  bc
+        neg
+        add  a, c
+        ld   c, a                  ; 残り
+        ld   a, d
+        xor  #1
+        ld   d, a
+        ld   e, #0
+        call 00080$
+        ld   b, c
+        ld   c, #0x98
+        otir
+        jp   00010$
+    00080$:                        ; VRAM の番地(D = 半分、B = 行、E = バイト)。A だけ壊す
+        ld   a, d
+        add  a, a
+        bit  7, b
+        jr   z, 00081$
+        inc  a
+    00081$:
+        push hl
+        ld   hl, #_hg_r14
+        di
+        cp   (hl)
+        jr   z, 00082$             ; ★同じなら R#14 を書かない(1 記録 4 回の I/O が 2 回になる)
+        ld   (hl), a
+        out  (0x99), a
+        ld   a, #0x8E
+        out  (0x99), a
+    00082$:
+        pop  hl
+        ld   a, b
+        rrca
+        and  #0x80
+        or   e
+        out  (0x99), a
+        ld   a, b
+        srl  a
+        and  #0x3F
+        or   #0x40
+        out  (0x99), a
+        ei
+        ret
+    00090$:
+        ld   b, a
+        ld   de, #_hg_buf
+        or   a
+        sbc  hl, de
+        ld   a, l
+        ld   (_hg_pos), a
+        ld   a, b
+        ret
+    00099$:
+        jp   (hl)
+    __endasm;
+}
+/* 塊 hg_blk から半分 h へ書く(フレームの頭から hg_budget まで)。1 = 書き終えた */
+static u8 hg_write(u8 h) {
+    if (hg_mir < HG_MIR) { hg_budget = HG_BUDGET_IN; hg_kn = 1; }   /* ★入りの 0° は 1 記録 48 バイトなので毎回見る(4 記録ごとでは 6 フレーム遅れた) */
+    else { hg_budget = HG_BUDGET_ROT; hg_kn = 4; }
+    hg_rx0 = (u16)((g_wx + HG_X + h * 256u) & 510u);
+    hg_sy0 = (u8)(s6_sy(HG_S) + g_vscroll);
+    if (!hg_chunk) { hg_load(); hg_chunk = 1; }
+    for (;;) {
+        u8 r = hg_run();
+        if (r == 0xFF) { hg_blk++; hg_chunk = 0; return 1; }
+        if (r != 0xFE) return 0;
+        hg_blk++; hg_load();
+    }
+}
+static void hg_vram(void) {        /* コマが替わったら見えない方へ書き、書き終えたら決まった時刻に次のフレームの帯から見せる */
+    u8 f = hg_f, back;
+    if (g_boss_state == BS_NONE || g_boss_state == BS_DONE || gq_free() < 8) return;
     if (f == 0xFE) {
-        if (hg_shown != 0xFE) { ring_cmd(0, 0, HG_X, s6_sy(HG_S), HG_N, HG_N, 1, 0x11); hg_shown = 0xFE; }
+        if (hg_shown != 0xFE) {
+            ring_cmd(0, 0, HG_X, s6_sy(HG_S), HG_N, HG_N, 1, 0x11); ring_cmd(0, 0, HG_X + 256, s6_sy(HG_S), HG_N, HG_N, 1, 0x11);
+            hg_shown = 0xFE; g_hg_disp = 0;
+        } else if (hg_rd < 32 && stage_redraw_col((u16)((g_wx >> 3) + 32 + hg_rd))) hg_rd++;   /* 見えない半分の列を描き直す */
         return;
     }
-    if (hg_shown == f && hg_chunk == 0) return;
-    /* ★写している途中でコマが替わったら頭から写し直す(続きの行だけ次のコマで写し、上の行が前のコマのまま残って、
-       立っている砂時計と回った砂時計が重なって見えた。遊んでの指摘) */
-    if (hg_chunk && f != hg_drawing) hg_chunk = 0;
-    hg_drawing = f;
-    for (k = 0; k < 6 && gq_free() >= 6; k++) {
-        hg_slot((u8)(f * 12 + hg_chunk));
-        ring_cmd(hg_sx, hg_sy, (s16)(HG_X + (hg_chunk & 1) * 48), (s16)(s6_sy(HG_S) + (hg_chunk >> 1) * 16), 48, 16, 0, 0);
-        if (++hg_chunk >= 12) { hg_chunk = 0; hg_shown = f; break; }
+    if (hg_mir < HG_MIR) {                                    /* 入り: 見えている方に 0° を書き(塊 0 から)、プレイエリアを見えない半分へ写す */
+        if (hg_shown != 0) { if (hg_write(0)) hg_shown = 0; return; }
+        if (stage_busy()) return;
+        if (!hg_mir) { if (hg_mirror()) { hg_q = (u8)(gq_done + gq_count); hg_mir = 1; } }
+        else if ((s8)(gq_done - hg_q) >= 0 && !vdp_cmd_busy()) hg_mir = HG_MIR;
+        return;
     }
+    back = (u8)(g_hg_disp ^ 1);
+    if (hg_ok) {                                              /* 書き終えたコマは決まった間隔で見せる(★書き終えたらすぐ見せていた間は、
+                                                                 書く時間の違いで 3〜6 フレームにばらついた) */
+        if ((u8)(JIFFY - hg_j) < HG_STEP) return;
+        hg_j = JIFFY;                                         /* ★遅れた分を次で取り戻すと 6 → 4 と揺れたので、遅れたらそこから数え直す */
+        hg_ok = 0; hg_shown = f; g_hg_disp = back; if (f == 1) hg_first = 0;
+        return;
+    }
+    if (!hg_chunk) {                                          /* 書き始め: 1 と 2 の頭は決まった塊、ほかは前のコマの続き */
+        if (hg_shown == f) return;
+        if (f == 1) hg_blk = hg_first ? S6_HG_FIRST : S6_HG_D1;
+        else if (f == 2) hg_blk = S6_HG_D2;
+    }
+    if (hg_write(back)) hg_ok = 1;
 }
 
 /* ======== GNOMON ======== */

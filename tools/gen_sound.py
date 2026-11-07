@@ -17,7 +17,8 @@ import os, re, sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 TPQ = 24                       # 4 分音符の刻み
-SND_BANK = 64                  # ROM のバンク(Makefile と合わせる。素材が 6..47 に伸びたので 40 → 48、スプライトの色表が倍になって 64 へ)
+SND_BANK = 84                  # ROM のバンク(Makefile と合わせる。素材が 6..47 に伸びたので 40 → 48、スプライトの色表が倍になって 64 へ、
+                               # 砂時計を 18 コマにして 72 へ、120 コマの差分にして 84 へ)
 NOTE = {'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11}
 CHN = ['FM0', 'FM1', 'FM2', 'FM3', 'FM4', 'FM5', 'RHY', 'PSGA', 'PSGB', 'PSGC']
 RHY = {'b': 16, 's': 8, 't': 4, 'c': 2, 'h': 1}

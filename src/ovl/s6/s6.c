@@ -109,7 +109,7 @@ void ovl_update(void) {
         if (g_scam_q >= S6_CAM * 16 && yjk_row >= 96) {
             if (g_split_n < SPLIT_H) g_split_n = (u8)(g_split_n < 8 ? 8 : g_split_n + 2);
             else {                                            /* ★ここから帯を畳むまでカメラは動かないので、見えないリングの 48..111 行も
-                                                                 列で描かない(砂時計のコマの置き場。s6boss.c の hg_slot) */
+                                                                 列で描かない(もとは砂時計のコマの置き場。今は ROM から直に書くので使っていないが、見えない行なので描かずにおく) */
                 u8 k;
                 g_blk_skip = 14;
                 for (k = 6; k < 14; k++) g_blk_tag[k] = 0x7FFF;   /* ★印も消す(降りる途中に描いた空の印が残り、7 面で同じ高さの空に
@@ -125,7 +125,7 @@ void ovl_update(void) {
         break;
     case SEC6_MID:
     case SEC6_BOSS:
-        if (sec_t == 5400) g_boss_state = BS_DONE;
+        if (sec_t == 5400) g_boss_state = g_sec == SEC6_MID ? BS_DYING : BS_DONE;   /* ★砂時計は壊れる流れで(見えない半分の写しを描き直す) */
         if (g_boss_state == BS_DONE) {
             g_boss_state = BS_NONE;
             if (g_sec == SEC6_MID) { g_scroll_speed = 4; enter(SEC6_DIAL); }
@@ -188,6 +188,7 @@ void ovl_bands(s16 sc, u16 nx) {
         static const u8 tear[3] = { 7, 7, 7 };               /* 裂ける瞬間、空が白く光る */
         stage_ev_pal(0, (g_sec == SEC6_OUT && sec_t > 100 && sec_t < 106) ? tear : sky);
     }
+    if (g_sec == SEC6_MID && g_hg_disp) nx += 256;            /* 砂時計の次のコマを描いた、見えない半分を見せる(s6boss.c) */
     stage_ev_scroll(0, nx);
     if (n) {
         /* 帰線の 244 行: SCREEN 12(YJK)、ページ 0(インターリーブ)、R#23 = 0、スプライトなし */

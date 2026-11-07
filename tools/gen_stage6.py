@@ -13,7 +13,7 @@
 2. s6_map.bin: 地図 640 列(空 64 → 外壁 160 → 影 128 → 砂時計 32 → 文字盤 128 → 指針 56 → 残り)
 3. s6_data.h: 区間の列、短冊ごとの上端(自機の当たり)、歯車・砂粒虫・数字の列
 4. yjk_even.bin / yjk_odd.bin: 惑星の帯(256x48 の YJK)。偶数バイト → ページ 0、奇数バイト → ページ 2 の 0..47 行
-5. gear.bin: ROTOR の元(64x64、4bpp)。hg96.bin: 砂時計の 96x96 の 9 コマ(C3。ROTOR を使わず写す)
+5. gear.bin: ROTOR の元(64x64、4bpp)。hg96.bin: 砂時計の 96x96 の 120 コマ(0° は丸ごと、ほかは 2 つ前のコマとの差分)
 6. s6_spr.bin: スプライト 2 枚(砂粒虫・影の中の目)
 """
 import math, os, random, sys
@@ -177,14 +177,17 @@ def hg_dot(dx, dy, k=1):
     if abs(dx) > 18 * k and abs(dx) < 21 * k and abs(dy) <= 25 * k: c = 3   # 支柱
     return c
 
-HG96_ANG = [k * 32 / 9 for k in range(9)]   # 64 で一周。180° を 9 コマ = 20° ずつ(s6boss.c の HG_NF)。
-                                            # ★5 コマ(37° ずつ)では回転がかくかくに見えた(遊んでの指摘)
+HG_NF = 120                                 # 180° を 120 コマ = 1.5° ずつ(64 で一周)。s6boss.c の S6_HG_NF
+# ★5 コマ(37° ずつ)・9 コマ(20° ずつ)・18 コマ(10° ずつ、1 コマを丸ごと書いて 12 フレーム)では回っているように見えなかった(遊んでの指摘)。
+#   s6boss.c はリングの表と裏の半分へ交互に書くので、裏には 2 つ前のコマが残っている。そのコマとの違い(差分)だけを書く(1 コマ平均約 900 バイト・220 記録)。
+#   36 コマ(5° ずつ)でも縁が 1 回に 4 ドット飛んで回って見えなかったので、∞ の紋章と同じく 1 回に 1 ドット強にした
 
 def hourglass96():
-    """C3: 96x96 の 9 コマを直に描く(ROTOR で 1.5 倍にすると縁が角ばる)。回り方は ROTOR と同じ
-       (写し先の (x, y) → 元の (cos・x + sin・y, -sin・x + cos・y))"""
-    out = b''
-    for a in HG96_ANG:
+    """C3: 96x96 の HG_NF コマを直に描く(ROTOR で 1.5 倍にすると縁が角ばる)。回り方は ROTOR と同じ
+       (写し先の (x, y) → 元の (cos・x + sin・y, -sin・x + cos・y))。返すのはコマごとの 4bpp(4608 バイト)の並び"""
+    out = []
+    for k in range(HG_NF):
+        a = k * 32 / HG_NF
         c, s = math.cos(a * math.pi / 32), math.sin(a * math.pi / 32)
         rows = []
         for y in range(96):
@@ -193,8 +196,45 @@ def hourglass96():
                 X, Y = x - 47.5, y - 47.5
                 row.append(hg_dot(c * X + s * Y, -s * X + c * Y, 1.5))
             rows.append(row)
-        out += pack(rows)
+        out.append(pack(rows))
     return out
+
+def hg_stream(P):
+    """hg96.bin: 差分を 256 バイトの塊で並べる(頭は入りの 0° を 1 行丸ごとの記録で)。
+       差分 = 行 u8・バイトの位置 u8・長さ u8・中身(間が 4 バイト未満の違いはつなぐ)。0xFE = 塊の終わり、0xFF = コマの終わり(塊の残りは捨てる)。
+       並び: d1, d2 .. d(N-1), d0(コマ f は f-2 から。0 と 1 は回り終えた後の N-2, N-1 から)、最後に入りの 1 回目だけの 0 → 1。
+       返すのは (中身, d1 の塊の番号, d2 の塊の番号, 入りの 1 回目の 0 → 1 の塊の番号)"""
+    def delta(a, b):
+        recs = []
+        for y in range(96):
+            ra, rb = a[y * 48:y * 48 + 48], b[y * 48:y * 48 + 48]
+            x = 0
+            while x < 48:
+                if ra[x] == rb[x]: x += 1; continue
+                x0 = last = x
+                while x < 48 and (ra[x] != rb[x] or x - last < 4):
+                    if ra[x] != rb[x]: last = x
+                    x += 1
+                recs.append(bytes([y, x0, last - x0 + 1]) + rb[x0:last + 1])
+                x = last + 1
+        return recs
+    def blocks(recs):
+        out, cur = bytearray(), bytearray()
+        for r in recs:
+            if len(cur) + len(r) > 255:
+                cur.append(0xFE); out += cur + bytes(256 - len(cur)); cur = bytearray()
+            cur += r
+        cur.append(0xFF); out += cur + bytes(256 - len(cur))
+        return out
+    n = len(P)
+    body = blocks([bytes([y, 0, 48]) + P[0][y * 48:y * 48 + 48] for y in range(96)])
+    d1 = len(body) // 256
+    for f in list(range(1, n)) + [0]:
+        body += blocks(delta(P[(f - 2) % n], P[f]))
+        if f == 1: d2 = len(body) // 256
+    first = len(body) // 256
+    body += blocks(delta(P[0], P[1]))
+    return bytes(body), d1, d2, first
 
 def sprites():
     def pat(rows):
@@ -213,13 +253,15 @@ def main(d, hpath):
     open(os.path.join(d, 'yjk_even.bin'), 'wb').write(ev)
     open(os.path.join(d, 'yjk_odd.bin'), 'wb').write(od)
     open(os.path.join(d, 'gear.bin'), 'wb').write(gear())
-    open(os.path.join(d, 'hg96.bin'), 'wb').write(hourglass96())
+    hg, hg_d1, hg_d2, hg_first = hg_stream(hourglass96())
+    open(os.path.join(d, 'hg96.bin'), 'wb').write(hg)
     open(os.path.join(d, 's6_spr.bin'), 'wb').write(sprites())
     with open(hpath, 'w') as f:
         f.write('/* s6_data.h — tools/gen_stage6.py が生成(手で編集しない)。6 面の区間と当たり。 */\n')
         f.write('#ifndef S6_DATA_H\n#define S6_DATA_H\n\n')
         for k, v in SEC.items(): f.write(f'#define S6_COL_{k} {v}\n')
         f.write(f'#define S6_COLS {len(cmap)}\n#define S6_NGEAR {len(GEAR)}\n#define S6_NMITE {len(MITE)}\n#define S6_NNUM {len(NUM)}\n\n')
+        f.write(f'#define S6_HG_NF {HG_NF}            /* 砂時計のコマ(180°) */\n#define S6_HG_FIRST {hg_first}       /* hg96.bin の入りの 1 回目(0 → 1)の塊 */\n#define S6_HG_D1 {hg_d1}          /* コマ 1 の差分の塊(頭の 0..D1-1 は入りの 0°) */\n#define S6_HG_D2 {hg_d2}          /* コマ 2 の差分の塊(1 の後に続く塊は、1 回目だけ入りの 0 → 1 なので) */\n\n')
         f.write('static const u8 s6_top[32] = { ' + ', '.join(map(str, TOP)) + ' };   /* 自機が下りられる限りの行(s) */\n')
         f.write('static const u16 s6_gear[S6_NGEAR] = { ' + ', '.join(map(str, GEAR)) + ' };   /* 歯車の窪みの左の列 */\n')
         f.write('static const u16 s6_mite[S6_NMITE] = { ' + ', '.join(map(str, MITE)) + ' };   /* 砂粒虫の棚の列 */\n')
