@@ -70,8 +70,12 @@ def logo():
     #   書き込みが行の途中に届いて左端が点滅した。色 13 はその高さの空の色に固定し(title.c)、色 1 の書き換えは
     #   この区間の中(色 1 の画素が無い所)で済ませる
     img = [[13 if 32 <= y < 48 else 1] * W for y in range(H)]
-    cw = 28                                           # 1 文字の幅(ドット)
-    x0 = (W - cw * len(text)) // 2
+    # ★帯は横スクロールのために R#25 の MSK を立てるので、左 8 ドットは見えない(28 ドット幅で 2 から描いていた間は「C」の左が欠けた)。
+    #   1 文字 27 ドットにして、見える 8..255 の真ん中に文字の墨を置く
+    cw = 27                                           # 1 文字の幅(ドット)
+    ink = [gx * 3 for c in (text[0], text[-1]) for gy in range(8) for gx in range(8) if FONT[c][gy] & (0x80 >> gx)]
+    lo, hi = min(ink), cw * (len(text) - 1) + max(ink) + 2
+    x0 = 8 + (W - 8 - (hi - lo + 1)) // 2 - lo
     for ci, ch in enumerate(text):
         g = FONT[ch]
         for gy in range(8):
@@ -87,7 +91,7 @@ def logo():
         # 目盛りの意匠: 文字の下に刻み
     for x in range(x0, x0 + cw * len(text), 4):       # ★57・58 行(125..127 行は 128 行の切り替えが早めに効いて揺れる)
         img[H - 6][x] = 14
-        if (x - x0) % 28 == 0: img[H - 7][x] = 14
+        if (x - x0) % cw == 0: img[H - 7][x] = 14
     out = bytearray()
     for y in range(H):
         for x in range(0, W, 2):
