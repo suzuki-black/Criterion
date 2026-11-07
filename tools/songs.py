@@ -555,10 +555,13 @@ def _semi(a, b):
     return abs(a - b) % 12 == 1
 
 def _avoid(song, weak=False):
+    if not song.ch.get('FM0', '').strip():
+        return                                         # PSG だけの曲(J02)
     mel = _mel_notes(song.ch['FM0'])
     acc = {}
     for k in ('FM1', 'FM2', 'FM3', 'PSGA'):
-        if k not in song.ch: continue
+        if k not in song.ch or _re.sub(r'o\d[a-g]\+?%\d+|r%\d+|[@vqDN]-?\d+|L|\||\s+', '', song.ch[k]):
+            continue                                   # 手で書いた声部は触らない(長さの書き方がまちまちで、刻みを数えられない)
         toks, t = [], 0
         for m in _ACC.finditer(song.ch[k]):
             if m.group(4):
@@ -590,7 +593,9 @@ def _avoid(song, weak=False):
         out.append(src[at:])
         song.ch[k] = ''.join(out)
 
-AVOID = {'M03': True, 'M04': True}                 # 曲 → weak(2026-11-05、空中戦と 1 面で 3 案を聴き比べて weak に)
+# 曲 → weak。2026-11-05 に空中戦と 1 面で 3 案を聴き比べて weak に、2026-11-07 にほかの曲も聴き比べて全曲に
+# (手で書いた声部は触らないので、M07・M09・M10・M12 などの伴奏は手で直す)
+AVOID = {s.id: True for s in SONGS}
 for _s in SONGS:
     if _s.id in AVOID:
         _avoid(_s, AVOID[_s.id])
