@@ -14,7 +14,7 @@
 2. s5_map.bin: 地図 640 列(接近 96 → 艦首 96 → 甲板 160 → 格納庫 40 → 艦底 96 → 機関部 96 → 艦橋 40 → 艦尾 16)
 3. s5_data.h: 区間の列、短冊ごとの当たり(種類・上・下)、機銃・主砲塔・吊り砲台の列
 4. turret.bin: 主砲塔の上部 32x32 × 16 向き(左 → 真上 → 右の半円。ページ 2 の 0..63 行へ、8 枚ずつ 2 段)
-5. far.bin: 遠くの戦艦がだんだん大きくなる絵の列(zoom.c が 1 枚ずつページ 2 の 64..127 行へ流す)
+5. far.bin: 接近で遠くの戦艦が本編の艦首そのものになるまでの差分(第 4 バンクの farz.c が VRAM へ直に書く)と farz_data.h
 6. s5_spr.bin: スプライト 11 枚(機銃 8 向き = 半円、吊り砲台 3 向き)
 7. gauge.bin: GAUGE BLOCK のブロック 6 個(長さ 32..112、高さ 14。ページ 2 の 0..83 行・0..111 ドット)
 """
@@ -274,86 +274,14 @@ def turret_frames():
                 sheet[oy + y][ox + x] = c
     return sheet
 
-# ---- 遠くの戦艦(だんだん大きくなる 60 段ほど。ROM に並べて zoom.c が 1 枚ずつ流す) ----
-FAR_W0, FAR_W1 = 16.0, 176.0                                   # 艦の長さ(ドット)。高さは FAR_ASPECT 倍
-FAR_ASPECT = 40 / 176
-FAR_FRAMES = 880                                               # 接近の長さ(フレーム)
-FAR_HOLD = 14
-
-def far_shape(u, v):
-    """艦の横顔(u = 0..1 が艦首 → 艦尾、v = 0..1 が上 → 下)。戻り値 = 部位(0 = 空)"""
-    if u < 0 or u > 1 or v < 0 or v > 1: return 0
-    deck = 0.56 - 0.07 * max(0, 0.12 - u) / 0.12               # 艦首は反り上がる
-    keel = 0.97
-    stem = 0.09 * (v - deck) / (keel - deck) if v > deck else 0                # 艦首は下が引く
-    if v >= deck and v < keel and u > stem and u < 1 - 0.05 * (v - deck) / (keel - deck):
-        s = (v - deck) / (keel - deck)
-        if s < 0.05: return 5                                  # 舷縁
-        if s < 0.40: return 1                                  # 上の舷側
-        if s < 0.46: return 3                                  # 帯
-        if s < 0.70: return 2                                  # 下の舷側
-        return 3
-    for c, w, top in ((0.17, 0.045, 0.43), (0.27, 0.05, 0.38), (0.76, 0.05, 0.38), (0.86, 0.045, 0.43)):   # 主砲塔
-        if abs(u - c) < w and top <= v < deck: return 1
-        if u < 0.5 and c - w - 0.055 < u <= c - w + 0.01 and abs(v - (top + 0.05)) < 0.022: return 2      # 砲身(前へ)
-        if u > 0.5 and c + w - 0.01 <= u < c + w + 0.055 and abs(v - (top + 0.05)) < 0.022: return 2      # 砲身(後ろへ)
-    if 0.38 < u < 0.52 and 0.36 <= v < deck: return 2          # 甲板室
-    if 0.40 < u < 0.50 and 0.22 <= v < 0.36: return 1          # 艦橋の下
-    if 0.42 < u < 0.48 and 0.12 <= v < 0.22: return 2 if abs(v - 0.15) < 0.015 else 1
-    if 0.445 < u < 0.455 and v < 0.12: return 3                # マスト
-    if 0.54 < u < 0.61 and 0.26 <= v < deck: return 3 if v < 0.31 else 1   # 煙突
-    if 0.63 < u < 0.70 and 0.44 <= v < deck: return 2          # 後ろの甲板室
-    return 0
-
-def far_color(part, w):
-    """部位 → 色。遠いほど空へ溶ける(1 = 空)"""
-    if w < 40:  return {1: 2, 2: 2, 3: 6, 5: 2}[part]
-    if w < 80:  return {1: 3, 2: 2, 3: 2, 5: 3}[part]
-    if w < 120: return {1: 3, 2: 3, 3: 2, 5: 14}[part]
-    return {1: 14, 2: 3, 3: 2, 5: 15}[part]
-
-def far_frame(w):
-    """艦の長さ w(実数)の 1 枚。箱は 4 の倍数の幅で、艦は箱の真ん中・下端にそろえる(コマが替わっても中心が揺れない)"""
-    h = w * FAR_ASPECT
-    bw = (int(w + 3) // 4 + 1) * 4
-    bh = int(math.ceil(h))
-    ox, oy = (bw - w) / 2, bh - h
-    rows = []
-    for y in range(bh):
-        row = []
-        for x in range(bw):
-            cnt = {}
-            for sy in range(4):
-                for sx in range(4):
-                    p = far_shape((x + (sx + 0.5) / 4 - ox) / w, (y + (sy + 0.5) / 4 - oy) / h)
-                    cnt[p] = cnt.get(p, 0) + 1
-            p = max(cnt, key=lambda k: (cnt[k], k != 0))
-            c = far_color(p, w) if p else 1
-            if p == 1 and 80 <= w < 120 and (x + y) & 1: c = 14        # 色の替わり目は網点で
-            if p == 1 and w >= 150 and (x - int(ox)) % 8 < 2 and abs(((y + 0.5 - oy) / h) - 0.655) < 0.012: c = 2   # 舷窓
-            row.append(c)
-        rows.append(row)
-    return rows
-
-def zoom_stream(frames):
-    """[(絵の行, 保つフレーム数)]。1 枚 = 見出し 4 バイト(1 行のバイト数・行数・保つフレーム数・最後の印)+ 絵(zoom.c)"""
-    out = bytearray()
-    for i, (rows, hold) in enumerate(frames):
-        out += bytes((len(rows[0]) // 2, len(rows), min(hold, 255), 1 if i == len(frames) - 1 else 0)) + pack(rows)
-    return bytes(out)
-
-def far_stream():
-    n = int(FAR_FRAMES / FAR_HOLD)
-    frames, last, hold = [], None, 0
-    for i in range(n + 1):
-        w = FAR_W0 * (FAR_W1 / FAR_W0) ** (i / n)
-        if last is not None and w - last < 1.0: hold += FAR_HOLD; continue   # 動きが 1 ドットに満たない段はまとめる
-        if frames: frames[-1][1] = hold
-        frames.append([far_frame(w), 0]); last = w; hold = FAR_HOLD
-    frames[-1][1] = FAR_HOLD
-    return zoom_stream(frames)
-
 # ---- スプライト(機銃 8 向き・吊り砲台 3 向き) ----
+def aa_fn(d):
+    """機銃の向き d(0 = 左 → 7 = 右、上の半円)の形。(dx, dy) = 16x16 の中心からの位置"""
+    a = math.pi - d * math.pi / 7
+    ux, uy = math.cos(a), -math.sin(a)
+    return lambda dx, dy: ((dx * dx + (dy - 4) ** 2 < 14 and dy > 1) or
+                           (0 < dx * ux + (dy - 3) * uy < 9 and abs(-dx * uy + (dy - 3) * ux) < 1.2))
+
 def spr_frames():
     out = bytearray()
     def pat(fn):
@@ -363,17 +291,12 @@ def spr_frames():
             for x in range(16):
                 v = (v << 1) | (1 if fn(x - 7.5, y - 7.5) else 0)
             rows.append(v)
-        b = bytearray()
-        for half in (0, 1):                                    # 16x16 の並び: 左上・左下・右上・右下
-            pass
+        b = bytearray()                                        # 16x16 の並び: 左半分の 16 行・右半分の 16 行
         for y in range(16): b.append((rows[y] >> 8) & 255)
         for y in range(16): b.append(rows[y] & 255)
         return bytes(b)
     for d in range(8):                                         # 機銃: 0 = 左 → 7 = 右(上の半円)
-        a = math.pi - d * math.pi / 7
-        ux, uy = math.cos(a), -math.sin(a)
-        out += pat(lambda dx, dy: (dx * dx + (dy - 4) ** 2 < 14 and dy > 1) or
-                   (0 < dx * ux + (dy - 3) * uy < 9 and abs(-dx * uy + (dy - 3) * ux) < 1.2))
+        out += pat(aa_fn(d))
     for d in range(3):                                         # 吊り砲台: 0 = 左下、1 = 真下、2 = 右下
         a = -math.pi * 0.75 + d * math.pi * 0.25
         ux, uy = math.cos(a), -math.sin(a)
@@ -409,6 +332,300 @@ def gauge_sheet():
                 s[i * 14 + y][x] = c
     return s
 
+# ---- 接近: 遠くの戦艦が近づいて、本編の艦首そのものになる(far.bin。第 4 バンクの farz.c が差分を VRAM へ直に書く) ----
+# ★前は別に描いた「煙突とマストのある艦」を 57 段に拡大して閃光で消し、実寸の艦を別に流し込んでいた。形が本編と違い、
+#   拡大の 1 段が縁で 3〜4 ドット動いてぎくしゃくし、同じ艦に見えなかった(遊んでの指摘)。
+#   ・絵の元 = 本編の短冊・主砲塔の上部・機銃(スプライトの形と色)・GAUGE BLOCK の塔をそのまま並べた艦の側面。
+#     実寸の艦は 4352 ドットあって遠くからは細い板にしか見えないので、遠景用に途中を抜いた艦(艦首 → 主砲塔 2 基 →
+#     格納庫の扉 → 艦橋の塔 → 艦尾)にする。大きくなると見えるのは艦首から先の 300 ドットほどだけで、そこは本物と同じ。
+#   ・縮めるのは面積の平均(積分画像)で色を混ぜてパレットのいちばん近い色へ(1 点を拾うと細部の色がコマごとに入れ替わって
+#     ちらついた)。網点・鋲などの細かい模様は大きさに応じて 1 種類ずつ現れる(全部が最後のコマで一度に出ると目立つ)。
+#   ・艦首の下の点(竜骨の行 100)を中心に、縁が 1 段に 1 ドットまでしか動かないように段を刻む(タイトルの ∞ と同じ考え)。
+#     最後の段は s = 1(本編の短冊と 1 ドットも違わない)、艦首は画面の x = FZ_XB。そこで地図を差し替えて本物の列へすり替える(s5.c)。
+#   ・艦首の左右の動きは絵に入れず、空の帯の横スクロール(表の d)で動かす(絵を動かすと全部の画素が替わってデータが 2 倍)。
+#   ・差分は 1 つ前のコマとの比べ(片方だけの絵を書き換える。1 段の動きが 1 ドットなので書きかけが見えても目立たない)。
+#     記録 = 行(0..105)・バイトの位置・長さ(最上位ビット = 同じバイトのくり返し、そのときの中身は 1 バイト)・中身。
+#     0xFE = 次の 256 バイトの塊へ、0xFF = コマの終わり。記録は塊をまたがない。
+FZ_XB, FZ_XF, FZ_PB = 160, 70, 0.45      # 最後の艦首の x / 最初の艦首の x / 艦首が動き終える段の進み
+FZ_S0 = 0.1                              # 最初の大きさ
+FZ_VT = -60                              # 絵の元の最上行(s)。塔のマストの先 -58 まで
+FZ_H = 106                               # 書く行(画面 0..105。106 からは艦底と雲海の間の帯)
+FZ_W = 256 - FZ_XF                       # 書く幅(艦首から。d の分だけ右まで見える)
+AA_ROWS = [15, 12, 12, 12, 13, 13, 13, 13, 12, 12, 12, 13, 13, 15, 15, 15]   # 1 枚の敵の色(gen_sprites.py の WARM。5 面)
+FZ_PAL = {2: (1, 1, 2), 3: (3, 3, 4), 9: (2, 3, 5), 12: (6, 5, 2), 13: (6, 3, 2), 14: (4, 4, 5), 15: (7, 7, 7)}
+
+def fz_full():
+    """艦首(BOW)から艦尾までの側面(行 FZ_VT..105、0 = 空)。本編で描くものと同じ"""
+    c0 = SEC['BOW']; ncol = SEC['END'] - c0
+    H = 106 - FZ_VT
+    src = [[0] * (ncol * 8) for _ in range(H)]
+    for i in range(ncol):
+        k = cmap[c0 + i]
+        for y in range(4, 106):
+            for x in range(8):
+                c = img[y][k * 8 + x]
+                if c not in (1, 6): src[y - FZ_VT][i * 8 + x] = c
+    tf = turret_frames()                                       # 主砲塔の上部(s5boss.c: 0..25 行を空で消してから向き 8 を写す)
+    for col in TUR:
+        x0 = (col - c0) * 8
+        for y in range(32):
+            for x in range(32):
+                c = tf[32 + y][x]                              # 向き 8 = 2 段目の左端
+                if y < 26: src[4 + y - FZ_VT][x0 + x] = 0 if c == 1 else c
+                elif c != 1: src[4 + y - FZ_VT][x0 + x] = c
+    fn = aa_fn(3)                                              # 機銃(スプライト。向き 3、左上 = 列の x - 4、DECK - 20 行)
+    for col in AA:
+        x0 = (col - c0) * 8 - 4
+        for y in range(16):
+            for x in range(16):
+                if fn(x - 7.5, y - 7.5): src[DECK - 20 + y - FZ_VT][x0 + x] = AA_ROWS[y]
+    gs = gauge_sheet()                                         # 艦橋の塔(GAUGE BLOCK。s5boss.c の g_row_s と G_AX = 184)
+    ax = (SEC['BOSS'] - c0) * 8 + 184
+    for k, top in enumerate((20, 6, -8, -22, -36, -50)):
+        L = GLEN[k]
+        for y in range(14):
+            for x in range(L):
+                c = gs[k * 14 + y][x]
+                if c != 1: src[top + y - FZ_VT][ax - L // 2 + x] = c
+    for y in range(-53, -50):
+        for x in range(ax - 12, ax + 12): src[y - FZ_VT][x] = 2  # 測距儀
+    for y in range(-58, -53):
+        for x in range(ax - 2, ax + 2): src[y - FZ_VT][x] = 3    # マスト
+    return src
+
+def fz_src():
+    """遠景用に途中を抜いた艦: 艦首 + 艦首の区間の 37 列 / 主砲塔 2 基 / 格納庫の扉 / 甲板 / 艦橋の区間と艦尾"""
+    full = fz_full(); b = SEC['BOW']
+    segs = [(0, 40)] + [(t - b - 6, t - b + 14) for t in TUR[:2]] + \
+           [(DOOR - b - 4, DOOR - b + 12), (SEC['UNDER'] - b, SEC['UNDER'] - b + 8), (SEC['BOSS'] - b, SEC['END'] - b)]
+    src = [[] for _ in full]
+    for a, e in segs:
+        for y, r in enumerate(full): src[y] += r[a * 8:e * 8]
+    U = len(src[0])
+    return src                                                 # ★艦尾の形は fz_model が基本の形で置き換える
+
+# ---- 縮め方: 基本の形(艦体の帯)と部品に分けて、それぞれを丸めた位置へ置く ----
+# ★画素ごとに面積の平均を取って色を決めると、細い線(装甲の継ぎ目・舷窓・白い甲板の線)や小さな物(機銃・甲板室)が
+#   段ごとに出たり消えたりしてまたたいた(1 段の動きを 1 ドットにしても滑らかに見えない)。
+#   ・艦体は行ごとに 1 色の帯(網点は画面の位置で決まる模様)。元の行 v は画面の行 R(v) = 100 + (v - 100) s を丸めた行へ写り、
+#     同じ行へ写る行が重なったら細い線(白い甲板の線・喫水線など)が勝つ。→ 帯の境は 1 ドットずつ動くだけで、線は消えない。
+#   ・艦首・艦尾は輪郭(上と下)を写して、縁の線は輪郭に沿って描く。
+#   ・それ以外(s = 1 の基本の形と違う所)は 8 近傍でつながった部品にして、部品ごとに左上と大きさを丸めて置き、その中だけ面積の平均。
+#     小さな部品(鋲・継ぎ目・舷窓)は大きさが十分になってから出す。
+#   ・s = 1 では本編の短冊と 1 画素も違わない(far_stream が確かめる)。
+FZ_BOW_W, FZ_STERN_W = 24, 32
+FZ_THIN = {40: 5, 45: 6, 46: 4, 58: 3, 59: 2, 78: 3, 79: 7}   # 細い線の行と優先度(大きいほど勝つ)
+
+def fz_band(v):
+    """艦体の行 v の色(数字)か網点の種類(文字。hull_px と同じ模様を画面の位置で)"""
+    if v == 40: return 14
+    if v < 45: return 3
+    if v == 45: return 15
+    if v == 46: return 2
+    if v < 56: return 14
+    if v < 58: return 'a'
+    if v == 58: return 2
+    if v == 59: return 3
+    if v < 64: return 'b'
+    if v < 78: return 3
+    if v == 78: return 2
+    if v == 79: return 13
+    if v < 84: return 9
+    if v < 90: return 'c'
+    if v < 96: return 'd'
+    return 2
+
+def fz_dith(b, X, Y):
+    if b == 'a': return 14 if (X + Y) & 1 else 3
+    if b == 'b': return 3 if (X + Y) & 1 else 14
+    if b == 'c': return 9 if (X + Y) & 1 else 2
+    if b == 'd': return 2 if (3 * X + Y) & 3 else 9
+    return b
+
+def fz_model():
+    """(源の絵, 長さ U, 輪郭の関数, 部品の一覧)"""
+    src = fz_src(); U = len(src[0]); SH = len(src)
+    def shape(u):                                              # 列 u の (上, 下, 種類 0 = 艦首 / 1 = 艦体 / 2 = 艦尾)
+        if u < FZ_BOW_W:
+            t = u / 24
+            return int(DECK + 26 * (1 - t) ** 1.6), int(HULL_B - 34 * (1 - t) ** 1.2), 0   # 短冊 8..10 と同じ式
+        if u >= U - FZ_STERN_W:
+            t = (u - (U - FZ_STERN_W)) / FZ_STERN_W
+            return DECK + int(t * 24), HULL_B - int(t * 10), 2
+        return DECK, HULL_B, 1
+    def base_px(v, X, Y, top, bot, kind):
+        if kind == 0:
+            if v == top: return 15
+            if v == top + 1: return 2
+            if v >= bot - 1: return 2
+            if v >= bot - 3: return 9
+            return fz_dith(fz_band(max(v, 41) if v < 45 else v), X, Y)
+        if kind == 2:
+            return 15 if v == top else fz_dith(fz_band(max(v, 47)), X, Y)
+        return fz_dith(fz_band(v), X, Y)
+    base1 = [[0] * U for _ in range(SH)]
+    for u in range(U):
+        top, bot, kind = shape(u)
+        for v in range(top, bot): base1[v - FZ_VT][u] = base_px(v, u, v, top, bot, kind)
+    for u in range(U - FZ_STERN_W, U):                         # 艦尾は基本の形だけ(短冊 31 の 4 回くり返しはのこぎりに見える)
+        for y in range(SH): src[y][u] = base1[y][u]
+    mask = [[src[y][u] != base1[y][u] for u in range(U)] for y in range(SH)]
+    seen = [[False] * U for _ in range(SH)]
+    comps = []
+    for y in range(SH):
+        for u in range(U):
+            if not mask[y][u] or seen[y][u]: continue
+            st = [(y, u)]; seen[y][u] = True; px = []
+            while st:
+                cy, cu = st.pop(); px.append((cy, cu))
+                for dy in (-1, 0, 1):
+                    for du in (-1, 0, 1):
+                        ny, nu = cy + dy, cu + du
+                        if 0 <= ny < SH and 0 <= nu < U and mask[ny][nu] and not seen[ny][nu]:
+                            seen[ny][nu] = True; st.append((ny, nu))
+            ys = [q[0] for q in px]; us = [q[1] for q in px]
+            c = dict(v0=min(ys) + FZ_VT, v1=max(ys) + 1 + FZ_VT, u0=min(us), u1=max(us) + 1,
+                     px={(q[0] + FZ_VT, q[1]): src[q[0]][q[1]] for q in px})
+            w, h, n = c['u1'] - c['u0'], c['v1'] - c['v0'], len(px)
+            c['smin'] = 0.9 if n <= 2 else (0.45 if max(w, h) >= 8 else 0.8) if (w == 1 or h == 1) else 0.5 if n <= 8 else 0.0
+            comps.append(c)
+    return src, U, shape, comps
+
+def fz_R(v, s): return int(math.floor(100 + (v - 100) * s + 0.5))
+
+def fz_render(model, s, xlim):
+    """大きさ s の絵(FZ_H 行 × FZ_W 列、艦首 = 列 0。0 = 空)。xlim 以上の列は描かない(None)"""
+    src, U, shape, comps = model
+    out = [[0] * FZ_W for _ in range(FZ_H)]
+    rowv = {}                                                  # 画面の行 → そこへ写る艦体の行(細い線が勝つ)
+    for v in range(DECK, HULL_B):
+        y = fz_R(v, s)
+        if y not in rowv or FZ_THIN.get(v, 0) > FZ_THIN.get(rowv[y], 0): rowv[y] = v
+    for x in range(min(FZ_W, xlim)):
+        uc = (x + 0.5) / s
+        if uc >= U: break
+        top, bot, kind = shape(int(uc))
+        yt, yb = fz_R(top, s), fz_R(bot, s)
+        for y in range(max(yt, 0), min(yb, FZ_H)):
+            X = FZ_XB + x
+            if kind == 1: c = fz_dith(fz_band(rowv.get(y, top)), X, y)
+            elif y == yt: c = 15
+            elif kind == 0 and y == yt + 1: c = 2
+            elif kind == 0 and y >= yb - 1: c = 2
+            elif kind == 0 and y >= yb - 3: c = 9
+            else:
+                v = rowv.get(y, 47)
+                c = fz_dith(fz_band(max(v, 41) if kind == 0 else max(v, 47)), X, y)
+            out[y][x] = c
+    for c in comps:
+        if s < c['smin'] - 1e-9: continue
+        x0 = int(math.floor(s * c['u0'] + 0.5)); x1 = max(x0 + 1, int(math.floor(s * c['u1'] + 0.5)))
+        if x0 >= min(FZ_W, xlim): continue
+        y0 = fz_R(c['v0'], s); y1 = max(y0 + 1, fz_R(c['v1'], s))
+        w = c['u1'] - c['u0']; wn = x1 - x0
+        rows = {}
+        for v in range(c['v0'], c['v1']):
+            rows.setdefault(min(max(fz_R(v, s), y0), y1 - 1), []).append(v)
+        for y in range(max(y0, 0), min(y1, FZ_H)):
+            vs = rows.get(y) or [min(c['v1'] - 1, max(c['v0'], int(100 + (y + 0.5 - 100) / s)))]
+            for k in range(wn):
+                x = x0 + k
+                if x >= min(FZ_W, xlim): break
+                ua = c['u0'] + k * w / wn; ub = c['u0'] + (k + 1) * w / wn
+                us = range(int(ua), max(int(ua) + 1, int(math.ceil(ub))))
+                n = tot = 0; rr = gg = bb = 0
+                for v in vs:
+                    for u in us:
+                        tot += 1
+                        cc = c['px'].get((v, u))
+                        if cc:
+                            n += 1; pr, pg, pb = FZ_PAL[cc]; rr += pr; gg += pg; bb += pb
+                if n and n * 2 >= tot:
+                    out[y][x] = min(FZ_PAL, key=lambda q: (FZ_PAL[q][0] - rr / n) ** 2 * 3 + (FZ_PAL[q][1] - gg / n) ** 2 * 6 + (FZ_PAL[q][2] - bb / n) ** 2)
+    return out
+
+def fz_scale(p): return FZ_S0 * (1 / FZ_S0) ** p
+def fz_d(p):
+    """艦首の左右の動き(空の帯の横スクロール)。最後の艦首の x から何ドット左か"""
+    if p >= FZ_PB: return 0
+    t = p / FZ_PB; t = t * t * (3 - 2 * t)
+    return int(round((FZ_XB - FZ_XF) * (1 - t)))
+
+def far_stream():
+    """(far.bin, 段ごとの d)"""
+    model = fz_model(); src, U = model[0], model[1]; SH = len(src)
+    def pos(p, u, v):                                          # 艦首の下の点から見た画面の位置(艦首の左右の動きは除く)
+        s = fz_scale(p)
+        return s * u, (v - 100) * s
+    tops = {}                                                  # 列 u のいちばん上の行(艦の輪郭の上端)
+    for u in list(range(0, U, 4)) + [U - 1]:
+        tops[u] = next((y + FZ_VT for y in range(SH) if src[y][u]), 100)
+    def move(p0, p1):                                          # 1 段で画面に見える部分(輪郭の上端と竜骨)が動く最大のドット
+        m = 0; d1 = fz_d(p1)
+        for u, top in tops.items():
+            if FZ_XB + pos(p1, u, 0)[0] - d1 > 258 and FZ_XB + pos(p0, u, 0)[0] - fz_d(p0) > 258: continue
+            for v in (top, 100):
+                a, b2 = pos(p0, u, v), pos(p1, u, v)
+                m = max(m, abs(a[0] - b2[0]), abs(a[1] - b2[1]))
+        return m
+    ps = [0.0]
+    while ps[-1] < 1:
+        if move(ps[-1], 1.0) <= 1.0: ps.append(1.0); break
+        lo, hi = ps[-1], 1.0
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            if move(ps[-1], mid) <= 1.0: lo = mid
+            else: hi = mid
+        ps.append(lo)
+    def frame(p, prev):
+        xlim = 256 + fz_d(p) - FZ_XB                           # 画面の右端(艦首からの列)。その先は前のまま
+        cur = fz_render(model, fz_scale(p), xlim)
+        return [cur[y][:xlim] + prev[y][xlim:] for y in range(FZ_H)]
+    def nib(c): return c if c else 1                           # 空 = 色 1
+    out = bytearray()
+    def put_rec(rec):
+        room = 256 - len(out) % 256
+        if len(rec) + 1 > room:                                # ★印の 1 バイトは必ず残す
+            out.append(0xFE); out.extend(bytes(room - 1))
+        out.extend(rec)
+    prev = [[0] * FZ_W for _ in range(FZ_H)]
+    ds = []
+    for p in ps:
+        cur = frame(p, prev)
+        for y in range(FZ_H):
+            ba = [(nib(prev[y][i]) << 4) | nib(prev[y][i + 1]) for i in range(0, FZ_W, 2)]
+            bb = [(nib(cur[y][i]) << 4) | nib(cur[y][i + 1]) for i in range(0, FZ_W, 2)]
+            i = 0
+            while i < len(bb):
+                if ba[i] == bb[i]: i += 1; continue
+                j, gap = i, 0                                  # 変わったバイトの並び(4 バイト未満の切れ目はつなぐ)
+                while j < len(bb) and gap < 4:
+                    gap = gap + 1 if ba[j] == bb[j] else 0
+                    j += 1
+                j -= gap
+                q = i; lit = i
+                while q < j:
+                    r = q
+                    while r < j and bb[r] == bb[q]: r += 1
+                    if r - q >= 5:                             # くり返し(4 バイトの記録)
+                        while lit < q:
+                            n = min(q - lit, 127); put_rec(bytes((y, lit, n)) + bytes(bb[lit:lit + n])); lit += n
+                        while q < r:
+                            n = min(r - q, 127); put_rec(bytes((y, q, 0x80 | n, bb[q]))); q += n
+                        lit = r
+                    q = r
+                while lit < j:
+                    n = min(j - lit, 127); put_rec(bytes((y, lit, n)) + bytes(bb[lit:lit + n])); lit += n
+                i = j
+        out.append(0xFF)                                       # put_rec が 1 バイト残しているので塊に収まる
+        ds.append(fz_d(p)); prev = cur
+    assert ds[-1] == 0 and fz_scale(ps[-1]) == 1.0
+    full = fz_full()                                           # ★最後の段は本編の艦首と 1 画素も違わない(すり替えが見えない)
+    for y in range(FZ_H):
+        for x in range(256 - FZ_XB):
+            assert prev[y][x] == (full[y - FZ_VT][x] if y >= FZ_VT else 0), (x, y)
+    return bytes(out), ds
+
 def pack(rows):
     out = bytearray()
     for r in rows:
@@ -419,7 +636,13 @@ def main(d, hpath):
     open(os.path.join(d, 's5_strips.bin'), 'wb').write(pack(img))
     open(os.path.join(d, 's5_map.bin'), 'wb').write(bytes(cmap))
     open(os.path.join(d, 'turret.bin'), 'wb').write(pack(turret_frames()))
-    open(os.path.join(d, 'far.bin'), 'wb').write(far_stream())
+    fz, fz_ds = far_stream()
+    open(os.path.join(d, 'far.bin'), 'wb').write(fz)
+    with open(os.path.join(os.path.dirname(hpath), 'farz_data.h'), 'w') as f:   # 第 4 バンクの farz.c だけが取り込む
+        f.write('/* farz_data.h — tools/gen_stage5.py が生成(手で編集しない)。接近の戦艦の段ごとの艦首の動き(空の帯の横スクロール)。 */\n')
+        f.write(f'#define FZ_NF {len(fz_ds)}\n#define FZ_XB {FZ_XB}\n')
+        f.write('static const u8 fz_dtab[FZ_NF] = { ' + ', '.join(map(str, fz_ds)) + ' };\n')
+    print(f'far.bin: {len(fz)} バイト、{len(fz_ds)} 段')
     open(os.path.join(d, 's5_spr.bin'), 'wb').write(spr_frames())
     open(os.path.join(d, 'gauge.bin'), 'wb').write(pack(gauge_sheet()))
     with open(hpath, 'w') as f:
@@ -428,6 +651,7 @@ def main(d, hpath):
         for k, v in SEC.items(): f.write(f'#define S5_COL_{k} {v}\n')
         f.write(f'#define S5_COLS {len(cmap)}\n#define S5_COL_DOOR {DOOR}\n')
         f.write(f'#define S5_DECK {DECK}\n#define S5_HULL_B {HULL_B}\n#define S5_CEIL {CEIL}\n#define S5_FLOOR {FLOOR}\n')
+        f.write(f'#define S5_FZ_XB {FZ_XB}   /* 接近の最後の艦首の画面の x(farz.c) */\n')
         f.write(f'#define S5_NAA {len(AA)}\n#define S5_NTUR {len(TUR)}\n#define S5_NHANG {len(HANG)}\n\n')
         f.write('static const u8 s5_kind[32] = { ' + ', '.join(str(a) for a, _, _ in LIM) + ' };\n')
         f.write('static const u8 s5_top[32] = { ' + ', '.join(str(b) for _, b, _ in LIM) + ' };\n')

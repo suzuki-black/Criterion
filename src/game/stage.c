@@ -406,6 +406,9 @@ static u8 stage_work(void) {
     return (u8)(col_b < NBLK || redraw_n || (s16)(col_done - (u16)(lo + 64)) < 0 || (s16)(col_lo - lo) > 0);
 }
 u8 stage_busy(void) { return stage_work(); }
+/* 列の窓の左から n 列は描いてあることにして、その先を描き直させる(地図の対応 g_w0 を替えたとき。5 面の接近で、画面の
+   艦首を本物の列にすり替えた後、見えない半分を艦の続きにする) */
+void stage_cols_redo(u8 n) { col_lo = win_lo(); col_done = (u16)(col_lo + n); col_b = NBLK; }
 /* 世界の列 wcol が描き終わっていて、描きかけでもない(その上に BG を写してよい) */
 u8 stage_col_ready(u16 wcol) {
     if ((u16)(wcol - col_lo) >= (u16)(col_done - col_lo)) return 0;

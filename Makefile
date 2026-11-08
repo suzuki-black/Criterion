@@ -16,7 +16,7 @@ M0_COMMON := $(BUILD)/m0_world.rel   # M0 の検証 ROM が共有する世界(sr
 
 GAME_SRCS := $(wildcard src/game/*.c)
 GAME_RELS := $(GAME_SRCS:src/game/%.c=$(BUILD)/g_%.rel)
-GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h $(BUILD)/s2_data.h $(BUILD)/s3_data.h $(BUILD)/s4_data.h $(BUILD)/s5_data.h $(BUILD)/s6_data.h $(BUILD)/s8_data.h $(BUILD)/snd_data.h
+GEN_HDRS  := $(BUILD)/pcm_data.h $(BUILD)/sprite_data.h $(BUILD)/hud_data.h $(BUILD)/assets.h $(BUILD)/city_data.h $(BUILD)/s2_data.h $(BUILD)/s3_data.h $(BUILD)/s4_data.h $(BUILD)/s5_data.h $(BUILD)/farz_data.h $(BUILD)/s6_data.h $(BUILD)/s8_data.h $(BUILD)/snd_data.h
 
 .PHONY: all m0 clean
 .SECONDARY:
@@ -78,6 +78,7 @@ $(BUILD)/stage5.stamp: tools/gen_stage5.py | $(BUILD)
 	python3 tools/gen_stage5.py $(BUILD) $(BUILD)/s5_data.h
 	touch $@
 $(BUILD)/s5_data.h: $(BUILD)/stage5.stamp ; @:
+$(BUILD)/farz_data.h: $(BUILD)/stage5.stamp ; @:
 $(BUILD)/stage6.stamp: tools/gen_stage6.py | $(BUILD)
 	python3 tools/gen_stage6.py $(BUILD) $(BUILD)/s6_data.h
 	touch $@
@@ -236,7 +237,7 @@ BK_SIZE_FIRST := infx
 # ---- 第 3 バンク(src/bank3): セグメント 7。第 2 バンクと同じ作り(ROM はバンク 102..103)。★互いの呼び口は使えない(入れ子) ----
 BK3_EXPORTS := hud_init hud_update hud_sprites
 # ---- 第 4 バンク(src/bank4): セグメント 8。同じ作り(ROM はバンク 100..101。呼び口の番号は 0xC0 から)。★ほかのバンクの呼び口は使えない ----
-BK4_EXPORTS := music_frame far_step plumb_gen pawn_sheet pawn_cl_reset pawn_cl_try pawn_cl_update pawn_spawn_group pawn_volley
+BK4_EXPORTS := music_frame far_step plumb_gen pawn_sheet pawn_cl_reset pawn_cl_try pawn_cl_update pawn_spawn_group pawn_volley fz_start fz_vram fort_draw
 BK4_RELS := $(patsubst src/bank4/%.c,$(BUILD)/b4_%.rel,$(wildcard src/bank4/*.c))
 $(BUILD)/b4_%.rel: src/bank4/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@
@@ -303,7 +304,7 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/r
 	done
 
 GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/snd.bin $(OVL_BINS) $(BUILD)/bank.bin $(BUILD)/bank3.bin $(BUILD)/bank4.bin tools/rompack.mjs
-	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 84 $(BUILD)/snd.bin \
+	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 88 $(BUILD)/snd.bin \
 	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin --asset 100 $(BUILD)/bank4.bin --asset 102 $(BUILD)/bank3.bin --asset 126 $(BUILD)/bank.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、

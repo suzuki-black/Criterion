@@ -1,6 +1,6 @@
 /* s5.c — 5 面「規格戦艦ノルム」のオーバレイ: 区間・カメラ・帯・当たり・接近・撃沈(指示書 5.5)。
-   宇宙 → 雲海の上へ降りる → 接近(世界を止め、雲だけ帯で流す。遠くの戦艦が 57 段で大きくなり、閃光で実寸の
-   BG へ)→ 艦首(機銃)→ 艦体上面(主砲塔 4 基)→ 中ボス HANGAR DECK(誘爆で艦体に穴)→ 穴から艦底へ(上半分が
+   宇宙 → 雲海の上へ降りる → 接近(世界を止め、雲だけ帯で流す。遠くの戦艦が 1 ドットずつ近づいて、最後の段で本編の
+   艦首そのものになり、地図を差し替えて本物の列へすり替える。第 4 バンクの farz.c)→ 艦首(機銃)→ 艦体上面(主砲塔 4 基)→ 中ボス HANGAR DECK(誘爆で艦体に穴)→ 穴から艦底へ(上半分が
    艦底、下半分が雲海)→ 装甲の破れ目から機関部(天井と床のプレスが R#23 の帯で上下)→ 出口の縦穴から艦橋へ →
    ボス GAUGE BLOCK → 撃沈(前後の帯が離れながら沈む)→ 宇宙へ。
    ・カメラ: 甲板の上は s = -60(上 60 行は高い空)、艦底と機関部は s = 0。
@@ -24,14 +24,17 @@
 static u16 sec_wx, sec_t;
 static u8  side;                   /* 自機のいる側: 0 = 艦体の上、1 = 下、2 = 室内 */
 static s16 cam_to;                 /* カメラの行き先(s × 16) */
-static u16 cq;                     /* 接近の間の雲の流れ(1/4 ドット) */
-static u8  far_on, flash_t;
+static u16 cq;                     /* 接近の間の雲の流れ(1/4 ドット)。艦首の区間からは雲の帯のずれ(すり替えで雲が跳ばないように) */
+static u8  far_on;                 /* 接近: 0 = 止める位置へ流す、1 = 近づく、2 = 見せ終えた、3 = 艦の続きを描いている */
+static u8  fz_d;                   /* 艦首を左へずらすドット(空の帯の横スクロール) */
+static u8  fz_buf[256];            /* farz.c が ROM の塊を読む場所(ページ 3) */
 static u8  vortex;
 static u8  press_on;
 s8 s5_press_c, s5_press_f;
 
 static const u8 sky0[3] = { 1, 0, 2 }, sky1[3] = { 2, 1, 3 }, sky2[3] = { 3, 2, 4 }, sky3[3] = { 4, 3, 5 };
-static const u8 white[3] = { 7, 7, 7 }, inside[3] = { 1, 1, 2 }, gap[3] = { 2, 2, 4 };
+static const u8 inside[3] = { 1, 1, 2 }, gap[3] = { 2, 2, 4 };
+static const u8 *const skies[4] = { sky0, sky1, sky2, sky3 };
 
 s16 s5_sx(u16 col) { return (s16)((u16)((g_w0 + col) << 3) - g_wx); }
 s16 s5_sy(s16 s) { return (s16)(s - g_scam); }
@@ -64,7 +67,7 @@ void ovl_init(void) {
     g_maplen = S5_COLS;
     stage_load_strips(ASSET_S5_STRIPS_BANK, ASSET_S5_STRIPS_OFF);
     g_boss_state = BS_NONE; g_grav = GRAV_NONE; g_col_rev = 0; g_sky_t = 16;
-    side = 0; far_on = 0; flash_t = 0; press_on = 0; cq = 0; vortex = 0;
+    side = 0; far_on = 0; fz_d = 0; press_on = 0; cq = 0; vortex = 0;
     s5_press_c = s5_press_f = 0; cam_to = S_TOP * 16;
     b5_init();
     if (g_calib) {                                            /* 7 面の試験 05: 白い空間から艦橋の甲板へ降りて GAUGE BLOCK */
@@ -118,12 +121,6 @@ static void terrain(void) {
     g_pl_ymax = hi > PLAY_H - 16 ? PLAY_H - 16 : hi;
 }
 
-/* 接近: 遠くの戦艦を空の帯に描く(zoom.c)。下の中央を (180, 104) にそろえる(大きいコマが前のコマを覆う) */
-static void far_draw(void) {
-    if (!far_on || gq_free() < 8) return;
-    if (zoom_step()) ring_cmd(0, 512u + 64u, (s16)(180 - g_zm_w), (s16)(104 - g_zm_h - g_scam), (u8)(g_zm_w * 2), g_zm_h, 0, 0);
-}
-
 void ovl_update(void) {
     u16 c;
     sec_t++;
@@ -135,24 +132,27 @@ void ovl_update(void) {
     case SEC5_SINK: {                                         /* 雲海の上へ降りる */
         u16 d = (u16)(g_wx - sec_wx);
         if (d < SINK_LEN) g_scam_q = (s16)(S_TOP * 16 + (s16)(d * 12u));
-        else if (!stage_busy()) { g_scam_q = 0; g_scroll_speed = 0; enter(SEC5_APPROACH); }
+        else if (!stage_busy()) { g_scam_q = 0; enter(SEC5_APPROACH); }
         break;
     }
-    case SEC5_APPROACH:                                       /* 世界は止め、雲だけ流す。戦艦がだんだん大きくなる */
-        if (flash_t == 0) {
-            cq += 6;
-            if (sec_t > 120) {
-                if (!far_on) { far_on = 1; zoom_start(ASSET_FAR_BANK, ASSET_FAR_OFF, 64u * 128u); }
-                else if (g_zm_done) flash_t = 1;
-            }
-        } else if (++flash_t == 2) {                          /* 閃光: 遠くの絵を消して、実寸の艦が来る */
-            cq = 0;                                           /* 雲の帯も世界の位置へ戻す(跳ぶのは閃光の間) */
-            vdp_set_pal(3, 7, 7, 7); vdp_set_pal(4, 7, 7, 7); vdp_set_pal(14, 7, 7, 7); vdp_set_pal(2, 7, 7, 7);
-            ring_cmd(0, 0, 180 - 90, (s16)(104 - 40 - g_scam), 180, 40, 1, 0x11);
-        } else if (flash_t == 8) {
-            palette(); vdp_set_pal(14, 4, 4, 5);
-            g_scroll_speed = 8;                               /* 艦首を急いで連れてくる */
-        } else if (flash_t > 8 && col_of_screen() + 32 >= S5_COL_BOW) {
+    case SEC5_APPROACH:                                       /* 世界は止め、雲だけ流す。戦艦が近づいて艦首そのものになる */
+        if (far_on < 2) cq += 6;
+        if (far_on == 0) {
+            /* 画面の x = S5_FZ_XB が、地図で 4 列おきの列の左端に来たら止める(すり替えで地図の対応を替えても、手前の空と雲の短冊が
+               同じ並びのままになる。雲海の短冊は 4 本の周期) */
+            if (!(((u16)(g_wx + S5_FZ_XB) - (g_w0 << 3)) & 31)) {
+                g_scroll_speed = 0;
+                if (sec_t > 60) { far_on = 1; fz_start(fz_buf); }
+            } else g_scroll_speed = 4;                       /* 1 ドットずつ(飛ばさずに止める位置に来る) */
+        } else if (far_on == 2) {
+            /* すり替え: 画面の艦首の絵は本編の短冊と同じなので、地図の対応を替えて本物の艦首の列にする。見えない半分(艦の続き)は描き直す。
+               機銃はスプライトになるので、絵に描いた機銃を背景へ戻す */
+            g_w0 = (u16)(((g_wx + S5_FZ_XB) >> 3) - S5_COL_BOW);
+            stage_cols_redo(32);
+            stage_restore((s16)(s5_sx(s5_aa[0]) - 4), S5_DECK - 20, 16, 16);
+            cq += (bg_layer_x(2) >> 1) << 2;                  /* 雲の帯の位置を艦首の区間の式(nx - nx / 2)で続ける */
+            far_on = 3;
+        } else if (far_on == 3 && !stage_busy()) {            /* 艦の続きを描き終えたら流し始める */
             enter(SEC5_BOW); cam_to = S_DECKVIEW * 16;
         }
         break;
@@ -164,7 +164,8 @@ void ovl_update(void) {
             if (col_of_screen() + 8 >= S5_COL_BOSS + 8) { g_scroll_speed = 0; enter(SEC5_BOSS); }
             break;
         }
-        if (g_scroll_speed > 4 && !(sec_t & 7)) g_scroll_speed--;
+        if (g_scroll_speed < 4 && !(sec_t & 7)) g_scroll_speed++;   /* 止まっている艦首から流し始める */
+        if (sec_t < 96) cq += (u8)(3 - (sec_t >> 5));         /* 雲の流れを接近の速さから落とす */
         if (col_of_screen() + 16 >= S5_COL_DECK) enter(SEC5_DECK);
         break;
     case SEC5_DECK:
@@ -257,13 +258,15 @@ void ovl_logic(void) { b5_update(); }
 void ovl_draw(void) {
     if (g_sec == SEC5_OUT && !g_calib && sec_t >= 30) {      /* 雲海の向こうに日時計の要塞が見えてくる(6 面の予告) */
         s16 x = (s16)(250 - (sec_t >> 2)), y = (s16)(118 - (g_scam_q >> 4) + S_TOP);
-        spr_put(x, y, PAT_FORT_TL, G_MISC, CS_DIM); spr_put((s16)(x + 16), y, PAT_FORT_TR, G_MISC, CS_DIM);
-        spr_put(x, (s16)(y + 16), PAT_FORT_BL, G_MISC, CS_DIM); spr_put((s16)(x + 16), (s16)(y + 16), PAT_FORT_BR, G_MISC, CS_DIM);
+        fort_draw(x, y);                                      /* 第 4 バンク */
     }
     b5_draw();
 }
 void ovl_vram(void) {
-    if (g_sec == SEC5_APPROACH && !flash_t) far_draw();
+    if (g_sec == SEC5_APPROACH && far_on == 1) {
+        u16 r = fz_vram();
+        if (r & 0x8000u) far_on = 2; else fz_d = (u8)r;
+    }
     b5_vram();
 }
 
@@ -273,12 +276,13 @@ void ovl_bands(s16 sc, u16 nx) {
         if (g_sec != SEC5_BOW) return;
     }
     if (g_sec < SEC5_SINK) return;
-    /* 空のグラデーション(色 1)と雲海。接近の間は雲の帯だけ流れる */
-    stage_ev_pal(g_bands_all ? 0 : (s16)(0 - sc), sky0);
-    if (g_sec <= SEC5_APPROACH) {
-        stage_ev_pal((s16)(28 - sc), sky1); stage_ev_pal((s16)(56 - sc), sky2); stage_ev_pal((s16)(84 - sc), sky3);
+    /* 空のグラデーション(色 1)と雲海。接近の間は雲の帯だけ流れ、空の帯は艦首の動きの分だけずらす */
+    if (g_sec == SEC5_APPROACH) stage_ev_ps((s16)(0 - sc), sky0, (u16)(nx + fz_d));
+    else stage_ev_pal(g_bands_all ? 0 : (s16)(0 - sc), sky0);
+    if (g_sec <= SEC5_BOW) {                                  /* 艦首の区間の頭で 1 段ずつ消す(★閃光の間に消していたのをやめたので) */
+        s8 lv = g_sec != SEC5_BOW ? 0 : g_calib || sec_t >= 96 ? 3 : (s8)(sec_t >> 5), k;
+        for (k = 1; k <= 3; k++) if (k > lv) stage_ev_pal((s16)(k * 28 - sc), skies[k - lv]);
     }
-    if (g_sec == SEC5_APPROACH && flash_t >= 2 && flash_t < 8) stage_ev_pal((s16)(0 - sc), white);
     if (g_sec == SEC5_ENGINE) stage_ev_pal((s16)(0 - sc), inside);
     /* 天井のプレス: 24 行から下を e だけ下げて見せる(★帯の項目は行の順に出す) */
     if (press_on) {
@@ -289,7 +293,7 @@ void ovl_bands(s16 sc, u16 nx) {
     stage_ev_pal((s16)(106 - sc), g_sec == SEC5_ENGINE ? inside : gap);   /* 艦底と雲海の間(2 帯) */
     if (g_sec == SEC5_APPROACH) stage_ev_scroll((s16)(108 - sc), (u16)(nx + (cq >> 2)));
     else if (g_sec >= SEC5_BOW && g_sec <= SEC5_UNDER)        /* ★雲海は戦艦の半分の速さ(同じ速さでは奥行きが出ない。M7 の後) */
-        stage_ev_scroll((s16)(108 - sc), (u16)(nx - (nx >> 1)));
+        stage_ev_scroll((s16)(108 - sc), (u16)(nx - (nx >> 1) + (cq >> 2)));
     if (press_on) {                                           /* 床のプレス: 上げて見せる */
         u8 base = (u8)(g_vscroll + g_roll);
         stage_ev_vscroll((s16)(S5_FLOOR - s5_press_f - sc), (u8)(base + s5_press_f));

@@ -62,9 +62,10 @@ static const s8 tu_uy[16] = { 0, -7, -13, -19, -23, -27, -30, -31, -32, -32, -31
 static u8 best_dir(s16 dx, s16 dy, const s8 *ux, const s8 *uy, u8 n) {
     u8 i, b = 0;
     s16 best = -32767;
-    dx >>= 2; dy >>= 2;                                       /* 掛け算の桁を抑える */
+    s8 ax = (s8)(dx >> 2), ay = (s8)(dy >> 2);                /* 掛け算の桁を抑える。★8 ビット同士にする(画面の差は ±280 なので
+                                                                 >> 2 で収まる。16 ビットの掛け算を主砲塔 1 基で 32 回して、甲板で遅れた) */
     for (i = 0; i < n; i++) {
-        s16 d = (s16)(dx * ux[i] + dy * uy[i]);
+        s16 d = (s16)(ax * ux[i] + ay * uy[i]);
         if (d > best) { best = d; b = i; }
     }
     return b;
@@ -79,7 +80,8 @@ static void aa_update(void) {
     for (i = 0; i < S5_NAA; i++) {
         s16 x = s5_sx(s5_aa[i]) + 4, y = s5_sy(S5_DECK - 4) - 8;
         if (!aa_hp[i] || x < -8 || x > 264) continue;
-        if (!((t + i) & 7)) aa_dir[i] = best_dir(plx() - x, ply() - y, aa_ux, aa_uy, 8);
+        if (!((t + i) & 15)) aa_dir[i] = best_dir(plx() - x, ply() - y, aa_ux, aa_uy, 8);   /* ★16 フレームに 1 回(1 フレームに 1 門)。8 では 2 門が
+                                                                 主砲塔と重なり、BGM の山と合わせて甲板で遅れた */
         if ((LB_NOW ? (aa_hp[i] = 1) : shot_rect(x - 7, y - 7, 14, 14)) && --aa_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(30); continue; }
         /* ★画面の中にいるときだけ撃つ(縦を見ていなかったので、船体の下へ潜った後も画面の上の外の甲板から弾が降ってきた。遊んでの指摘) */
         if (((t + i * 29) & 127) == 0 && x > 16 && x < 240 && y > 8 && y < PLAY_H)
@@ -413,7 +415,7 @@ void b5_vram(void) {
         rom_to_vram(ASSET_S5_SPR_BANK, (u16)(ASSET_S5_SPR_OFF + 256u), 1, (u16)(0xF800u + PAT_HANG * 32u), 96);
         spr_loaded = 1;
     }
-    /* ページ 2 へ: 主砲塔 16 向き(0..63 行)。1 フレーム 4 行、重いフレームは次へ(64..127 行は遠くの戦艦の作業の場所。zoom.c) */
+    /* ページ 2 へ: 主砲塔 16 向き(0..63 行)。1 フレーム 4 行、重いフレームは次へ */
     if (sheet_row < 64 && (u16)(sys_timer() - g_frame_t0) < 150u * 16u)
         for (n = 0; n < 2; n++, sheet_row++)
             rom_to_vram(ASSET_TURRET_BANK, (u16)(ASSET_TURRET_OFF + sheet_row * 128u), 1, (u16)(sheet_row * 128u), 128);

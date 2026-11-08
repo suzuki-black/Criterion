@@ -275,6 +275,7 @@ extern u8 g_blk_skip, g_blk_base;           /* リングのブロック base..ba
 RasEntry *stage_ev_raw(u8 line, u8 flags);  /* 並びを調べずに項目を足す(g_bands_all の面で、0 行の項目の後に 244 行など) */                      /* 1 = 面の ovl_bands がラスターの帯を全部出す(空 s < 0 の帯も) */
 void stage_ev_vscroll(s16 line, u8 r23);    /* 帯の縦スクロール(R#23)。スプライトもずれるので自機の入れない帯で */
 u8   stage_busy(void);                       /* 列の流し込み・描き替えが残っている(画面の BG に上書きする前に待つ) */
+void stage_cols_redo(u8 n);             /* 列の窓の左から n 列を残して描き直させる(地図の対応 g_w0 を替えたとき。5 面の接近) */
 void stage_banner(const char *text);        /* 面の開始表示 */
 void stage_banner_c(const char *text, u8 fg);   /* 文字の色つき */
 extern u8 g_hall;                           /* 1 = 高い空を 7 面の測定空間(白い方眼)、2 = 8 面の縦穴(左右の壁)にする */
@@ -296,6 +297,9 @@ u8   pawn_cl_try(u16 wx);
 void pawn_cl_update(u8 tick);
 void pawn_spawn_group(void *pw);   /* 第 4 バンク(climb.c): 街路の Pawn の隊列を出す。pw = Pw の配列 */
 void pawn_volley(void *pw);        /* 集団で対空射撃 */
+void fz_start(u8 *buf);            /* 第 4 バンク(farz.c): 5 面の接近の戦艦を書き始める。buf = ページ 3 の 256 バイト */
+u16  fz_vram(void);                /* 毎フレーム。下位 = 艦首を左へずらすドット(空の帯の横スクロール)、0x8000 = 最後の段まで見せた */
+void fort_draw(s16 x, s16 y);      /* 第 4 バンク(fort.c): 5 面の出口で 6 面の要塞を見せる(左上) */
 #define FAR_LOCK  0x0000u          /* bg と一緒に動きつつ、ずれを 1/8 ずつ 0 へ */
 #define FAR_FREE  0x4000u          /* 半分の速さ */
 #define FAR_RESET 0x8000u          /* 置き直す(ずれ 0) */
