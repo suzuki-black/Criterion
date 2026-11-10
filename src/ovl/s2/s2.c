@@ -239,7 +239,9 @@ void ovl_bands(s16 sc, u16 nx) {
     /* ★試験(白い部屋)では重力レンズを出さない(先に並ぶ部屋の空の帯の後ろへ押し出されて球の行に掛かり、球の上が横にずれて
        縁取りと本体がずれて見えた。遊んでの指摘) */
     if (!g_calib && b2_lens(&lt, &lb)) {
-        stage_ev_haze(lt, 25, b2_lens_tbl_up);
-        stage_ev_haze(lb, 24, b2_lens_tbl_dn);
+        /* ★ずれが 0 の行(上の帯の初めの 9 行・下の帯の終わりの 8 行)はポーリングしない(毎ライン CPU を止めるので。
+           戦いの間ずっと 49 → 32 行。下の帯の最後の行はずれ 0 に戻す行) */
+        stage_ev_haze((s16)(lt + 9), 16, b2_lens_tbl_up + 18);
+        stage_ev_haze(lb, 16, b2_lens_tbl_dn);
     }
 }

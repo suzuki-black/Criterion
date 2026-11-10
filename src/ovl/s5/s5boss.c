@@ -74,15 +74,26 @@ static s16 plx(void) { return PX(g_pl.x) + 8; }
 static s16 ply(void) { return PX(g_pl.y) + 8; }
 
 /* ======== 機銃 ======== */
+/* ★列の順に並んでいるので、画面に掛かる範囲 [aa_a, aa_b) だけ回す(16 門すべての位置を毎フレーム求めていた間は、甲板で 1 フレームに
+   約 1.5ms(当たりの判定と合わせて)使い、処理落ちが 1 秒に 10 回あった) */
 static u8 aa_hp[S5_NAA], aa_dir[S5_NAA];
+static u8 aa_a, aa_b;
+static s16 sx0;                    /* 列 0 の画面の x(s5_sx(0))。b5_update で求める */
+static s16 AA_X(u8 i) { return (s16)((s16)(s5_aa[i] << 3) + sx0 + 4); }
+static void aa_range(void) {       /* 5 面は前へしか流れない(b5_init で 0 に戻す) */
+    while (aa_a < S5_NAA && AA_X(aa_a) < -8) aa_a++;
+    for (aa_b = aa_a; aa_b < S5_NAA && AA_X(aa_b) <= 264; aa_b++) ;
+}
 static void aa_update(void) {
     u8 i;
-    for (i = 0; i < S5_NAA; i++) {
-        s16 x = s5_sx(s5_aa[i]) + 4, y = s5_sy(S5_DECK - 4) - 8;
-        if (!aa_hp[i] || x < -8 || x > 264) continue;
-        if (!((t + i) & 15)) aa_dir[i] = best_dir(plx() - x, ply() - y, aa_ux, aa_uy, 8);   /* ★16 フレームに 1 回(1 フレームに 1 門)。8 では 2 門が
+    s16 y = s5_sy(S5_DECK - 4) - 8, px = plx(), py = ply();
+    for (i = aa_a; i < aa_b; i++) {
+        s16 x;
+        if (!aa_hp[i]) continue;
+        x = AA_X(i);
+        if (!((t + i) & 15)) aa_dir[i] = best_dir(px - x, py - y, aa_ux, aa_uy, 8);   /* ★16 フレームに 1 回(1 フレームに 1 門)。8 では 2 門が
                                                                  主砲塔と重なり、BGM の山と合わせて甲板で遅れた */
-        if ((LB_NOW ? (aa_hp[i] = 1) : shot_rect(x - 7, y - 7, 14, 14)) && --aa_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(30); continue; }
+        if ((LB_NOW ? (aa_hp[i] = 1) : nsh && shot_rect(x - 7, y - 7, 14, 14)) && --aa_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(30); continue; }
         /* ★画面の中にいるときだけ撃つ(縦を見ていなかったので、船体の下へ潜った後も画面の上の外の甲板から弾が降ってきた。遊んでの指摘) */
         if (((t + i * 29) & 127) == 0 && x > 16 && x < 240 && y > 8 && y < PLAY_H)
             enemy_bullet(FX(x), FX(y), (s16)(aa_ux[aa_dir[i]] << 1), (s16)(aa_uy[aa_dir[i]] << 1));
@@ -90,11 +101,9 @@ static void aa_update(void) {
 }
 static void aa_draw(void) {
     u8 i;
-    for (i = 0; i < S5_NAA; i++) {
-        s16 x = s5_sx(s5_aa[i]) + 4;
-        if (!aa_hp[i] || x < -8 || x > 264) continue;
-        spr_put(x - 8, (s16)(s5_sy(S5_DECK - 4) - 16), (u8)(PAT_AA + aa_dir[i]), G_ENEMY, 0);
-    }
+    s16 y = (s16)(s5_sy(S5_DECK - 4) - 16);
+    for (i = aa_a; i < aa_b; i++)
+        if (aa_hp[i]) spr_put(AA_X(i) - 8, y, (u8)(PAT_AA + aa_dir[i]), G_ENEMY, 0);
 }
 
 /* ======== 主砲塔 ======== */
@@ -103,11 +112,11 @@ static u8 tu_hp[S5_NTUR], tu_dir[S5_NTUR], tu_shown[S5_NTUR], tu_want[S5_NTUR];
 static void tur_update(void) {
     u8 i;
     for (i = 0; i < S5_NTUR; i++) {
-        s16 x = s5_sx(s5_tur[i]), cx = x + 16, cy = s5_sy(TUR_S + 22);
+        s16 x = (s16)(s5_tur[i] << 3) + sx0, cx = x + 16, cy = s5_sy(TUR_S + 22);
         if (!tu_hp[i] || x < -32 || x > 256) continue;
         if (!((t + i * 3) & 7)) tu_want[i] = best_dir(plx() - cx, ply() - cy, tu_ux, tu_uy, 16);
         if (!((t + i) & 7) && tu_dir[i] != tu_want[i]) tu_dir[i] += tu_dir[i] < tu_want[i] ? 1 : -1;   /* ゆっくり旋回 */
-        if ((LB_NOW ? (tu_hp[i] = 1) : shot_rect(x + 4, cy - 14, 24, 22)) && --tu_hp[i] == 0) {
+        if ((LB_NOW ? (tu_hp[i] = 1) : nsh && shot_rect(x + 4, cy - 14, 24, 22)) && --tu_hp[i] == 0) {
             fx_spawn(FX(cx), FX(cy)); fx_spawn(FX(cx - 10), FX(cy - 8)); fx_spawn(FX(cx + 10), FX(cy - 12));
             score_add(500);
             tu_shown[i] = 0xFE;                               /* 砲身を吹き飛ばす(空で塗る) */
@@ -147,12 +156,12 @@ static u8  dc_t;
 static void hang_update(void) {
     u8 i;
     for (i = 0; i < S5_NHANG; i++) {
-        s16 x = s5_sx(s5_hang[i]) + 4, y = s5_sy(S5_HULL_B + 4) + 6;
+        s16 x = (s16)(s5_hang[i] << 3) + sx0 + 4, y = s5_sy(S5_HULL_B + 4) + 6;
         s16 dx;
         if (!hg_hp[i] || x < -8 || x > 264) continue;
         dx = plx() - x;
         hg_dir[i] = dx < -24 ? 0 : dx > 24 ? 2 : 1;
-        if ((LB_NOW ? (hg_hp[i] = 1) : shot_rect(x - 7, y - 7, 14, 14)) && --hg_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(50); continue; }
+        if ((LB_NOW ? (hg_hp[i] = 1) : nsh && shot_rect(x - 7, y - 7, 14, 14)) && --hg_hp[i] == 0) { fx_spawn(FX(x), FX(y)); score_add(50); continue; }
         if (((t + i * 23) & 63) == 0 && x > 16 && x < 240) {
             enemy_bullet(FX(x), FX(y + 4), (s16)((hg_dir[i] - 1) * 24), 36);
             dc_x = x; dc_y = y; dc_t = 8;                     /* ★撃つ瞬間に砲台を光らせる(小さくて目立たず、どこから撃ったか分からなかった) */
@@ -165,7 +174,7 @@ static void hang_draw(void) {
     u8 i;
     if (dc_t) spr_put(dc_x - 8, dc_y - 8, PAT_EXPL1, G_MISC, CS_EXPL);   /* 吊り砲台の撃った光 */
     for (i = 0; i < S5_NHANG; i++) {
-        s16 x = s5_sx(s5_hang[i]) + 4;
+        s16 x = (s16)(s5_hang[i] << 3) + sx0 + 4;
         if (!hg_hp[i] || x < -8 || x > 264) continue;
         spr_put(x - 8, s5_sy(S5_HULL_B + 4) - 2, (u8)(PAT_HANG + hg_dir[i]), G_ENEMY, 0);
     }
@@ -175,10 +184,7 @@ static void hang_draw(void) {
 /* ★遊んでの指摘(何を壊せばいいのかわからない)で作り直した: 板(48x4 の細い棒)を、危険の縞と赤いランプの付いた台(48x12)にし、
    Notch を載せて昇る。当たると台が白く光り(絵を白い版に替える。8..15 はスプライトと共有なのでパレットでは光らせない)、
    体力が減るほどランプの点滅が速くなって火花が出る。上で止まる時間は 0.5 → 1.5 秒。扉が開くときに帯で TARGET を出す */
-#define LIFT_W   48
-#define LIFT_H   12
 #define LIFT_MAX 44                /* 台の上端は格納庫の底(s 60。台の下端が床の 72)から甲板の上(s 16)まで(★甲板より下は自機の弾が届かない) */
-#define LIFT_IMG 128               /* ページ 2 の 128..139 行・x 0..47 に台の絵(白い点滅とランプの消灯は上から塗る) */
 static u8 door_n;                  /* 書き換えた扉の列 */
 static u8 door_w;                  /* 開いた幅(中央から片側。0..32 ドット) */
 static u8 lift, lift_drawn, lift_ph, lift_wait, lift_v, lift_vd, lift_img, lift_fl, lamp_t;
@@ -189,23 +195,7 @@ void b5_hangar_start(void) {
     g_boss_state = BS_ENTER; g_boss_hp = 30; boss_t = 0;
     stage_banner_c("TARGET: ELEVATOR", 13);
 }
-/* 台の絵のドット */
-static u8 lift_px(u8 x, u8 y) {
-    if (y == 0) return 14;
-    if (y == LIFT_H - 1) return 2;
-    if (y <= 2 || y >= LIFT_H - 3) return (u8)((((x + y) >> 2) & 1) ? 12 : 0);   /* 危険の縞(黄と黒) */
-    if (x < 2 || x >= LIFT_W - 2) return 14;
-    if (x >= 18 && x < 30 && y >= 4 && y <= 7) return (u8)(y == 4 && x < 22 ? 15 : 13);   /* ランプ */
-    if (y == 5 && (x == 6 || x == LIFT_W - 7)) return 14;     /* 鋲 */
-    return 9;
-}
-static void lift_sheet(u8 y0) {    /* 48x12 をページ 2 へ、y0 から 3 行(★1 フレームで 12 行書くと 2 フレーム遅れた) */
-    u8 x, y;
-    for (y = y0; y < y0 + 3; y++) {
-        vdp_write_addr17(1, (u16)((LIFT_IMG + y) * 128u));
-        for (x = 0; x < LIFT_W; x += 2) VDP_DAT = (u8)((lift_px(x, y) << 4) | lift_px((u8)(x + 1), y));
-    }
-}
+/* 台の絵は第 4 バンクの lift.c(lift_sheet) */
 static void spark(s16 x, s16 y) { fx_spawn(FX(x + 8 + (rnd8() & 31)), FX(y)); }
 static void hangar_update(void) {
     s16 x = s5_sx(S5_COL_DOOR) + 8, y;
@@ -383,6 +373,7 @@ void b5_init(void) {
     u8 i;
     t = 0; spr_loaded = 0; sheet_row = 0; gauge_ld = 0xFF;
     for (i = 0; i < S5_NAA; i++) { aa_hp[i] = 2; aa_dir[i] = 3; }
+    aa_a = aa_b = 0;
     for (i = 0; i < S5_NTUR; i++) { tu_hp[i] = 12; tu_dir[i] = tu_want[i] = 8; tu_shown[i] = 0xFF; }
     for (i = 0; i < S5_NHANG; i++) { hg_hp[i] = 3; hg_dir[i] = 1; }
 }
@@ -395,14 +386,15 @@ void b5_update(void) {
     t++;
     g_boss_aim = -1;
     shots_prepare();
-    if (g_sec >= SEC5_BOW && g_sec <= SEC5_HANGAR) { aa_update(); tur_update(); }
+    sx0 = s5_sx(0);
+    if (g_sec >= SEC5_BOW && g_sec <= SEC5_HANGAR) { aa_range(); aa_update(); tur_update(); }
     if (g_sec == SEC5_UNDER || g_sec == SEC5_HANGAR) hang_update();
     if (g_sec == SEC5_HANGAR && g_boss_state != BS_NONE && g_boss_state != BS_DONE) hangar_update();
     if (g_sec == SEC5_BOSS && g_boss_state != BS_NONE && g_boss_state != BS_DONE) gauge_update();
     if (g_sec == SEC5_ENGINE && gauge_ld == 0xFF) b5_gauge_load();
 }
 
-void b5_draw(void) {
+void b5_draw(void) {               /* ★sx0 と機銃の範囲は同じフレームの b5_update のもの(処理落ちのフレームはどちらも呼ばれない) */
     if (g_sec >= SEC5_BOW && g_sec <= SEC5_HANGAR) aa_draw();
     if (g_sec == SEC5_UNDER || g_sec == SEC5_HANGAR) hang_draw();
     if (g_sec == SEC5_HANGAR) hangar_draw();

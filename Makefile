@@ -2,12 +2,22 @@
 #   make m0         M0 技術検証 ROM をすべて作る(build/m0_*.rom)
 #   make clean
 #   make DEFS=-DNO_RAMX   RAM 実行を止めた比較用(make clean してから)
+#   make FPSMON=1   実効 FPS の計測を入れる(HUD の右上に「F 描き直せたフレーム数/秒 S いちばん長く止まったフレーム数」。
+#                   付け外しは自動で全部を作り直す。ふつうの make では入らない)
 include config.mk
 
 BUILD := build
 comma := ,
 INC   := -Isrc/include -Isrc/m0 -I$(BUILD)
 HDRS  := $(wildcard src/include/*.h)
+FPSMON ?= 0
+ifeq ($(strip $(FPSMON)),1)
+DEFS += -DFPS_MON
+endif
+# ★DEFS が替わったら全部を作り直す(.rel は DEFS を知らないので、前の設定の .rel がそのままリンクされる)
+DEFS_STAMP := $(BUILD)/defs.stamp
+$(shell mkdir -p $(BUILD); echo '$(DEFS)' | cmp -s - $(DEFS_STAMP) || echo '$(DEFS)' > $(DEFS_STAMP))
+HDRS  += $(DEFS_STAMP)
 CORE  := $(BUILD)/vdp.rel $(BUILD)/sys.rel $(BUILD)/frame.rel $(BUILD)/raster.rel $(BUILD)/font.rel $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel $(BUILD)/input.rel $(BUILD)/spr.rel
 
 M0_TESTS := scroll raster probe pcm mode
@@ -237,7 +247,7 @@ BK_SIZE_FIRST := infx
 # ---- 第 3 バンク(src/bank3): セグメント 7。第 2 バンクと同じ作り(ROM はバンク 102..103)。★互いの呼び口は使えない(入れ子) ----
 BK3_EXPORTS := hud_init hud_update hud_sprites
 # ---- 第 4 バンク(src/bank4): セグメント 8。同じ作り(ROM はバンク 100..101。呼び口の番号は 0xC0 から)。★ほかのバンクの呼び口は使えない ----
-BK4_EXPORTS := music_frame far_step plumb_gen pawn_sheet pawn_cl_reset pawn_cl_try pawn_cl_update pawn_spawn_group pawn_volley fz_start fz_vram fort_draw
+BK4_EXPORTS := music_frame far_step plumb_gen pawn_sheet pawn_cl_reset pawn_cl_try pawn_cl_update pawn_spawn_group pawn_volley fz_start fz_vram fort_draw lift_sheet
 BK4_RELS := $(patsubst src/bank4/%.c,$(BUILD)/b4_%.rel,$(wildcard src/bank4/*.c))
 $(BUILD)/b4_%.rel: src/bank4/%.c $(HDRS) src/game/game.h $(GEN_HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -Isrc/include -Isrc/game -I$(BUILD) $< -o $@

@@ -129,7 +129,7 @@ static void cw_draw(void) {
 #define BIG_N   96                 /* 最後の絵の箱。ページ 2 の x 128..223、64..159 行が作業の場所(2 面では空き。帯の文字は 160 行から) */
 static u16 cal_t;                  /* 再校正版の重力の替わり目 */
 static u8  kg_shown;               /* 表に絵が出ている(倒したら消す) */
-static u8  sat_hp[NSAT], sat_t[NSAT];
+static u8  sat_hp[NSAT], sat_t[NSAT], sat_x[NSAT], sat_y[NSAT];
 static s8  orb_x[64], orb_y[64];   /* 小衛星の軌道(b2_start で作る。★毎フレーム掛け算で出すと 8 個 × 2 回で重かった) */
 static u16 open_t;                 /* 吸い込みの周期(0..239 閉じている、240..359 開いて吸い込む) */
 u8 b2_lens_tbl_up[50], b2_lens_tbl_dn[48];
@@ -183,10 +183,15 @@ static void kg_update(void) {
     if (open_t >= 240) { u8 n = shot_hit(KG_X, KG_Y, KG_R, 6); g_boss_aim = KG_Y; while (n--) hurt(1); }
     shot_hit(KG_X, KG_Y, KG_R, KG_R);
     touch(KG_X, KG_Y, KG_R - 2);
-    /* 小衛星 */
+    /* 小衛星(位置は 8 ビットで足りる: x 110..242、y 42..146。描く側も sat_x/sat_y を使う) */
+    {
+        u8 a = (u8)(t >> 1);
+        for (k = 0; k < NSAT; k++, a += 8) {
+            sat_x[k] = (u8)(KG_X + orb_x[a & 63]); sat_y[k] = (u8)(KG_Y + orb_y[a & 63]);
+        }
+    }
     for (k = 0; k < NSAT; k++) {
-        u8 a = (u8)((u8)((t >> 1) + k * 8) & 63);
-        s16 x = (s16)(KG_X + orb_x[a]), y = (s16)(KG_Y + orb_y[a]);   /* 球の外を回る */
+        u8 x = sat_x[k], y = sat_y[k];   /* 球の外を回る */
         if (!sat_hp[k]) { if (++sat_t[k] >= 240) { sat_hp[k] = 2; sat_t[k] = 0; } continue; }
         if (shot_hit(x, y, 7, 7) && --sat_hp[k] == 0) { fx_spawn(FX(x), FX(y)); score_add(5); continue; }
         touch(x, y, 6);
@@ -198,9 +203,8 @@ static void kg_draw(void) {
     u8 k;
     if (g_boss_state != BS_FIGHT) return;
     for (k = 0; k < NSAT; k++) {
-        u8 a = (u8)((u8)((t >> 1) + k * 8) & 63);
         if (!sat_hp[k]) continue;
-        spr_put((s16)(KG_X - 8 + orb_x[a]), (s16)(KG_Y - 8 + orb_y[a]), PAT_SAT, G_ENEMY, 0);
+        spr_put((s16)(sat_x[k] - 8), (s16)(sat_y[k] - 8), PAT_SAT, G_ENEMY, 0);
     }
 }
 
@@ -211,7 +215,7 @@ void b2_start(u8 k) {
     if (k == B2_CW) { hp_l = hp_r = 30; g_boss_hp = 60; cw_y = -60; ang = 0; fire_t = 0; }
     else {
         g_boss_hp = 60; kg_shown = 0; zoom_start(ASSET_KG_BANK, ASSET_KG_OFF, 64u * 128u + 64u); open_t = 0; lens_nx = 0xFFFF; cal_t = 0;
-        for (i = 0; i < NSAT; i++) { sat_hp[i] = 2; sat_t[i] = 0; }
+        for (i = 0; i < NSAT; i++) { sat_hp[i] = 2; sat_t[i] = 0; sat_x[i] = KG_X; sat_y[i] = KG_Y; }
         for (i = 0; i < 64; i++) { orb_x[i] = (s8)((g_sin64[(u8)(i + 16) & 63] * 66) >> 7); orb_y[i] = (s8)((g_sin64[i] * 52) >> 7); }
         vdp_set_pal(2, 0, 0, 0); vdp_set_pal(3, 1, 1, 1); vdp_set_pal(4, 3, 3, 4); vdp_set_pal(5, 6, 6, 7);
         kg_crack(0);

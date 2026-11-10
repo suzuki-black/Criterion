@@ -463,11 +463,17 @@ static u8 hg_write(u8 h) {
     hg_rx0 = (u16)((g_wx + HG_X + h * 256u) & 510u);
     hg_sy0 = (u8)(s6_sy(HG_S) + g_vscroll);
     if (!hg_chunk) { hg_load(); hg_chunk = 1; }
-    for (;;) {
-        u8 r = hg_run();
-        if (r == 0xFF) { hg_blk++; hg_chunk = 0; return 1; }
-        if (r != 0xFE) return 0;
-        hg_blk++; hg_load();
+    {
+        u16 t = sys_timer();                                  /* ★使い切る書き込みの時間は「重かった」に数えない(g_elastic) */
+        u8 r;
+        for (;;) {
+            r = hg_run();
+            if (r == 0xFF) { hg_blk++; hg_chunk = 0; r = 1; break; }
+            if (r != 0xFE) { r = 0; break; }
+            hg_blk++; hg_load();
+        }
+        g_elastic += (u16)(sys_timer() - t);
+        return r;
     }
 }
 static void hg_vram(void) {        /* コマが替わったら見えない方へ書き、書き終えたら決まった時刻に次のフレームの帯から見せる */

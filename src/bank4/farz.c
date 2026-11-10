@@ -214,17 +214,20 @@ static u8 fz_run(void) __naked {
 
 /* 今の段を書く(フレームの頭から fz_budget まで)。1 = 書き終えた */
 static u8 fz_write(void) {
+    u16 t = sys_timer();                                      /* ★使い切る書き込みの時間は「重かった」に数えない(g_elastic) */
+    u8 r;
     for (;;) {
-        u8 r;
         if (!fz_ld) fz_load();
         r = fz_run();
         if (r == 0xFF) {
             if (++fz_pos == 0) { fz_blk++; fz_ld = 0; }       /* 印が塊の最後のバイトだった */
-            return 1;
+            r = 1; break;
         }
-        if (r != 0xFE) return 0;
+        if (r != 0xFE) { r = 0; break; }
         fz_blk++; fz_ld = 0;
     }
+    g_elastic += (u16)(sys_timer() - t);
+    return r;
 }
 
 /* 始める。buf = 塊の写しの場所(ページ 3、256 バイト)。世界は止めてあり、画面の x = FZ_XB が 8 の倍数のリングの位置(s5.c) */

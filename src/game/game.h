@@ -100,6 +100,7 @@ extern Fx g_fx[MAX_FX];
 
 /* ---- 共通の小物 ---- */
 extern u16 g_frame;                 /* ゲーム開始からのフレーム */
+extern u16 g_elastic;               /* フレームの残りを使い切る書き込みが使った時間(main.c) */
 extern u8  g_slow;                  /* 1 = このフレームは処理落ち(敵・ボス・Pawn の更新を飛ばす。main.c) */
 extern const s8 g_sin64[64];        /* 正弦(±127) */
 u8   rnd8(void);
@@ -139,6 +140,9 @@ void game_start(void);              /* 自機・敵・ゲージを最初の状�
 void hud_init(void);
 void hud_update(u8 rows);           /* 変わったところだけ書く(1 フレームに rows 行。HUD_GAUGE_ONLY を足すと強化の名前だけ) */
 #define HUD_GAUGE_ONLY 0x80
+#ifdef FPS_MON
+extern u8 g_fps, g_fps_stall;         /* 実効 FPS の計測(make FPSMON=1。main.c) */
+#endif
 extern u8 g_hud_pend;               /* 強化の名前を書き終えていない(第 3 バンクの hud.c が書く) */
 void hud_sprites(void);             /* ゲージのカーソル光点 */
 void gauge_quanta(void);            /* Quanta を取った */
@@ -300,6 +304,10 @@ void pawn_volley(void *pw);        /* 集団で対空射撃 */
 void fz_start(u8 *buf);            /* 第 4 バンク(farz.c): 5 面の接近の戦艦を書き始める。buf = ページ 3 の 256 バイト */
 u16  fz_vram(void);                /* 毎フレーム。下位 = 艦首を左へずらすドット(空の帯の横スクロール)、0x8000 = 最後の段まで見せた */
 void fort_draw(s16 x, s16 y);      /* 第 4 バンク(fort.c): 5 面の出口で 6 面の要塞を見せる(左上) */
+void lift_sheet(u8 y0);            /* 第 4 バンク(lift.c): 5 面の格納庫の台の絵(48x12)をページ 2 へ、y0 から 3 行 */
+#define LIFT_W   48                /* 5 面の格納庫の台(s5boss.c・lift.c) */
+#define LIFT_H   12
+#define LIFT_IMG 128               /* ページ 2 の 128..139 行・x 0..47 に台の絵(白い点滅とランプの消灯は上から塗る) */
 #define FAR_LOCK  0x0000u          /* bg と一緒に動きつつ、ずれを 1/8 ずつ 0 へ */
 #define FAR_FREE  0x4000u          /* 半分の速さ */
 #define FAR_RESET 0x8000u          /* 置き直す(ずれ 0) */

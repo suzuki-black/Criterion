@@ -151,7 +151,7 @@ void enemy_waves(u8 set) { g_wave_set = set; wave_t = 0; }
 
 static void run_script(void) {
     const Wave *w;
-    u8 i, n;
+    u8 n;
     if (g_wave_set == WAVES_AIR) { w = script_air; n = sizeof(script_air) / sizeof(script_air[0]); }
     else if (g_wave_set == WAVES_CITY) { w = script_city; n = sizeof(script_city) / sizeof(script_city[0]); }
     else if (g_wave_set == WAVES_SKY) { w = script_sky; n = sizeof(script_sky) / sizeof(script_sky[0]); }
@@ -159,8 +159,8 @@ static void run_script(void) {
     if (++wave_t >= LOOP) wave_t = 0;
     if (!g_calib && !g_wave_mirror && g_ovl >= OVL_S1 && g_ovl <= OVL_S8 && g_wave_set != WAVES_SKY && zako_script()) return;   /* 面ごとの台本
                                                         (第 2 バンク)。★呼ぶのは引き受けうる場面だけ(毎フレームの呼び出しで 8 面の中枢が遅れた) */
-    for (i = 0; i < n; i++)
-        if (w[i].t == wave_t) enemy_wave(w[i].type, FX(w[i].y0), w[i].dir);
+    for (; n; n--, w++)                             /* ★ポインタで回す(添字では 1 項目ごとに番地を計算し直していた) */
+        if (w->t == wave_t) enemy_wave(w->type, FX(w->y0), w->dir);
 }
 
 /* 屋上の砲台: wx = 世界の横位置(近い層のドット)、roof = 屋上の行(都市の s) */
@@ -239,6 +239,136 @@ void enemy_kill(Enemy *e, u8 by_player) {
     e->type = E_NONE;
 }
 
+/* ---- 編隊の敵の 1 フレーム(asm。sdcccall(1): HL = e、戻り値 A) ----
+   x += vx(t++ は move_enemy の頭)、軌道 y = y0 + sin64[((u8)((((u16)px + 32) * 85) >> 8) + phase) & 63] * 5 / 2(px = x のドット、turned == 2 なら 256 - px。
+   左から来る編隊は左右を返す。軌道は x で決まるので後続も同じ場所で同じ高さを通る。× 85 は (4(4(4v + v) + v) + v))。
+   戻り値: bit0 = 撃てる範囲(72 < x < 240 ドット)、bit1 = 消す(x < -16(左から来る編隊は < -200)・x > 280・y < -80・y > PLAY_H + 80)。
+   比べるのは符号を反転した値(0x8000 を xor)どうしの符号なしの比較。Enemy の並び: t 1, x 2, y 4, vx 6, y0 10, phase 12, turned 15 */
+static u8 fire_rate;
+static u8 form_step(Enemy *e) __naked {
+    (void)e;
+    __asm
+        push ix
+        push hl
+        pop  ix
+        ld   l, 2 (ix)
+        ld   h, 3 (ix)
+        ld   e, 6 (ix)
+        ld   d, 7 (ix)
+        add  hl, de
+        ld   2 (ix), l
+        ld   3 (ix), h             ; x += vx
+        push hl                    ; [x]
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l                     ; HL = px
+        ld   a, 15 (ix)
+        cp   #2
+        jr   nz, 00001$
+        ex   de, hl
+        ld   hl, #256
+        or   a
+        sbc  hl, de                ; 256 - px
+    00001$:
+        ld   de, #32
+        add  hl, de
+        ld   b, h
+        ld   c, l                  ; BC = v
+        add  hl, hl
+        add  hl, hl
+        add  hl, bc                ; 5v
+        add  hl, hl
+        add  hl, hl
+        add  hl, bc                ; 21v
+        add  hl, hl
+        add  hl, hl
+        add  hl, bc                ; 85v
+        ld   a, h
+        add  a, 12 (ix)
+        and  #63
+        ld   e, a
+        ld   d, #0
+        ld   hl, #_g_sin64
+        add  hl, de
+        ld   a, (hl)
+        ld   l, a
+        rla
+        sbc  a, a
+        ld   h, a                  ; HL = sin(s16)
+        ld   d, h
+        ld   e, l
+        add  hl, hl
+        add  hl, hl
+        add  hl, de                ; * 5
+        sra  h
+        rr   l                     ; / 2
+        ld   e, 10 (ix)
+        ld   d, 11 (ix)
+        add  hl, de                ; y
+        ld   4 (ix), l
+        ld   5 (ix), h
+        ex   (sp), hl              ; HL = x、[y]
+        ld   c, #0                 ; C = 戻り値
+        ld   a, h
+        xor  #0x80
+        ld   h, a                  ; x ^ 0x8000
+        ld   de, #0x8F00           ; 240 * 16 = 0x0F00
+        or   a
+        sbc  hl, de
+        add  hl, de
+        jr   nc, 00002$
+        ld   de, #0x8481           ; 72 * 16 + 1 = 0x0481
+        or   a
+        sbc  hl, de
+        add  hl, de
+        jr   c, 00002$
+        inc  c                     ; 72 < x < 240
+    00002$:
+        ld   de, #0x9181           ; 280 * 16 + 1 = 0x1181
+        or   a
+        sbc  hl, de
+        add  hl, de
+        jr   nc, 00010$            ; x > 280
+        ld   de, #0x7F00           ; -16 * 16 = 0xFF00
+        ld   a, 15 (ix)
+        cp   #2
+        jr   nz, 00003$
+        ld   de, #0x7380           ; -200 * 16 = 0xF380
+    00003$:
+        or   a
+        sbc  hl, de
+        jr   c, 00010$             ; x < -16(-200)
+        pop  hl                    ; y
+        ld   a, h
+        xor  #0x80
+        ld   h, a
+        ld   de, #0x7B00           ; -80 * 16 = 0xFB00
+        or   a
+        sbc  hl, de
+        add  hl, de
+        jr   c, 00011$             ; y < -80
+        ld   de, #0x90C1           ; (188 + 80) * 16 + 1 = 0x10C1
+        or   a
+        sbc  hl, de
+        jr   nc, 00011$            ; y > PLAY_H + 80
+        ld   a, c
+        pop  ix
+        ret
+    00010$:
+        pop  hl
+    00011$:
+        ld   a, c
+        or   #2
+        pop  ix
+        ret
+    __endasm;
+}
+
 static void move_enemy(Enemy *e) {
     e->t++;
     if (e->type == E_SPIRIT) {                       /* 世界に張り付く: 画面の位置はスクロールから求める */
@@ -257,15 +387,13 @@ static void move_enemy(Enemy *e) {
         }
         e->x += e->vx; e->y += e->vy;
     } else {
-        e->x += e->vx;
-        /* 軌道は x で決まる: 後続も同じ場所で同じ高さを通る */
-        /* x / 3 と × 5 / 2 は割り算(ライブラリ呼び出し)を避けて掛け算とシフトで */
-        {
-            u16 px = (u16)(e->turned == 2 ? 256 - PX(e->x) : PX(e->x));   /* 左から来る編隊は左右を返す */
-            e->y = e->y0 + (((s16)g_sin64[(u8)((u8)(((px + 32) * 85u) >> 8) + e->phase) & 63] * 5) >> 1);
-        }
+        /* 編隊(Tick・Tock): asm(form_step)。★C では 1 体 60us 前後、16 体で約 1ms かかり、強化を使うデモの空中戦で処理落ちが続いた */
+        u8 r;
+        r = form_step(e);
         /* 2 周目と、3 面から先の空中戦は倍撃つ(M7 の後) */
-        if (e->x < FX(240) && e->x > FX(72) && (rnd8() < (u8)(g_loop || (g_wave_set == WAVES_SKY && g_ovl >= OVL_S3) ? 4 : 2))) enemy_fire(e);
+        if ((r & 1) && rnd8() < fire_rate) enemy_fire(e);
+        if (r & 2) enemy_kill(e, 0);
+        return;
     }
     if (e->x < FX(-16) && e->turned != 2) enemy_kill(e, 0);
     else if (e->x > FX(280) || e->y < FX(-80) || e->y > FX(PLAY_H + 80)) enemy_kill(e, 0);
@@ -390,6 +518,95 @@ static u8 eshot_move(void) __naked {
    hit_xy は画面の敵の (x, y)、hit_idx は g_enemy の番号、hit_n はその数。(hs_i, hs_k) から探し、当たったら
    hs_i = 弾、hs_k = hit_xy の番号で 1 を返す。無ければ 0。判定は C と同じ (u8)(bx - x + 10) < 20 かつ (u8)(by - y + 8) < 16 */
 static u8 hit_xy[MAX_ENEMY * 2], hit_idx[MAX_ENEMY], hit_n, hs_i, hs_k, hs_n;
+
+/* hit_xy・hit_idx を作り、数を返す(asm。C のループは 1 体ごとの IX の出し入れと s16 のシフトで、4 面のデモの空中戦で
+   重いフレームの 1/30 を使っていた)。C と同じ: 種類が 0 でなく、x = (s16)x >> 4 が 0..255、y が 0..PLAY_H の敵。
+   x の上位バイトが 0..15(符号なしで比べるので負は外れる)なら x >> 4 は 0..255 で (上位 << 4) | (下位 >> 4)。
+   ★Enemy は 16 バイト: type 0、t 1、x 2..3、y 4..5 */
+static u8 hit_build(void) __naked {
+    __asm
+        ld   hl, #_g_enemy
+        ld   de, #_hit_xy
+        ld   bc, #0                ; B = 敵の番号、C = 数
+    00001$:
+        push hl
+        ld   a, (hl)               ; type
+        or   a
+        jr   z, 00008$
+        inc  hl
+        inc  hl
+        ld   a, (hl)               ; x の下位
+        inc  hl
+        rrca
+        rrca
+        rrca
+        rrca
+        and  #0x0F
+        ld   (de), a
+        ld   a, (hl)               ; x の上位
+        cp   #16
+        jr   nc, 00008$
+        rlca
+        rlca
+        rlca
+        rlca
+        ex   de, hl
+        or   (hl)
+        ld   (hl), a
+        inc  hl
+        ex   de, hl                ; DE = 出力 + 1、HL = +3
+        inc  hl
+        ld   a, (hl)               ; y の下位
+        inc  hl
+        rrca
+        rrca
+        rrca
+        rrca
+        and  #0x0F
+        ld   (de), a
+        ld   a, (hl)               ; y の上位
+        dec  de                    ; DE = 出力(確定するまで進めない)
+        cp   #16
+        jr   nc, 00008$
+        rlca
+        rlca
+        rlca
+        rlca
+        inc  de
+        ex   de, hl
+        or   (hl)
+        ld   (hl), a
+        ex   de, hl
+        dec  de
+        cp   #PLAY_H + 1
+        jr   nc, 00008$
+        inc  de                    ; 確定: 出力を 2 つ進め、hit_idx[数] = 番号
+        inc  de
+        ld   hl, #_hit_idx
+        ld   a, l
+        add  a, c
+        ld   l, a
+        jr   nc, 00005$
+        inc  h
+    00005$:
+        ld   (hl), b
+        inc  c
+    00008$:
+        pop  hl
+        ld   a, l
+        add  a, #16
+        ld   l, a
+        jr   nc, 00009$
+        inc  h
+    00009$:
+        inc  b
+        ld   a, b
+        cp   #MAX_ENEMY
+        jr   nz, 00001$
+        ld   a, c
+        ret
+    __endasm;
+}
 static u8 hit_next(void) __naked {
     __asm
         push ix
@@ -497,11 +714,15 @@ static u8 hit_next(void) __naked {
 }
 
 void enemy_update(void) {
-    u8 i, j;
+    u8 i;
     s16 plx = PX(g_pl.x) + 8, ply = PX(g_pl.y) + 8;      /* ★自機の中心はループの外で 1 回(弾 16 発 × 毎回のシフトが重かった) */
     g_frame++;
     run_script();
-    for (i = 0; i < MAX_ENEMY; i++) if ((u8)(g_enemy[i].type - 1) < E_BK - 1) { move_enemy(&g_enemy[i]); pcmx_service(); }   /* PCM の送出口(敵 1 体ごと) */
+    fire_rate = (u8)(g_loop || (g_wave_set == WAVES_SKY && g_ovl >= OVL_S3) ? 4 : 2);   /* 2 周目と、3 面から先の空中戦は倍撃つ(M7 の後) */
+    for (i = 0; i < MAX_ENEMY; i++) {
+        if ((u8)(g_enemy[i].type - 1) < E_BK - 1) move_enemy(&g_enemy[i]);
+        if ((i & 3) == 3) pcmx_service();               /* PCM の送出口(4 体ごと。★1 体ごとにタイマを読んでいた) */
+    }
     if (g_zako_n) zako_update();                     /* 第 2 バンクの雑魚 */
 
     if (g_grav) for (i = 0; i < MAX_ESHOT; i++) {             /* 重力(2 面): 弾は放物線(中心へはらせん)を描く */
@@ -517,16 +738,8 @@ void enemy_update(void) {
        (構造体の固定小数点を毎回変換する二重ループは 1 フレームの 1/3 を使っていた。M1)。探すのは asm(hit_next)。
        体当たりも同じ配列で見る */
     {
-        u8 ne = 0, k, *p = hit_xy;
-        for (j = 0; j < MAX_ENEMY; j++) {
-            const Enemy *e = &g_enemy[j];
-            s16 x, y;
-            if (!e->type) continue;
-            x = PX(e->x); y = PX(e->y);
-            if (x < 0 || x > 255 || y < 0 || y > PLAY_H) continue;
-            *p++ = (u8)x; *p++ = (u8)y; hit_idx[ne] = j; ne++;
-        }
-        hit_n = ne;
+        u8 ne, k, *p;
+        hit_n = ne = hit_build();
         hs_n = g_drops ? MAX_PSHOT : PS_SHOTS;                /* 爆雷の枠は爆雷があるときだけ見る */
         hs_i = 0; hs_k = 0;
         if (ne) while (hit_next()) {
@@ -604,7 +817,7 @@ void enemy_draw(void) {
         else if (e->type == E_NOTCH) pat = PAT_NOTCH;
         else pat = e->x < g_pl.x ? PAT_SPIRIT_R : PAT_SPIRIT;   /* 砲身は自機の側を向く */
         spr_put(PX(e->x) - 8, PX(e->y) - 8, pat, e->type == E_SPIRIT ? G_ENEMY : G_PAIR, 0);   /* ★編隊の敵は 2 枚重ね(3 色) */
-        pcmx_service();
+        if ((i & 3) == 3) pcmx_service();
     }
     if (g_zako_n) zako_draw();
     for (i = 0; i < MAX_FX; i++) {

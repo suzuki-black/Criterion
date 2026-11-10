@@ -38,7 +38,12 @@ static u8 *level_of(u8 node) {
    ★文字の書き換えは VDP の I/O が多く(15 文字で約 70 ライン)、1 フレームで書くとそのフレームが遅れた。
      項目ごとに文字列を用意し、1 フレームに 2 回(1 回 = 1 行の 6 文字まで)ずつ書き進める。 */
 typedef struct { char text[16]; u8 x, y, fg; u8 row, seg; } TextJob;   /* row = 8 で書き終わり。seg = 行の中の書き始めの文字 */
+#ifdef FPS_MON
+enum { J_FPS, J_SCORE, J_LIVES, J_NODE, NJOB };      /* 計測は一番後回し(番号の小さい順に後) */
+static u8 shown_fps, shown_stall;
+#else
 enum { J_SCORE, J_LIVES, J_NODE, NJOB };
+#endif
 /* ★得点は見えない行へ書いてから 1 回で写す。表示の行へ 1 行ずつ書いていた間は、書き替えの途中の数字が別の数字に見えた(5 の上に 2 を
    書く途中は 3 に見え、4500 → 5300 → 5200 と「上がって下がった」ように見えた。指摘) */
 #define SCORE_WORK 240               /* ページ 2 の作業行(240..247。HUD の 212..235 の下で、ほかでは使わない) */
@@ -60,6 +65,9 @@ static u8 init_stage;
 void hud_init(void) {
     vdp_hmmv(0, 512 + HUD_VROW - 1, 256, 25, 0x00);         /* ページ 2 の HUD の行(HUD_R23 で上の 1 行も見える) */
     shown_score = 0xFFFF; shown_lives = 0xFF; shown_node = 0xFF; shown_lv = 0xFF; shown_armed = 0xFF;
+#ifdef FPS_MON
+    shown_fps = 0xFF; shown_stall = 0xFF;
+#endif
     { u8 j; for (j = 0; j < NJOB; j++) job[j].row = 8; }
     init_stage = 1;
 }
@@ -147,6 +155,13 @@ void hud_update(u8 rows) {
             job_set(J_NODE, TX, HUD_ROW2, lvv >= mx ? 14 : 11, buf, 11);
         }
     }
+#ifdef FPS_MON
+    if ((g_fps != shown_fps || g_fps_stall != shown_stall) && job[J_FPS].row >= 8) {   /* 「F60 S0」(SHIP の右) */
+        shown_fps = g_fps; shown_stall = g_fps_stall;
+        buf[0] = 'F'; num_str(buf + 1, g_fps, 2); buf[3] = 'S'; num_str(buf + 4, g_fps_stall, 2);
+        job_set(J_FPS, 192, HUD_ROW1, g_fps >= 58 ? 14 : g_fps >= 45 ? 12 : 13, buf, 6);
+    }
+#endif
     jobs_run(rows);
     g_hud_pend = job[J_NODE].row < 8;
 }

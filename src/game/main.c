@@ -38,6 +38,23 @@ typedef struct {
 } GameStat;
 volatile GameStat g_stat;
 volatile u8 g_dbg_invul;
+#ifdef FPS_MON
+/* 実効 FPS の計測(make FPSMON=1)。1 秒(60 JIFFY)ごとに、敵とスプライトを描き直せたフレーム(処理落ち・遅れでない)の数と、
+   描き直せなかった間のいちばん長い JIFFY の数を出す(HUD は第 3 バンクの hud.c、検証は m7 が読む) */
+u8 g_fps, g_fps_stall;
+static u16 fps_j, fps_lastgood;
+static u8 fps_good, fps_max;
+static void fps_frame(u8 bad) {
+    u16 j = *(volatile u16 *)0xFC9E;
+    if (!bad) {
+        u16 gap = (u16)(j - fps_lastgood);
+        if (gap > 1 && gap - 1 > fps_max) fps_max = gap > 100 ? 99 : (u8)(gap - 1);
+        fps_lastgood = j;
+        fps_good++;
+    }
+    if ((u16)(j - fps_j) >= 60) { g_fps = fps_good; g_fps_stall = fps_max; fps_good = 0; fps_max = 0; fps_j = j; }
+}
+#endif
 u8  g_met_tempo;                    /* 3 面の METRONOME: 振り子の周期から決めた曲のテンポ(0 = 使わない。music_sel.c) */
 s16 g_boss_aim = -1;                /* 今撃てる弱点の y(検証が自機を寄せる。-1 = なし。ボスが毎フレーム書く) */
 /* 場面(タイトルのオーバレイが動かすが、本体も見るので本体に置く) */
@@ -52,6 +69,15 @@ u8  g_hud_on;
 u8 g_slow;
 static u8 slow_next;
 u16 g_frame_t0;                    /* このフレームの始まり(S1990 タイマ。stage.c も残り時間に使う) */
+/* フレームの残りを決まった時刻まで使い切る書き込み(6 面の砂時計・5 面の接近)が使った時間(タイマのカウント)。
+   ★それを「重かった」に数えると、次のフレームで敵とスプライトを止め、砂時計の間は 30fps 前後、接近は 4 フレームに 3 回止まった
+   (PCM ありの 1 周の計測)。書き込みは時刻で止まるので、それを除いた仕事の長さで決める(★書き込みのあるフレームを判定から外しただけでは、
+   重いフレームの前触れも見逃し、砂時計の間に遅れが 1 → 4 になった) */
+u16 g_elastic;
+#define BUSY_MAX (229u * 16u)      /* フレームの仕事(使い切る書き込みを除く)がこれを越えたら次を処理落ちに(余りが 1 フレームの 1/8 未満)。
+                                      ★前は待ちループの回数(frame_sync の idle)が平常の 1/8 未満かで決めていた。PCM が鳴る間は待ちループの 1 回ごとに
+                                      PCM の送出口が走って回数が大きく減るので、余裕があっても重いと見なし、声やオケヒのたびに処理落ちしていた */
+#define SND_ROOM_BUSY (180u * 16u)  /* フレームの仕事がこれ未満なら曲を始める余裕がある(g_snd_room) */
 #define HUD_DEADLINE (150u * 16u)  /* これを過ぎていたら HUD の文字の書き込みを次のフレームへ */
 #define HUD_DEADLINE2 (110u * 16u) /* これを過ぎていたら HUD の文字は 1 行だけ */
 /* ★強化の名前(取ったときのカーソルの行き先)だけは、これまでなら 1 回ぶん書く。3 面の空中戦で ECHO などを持つと、ここへ来る時点が
@@ -76,18 +102,31 @@ u8 g_demo;
 u8 g_demo_k, g_demo_save;                                   /* デモの持ち回り(1・3・4・5 面。指示書 4.2)と、面セレクトの元の値 */
 static u16 demo_t;
 static u8 demo_step, demo_seen, demo_prev;
+static s16 demo_tx, demo_ty, demo_bd;                       /* 自動操縦の目標(4 フレームごとに探す) */
 static void demo_input(void) {
     u8 v = IN_A, i;
-    s16 px = (s16)(PX(g_pl.x) + 8), py = (s16)(PX(g_pl.y) + 8), tx = 56, ty = 90, bd = 0x7FFF;
+    s16 px = (s16)(PX(g_pl.x) + 8), py = (s16)(PX(g_pl.y) + 8), tx, ty, bd;
     demo_t++;
-    for (i = 0; i < MAX_ITEM; i++)                             /* アイテムがあれば取りに行く */
-        if (g_item[i].on) { tx = PX(g_item[i].x); ty = PX(g_item[i].y); bd = 0; break; }
-    if (bd) for (i = 0; i < MAX_ENEMY; i++) {                  /* 無ければ前にいちばん近い敵の高さへ */
-        s16 ex;
-        if (!g_enemy[i].type) continue;
-        ex = PX(g_enemy[i].x);
-        if (ex > px && (s16)(ex - px) < bd) { bd = (s16)(ex - px); ty = PX(g_enemy[i].y); }
+    /* ★目標を探すのは 4 フレームに 1 回(探すのは本番に無い仕事で、4 面のデモで敵が 10 体を超えると重いフレームの
+       約 0.3ms を使い、デモだけ本番より重かった)。向きは毎フレーム決める */
+    if ((demo_t & 3) != 1) { tx = demo_tx;                     /* 始まり(demo_t = 1)は必ず探す */ ty = demo_ty; bd = demo_bd; goto steer; }
+    tx = 56; ty = 90; bd = 0x7FFF;
+    {   /* ポインタで回す(添字では 1 つごとに構造体の大きさの掛け算をする) */
+        const Item *it = g_item;
+        for (i = MAX_ITEM; i; i--, it++)                       /* アイテムがあれば取りに行く */
+            if (it->on) { tx = PX(it->x); ty = PX(it->y); bd = 0; break; }
     }
+    if (bd) {                                                  /* 無ければ前にいちばん近い敵の高さへ */
+        const Enemy *e = g_enemy;
+        for (i = MAX_ENEMY; i; i--, e++) {
+            s16 ex;
+            if (!e->type) continue;
+            ex = PX(e->x);
+            if (ex > px && (s16)(ex - px) < bd) { bd = (s16)(ex - px); ty = PX(e->y); }
+        }
+    }
+    demo_tx = tx; demo_ty = ty; demo_bd = bd;
+steer:
     if (py < ty - 3) v |= IN_DOWN; else if (py > ty + 3) v |= IN_UP;
     if (px < tx - 3) v |= IN_RIGHT; else if (px > tx + 3) v |= IN_LEFT;
     if (!(demo_seen & 4)) { if (g_phase >= PH_AIR) { demo_seen |= 4; stage_banner("DEMONSTRATION"); } }
@@ -211,22 +250,37 @@ void main(void) {
         static u8 pat_now, pat_k;
         static u16 spr_at, spr_post;   /* 描いたフレームの、スプライトの段の時点の経過 / 段からフレームの終わりまで */
         static u8 spr_skips;     /* スプライトを描き直さなかったフレームが続いた数 */
+        static u8 logic_prev;    /* 前のフレームは論理を飛ばした */
+        static u16 full_busy;    /* 最後に論理もスプライトもやったフレームの仕事 */
+        u8 spr_force;            /* このフレームは論理を飛ばしてスプライトだけ描く */
         static u16 over_t;
         static s8 over_spd;      /* ★初期値つきの static は常駐の空きを食うので使わない(起動直後の 0 は「色の組 0 を 4 つ写す」) */
-        u16 late0 = g_frame_late, idle;
+        u16 late0 = g_frame_late, idle, busy;
         u8 ph;
         MON(0);
-        if (spr_skips == 0 && spr_at) spr_post = (u16)((u16)(sys_timer() - g_frame_t0) - spr_at);   /* 描いたフレームの残りの仕事 */
+        busy = (u16)((u16)(sys_timer() - g_frame_t0) - g_elastic);   /* 使い切る書き込みを除いた仕事 */
+        if (spr_skips == 0 && spr_at) spr_post = (u16)(busy - spr_at);   /* 描いたフレームの残りの仕事 */
+        if (spr_skips == 0 && !logic_prev) full_busy = busy;
         idle = frame_sync(1);
         g_frame_t0 = sys_timer();
         mark_f0 = g_ras_mark;
         MON(12);
         if (g_frame_late != late0) g_stat.late++;
         g_slow = slow_next;
-        slow_next = (u8)(!g_slow && g_phase >= PH_AIR && (g_frame_late != late0 || idle < (g_stat.base >> 3)));
+        /* ★スプライトを SPR_SKIP_MAX フレーム続けて飛ばした次のフレームは、論理を飛ばしてスプライトだけ描く(前の 3 フレームで進んだ位置を
+           見せる)。前は論理もスプライトも全部やって描いていたので、PCM の鳴る 2 面のボスでそのフレームが 264〜274 ラインになり、
+           4 フレームに 1 回遅れた(論理を続けて飛ばさない約束は守る: 前のフレームで論理を飛ばしていたら従来どおり)。
+           ★飛ばすのは、最後に全部やったフレームが BUSY_MAX を越えていたときだけ(いつも飛ばすと、間に合う場面まで敵が止まった)。
+           ★もともと論理を飛ばすフレーム(slow_next)なら、そこで描く。前はこの場合を外していたので、「論理を飛ばす」と「論理をやって
+           スプライトの段で時間切れ」が交互に続くと一度も描かず、4 面のデモの空中戦で絵が 13 フレーム止まった */
+        spr_force = (u8)(spr_skips >= SPR_SKIP_MAX && g_phase >= PH_AIR && (g_slow || (!logic_prev && full_busy > BUSY_MAX)));
+        if (spr_force) g_slow = 1;
+        logic_prev = g_slow;
+        slow_next = (u8)(!g_slow && g_phase >= PH_AIR && (g_frame_late != late0 || busy > BUSY_MAX));
+        g_elastic = 0;
         if (g_slow) g_stat.slow++;
         if (idle < g_stat.idle_min) g_stat.idle_min = idle;
-        g_snd_room = (u8)(idle >= (g_stat.base >> 2) + (g_stat.base >> 4));   /* 空き時間が平常の 3 割以上(PCM は約 2 割を使う) */
+        g_snd_room = (u8)(busy < SND_ROOM_BUSY);   /* 空き時間が 1 フレームの 3 割以上(PCM は約 2 割を使う)。★時間で測る(BUSY_MAX と同じ理由) */
         g_stat.frames++;
         g_stat.idle_sum += idle;
 
@@ -284,9 +338,15 @@ void main(void) {
         if (demo_end) {
             /* ゲームオーバー・デモの終わり: タイトルの素材を読み直して(読む間は表示を止める)、タイトルのオーバレイの場面へ
                (g_after_over: ゲームオーバー → ネームエントリー → 巻き戻し → タイトル、デモ → ランキング → タイトル) */
-            ras_commit(0); frame_sync(1); frame_sync(1);          /* ★ラスターの表を空にしてから表示を止める(前の表の HUD 帯の項目が R#1 を
-                                                                     書き戻して表示が戻り、描き替え中のリング(空・星・建物の欠片)が 35 フレーム
-                                                                     ほど見えていた。指摘) */
+            {   /* ★ラスターの表を空にしてから表示を止める(前の表の HUD 帯の項目が R#1 を書き戻して表示が戻り、描き替え中のリング
+                   (空・星・建物の欠片)が 35 フレームほど見えていた。指摘)。★表が差し替わった VBLANK の中で止める: 差し替えの後に
+                   1 フレーム待っていた間は、そのフレームが HUD 帯の R#2・R#23 のまま画面全体に出て、ページ 2 の 4 面のボスの顔や
+                   ランキングが見えた(指摘「デモからタイトルに戻るときに画面崩れ」) */
+                extern volatile u8 ras_swap;
+                u16 t = sys_timer();
+                ras_commit(0);
+                while (ras_swap && (u16)(sys_timer() - t) < 9000u)   /* 2 フレームまで */ { if (g_poll_hook) g_poll_hook(); }
+            }
             *(volatile u8 *)0xF3E0 &= 0xBF;
             vdp_wreg(1, *(volatile u8 *)0xF3E0);
             gq_clear();                  /* ★GHOST の待ち行列に残った前のゲームの描き込み(1 面の Pawn)が、次のゲームの空に黒い四角を写していた */
@@ -315,9 +375,12 @@ void main(void) {
             }
             spr_at = el;
         }
-        spr_skips = g_slow ? (u8)(spr_skips + 1) : 0;
+        spr_skips = g_slow && !spr_force ? (u8)(spr_skips + 1) : 0;
+#ifdef FPS_MON
+        if (g_phase >= PH_AIR) fps_frame((u8)((g_slow && !spr_force) || g_frame_late != late0));   /* スプライトだけ描くフレームも描き直し */
+#endif
         MON(9);
-        if (!g_slow) {
+        if (!g_slow || spr_force) {
             spr_voff = (u8)(g_vscroll + g_roll);   /* スプライトの Y はプレイエリアの R#23 を足して表へ(ロールは画面だけ) */
             spr_begin();
             if (g_phase <= PH_TITLE) title_draw();
@@ -329,7 +392,7 @@ void main(void) {
         /* ★CPU で VRAM を書く仕事(属性表・HUD の文字)を先に、VDP のコマンドを出す仕事(stage_vram)を後に。
            VDP がコマンドを実行している間は CPU の VRAM の書き込みも遅くなる(Pawn を足したら 1 フレームが
            90 ライン延びた)。コマンドはフレームの頭とここで出し、次のフレームの論理の間に VDP が進める */
-        if (!g_slow) spr_end();
+        if (!g_slow || spr_force) spr_end();
         if (g_infx_mode) infx_vram();
         /* スプライトの色の組: 面(背景と反対の色相)か割り振りが替わったら、帯の色表 4 つ(各 448 バイト。G_MISC の 4 枠は使うときに
            書くので写さない)を 112 バイトずつ 16 フレームで写す(1 回 ≒ 1ms)。★1 つを 1 フレームで写すと(4ms)、区間の変わり目や
