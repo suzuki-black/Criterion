@@ -73,7 +73,6 @@ static const u8 slot_order[G_COUNT] = { G_SHIP_A, G_SHIP_B, G_MISC, G_SHOT, G_PA
 u8 spr_win[64];
 u8 spr_wcap[8];                      /* グループに入る数(組は 2 枠で 1 つ) */
 u8 g_spr_layout;
-static u8 spr_step;                  /* spr_add: 1 回に使う枠の数(G_PAIR は 2) */
 u8 spr_bx, spr_bp, spr_bg, spr_bcs, spr_bmask;   /* spr_add への受け渡し */
 u8 spr_voff;                         /* プレイエリアの縦スクロール(R#23)。Y に足す */
 
@@ -255,42 +254,33 @@ void spr_begin(void) {
 void spr_add(u8 yy) __naked {
     (void)yy;
     __asm
-        ld   c, a                  ; C = Y
+        ld   c, a                  ; C = Y(2 つの帯を通して保つ)
         ld   a, (_spr_bmask)
         rra
         jr   nc, 00001$
         push af
-        ld   b, #0
+        xor  a
         call 00010$                ; 上の帯
         pop  af
     00001$:
         rra
         ret  nc
-        ld   b, #1                 ; 下の帯(そのまま下へ)
-    00010$:                        ; B = 帯、C = Y
+        ld   a, #8                 ; 下の帯(そのまま下へ)
+    00010$:                        ; A = 帯 * 8、C = Y。★B, D, E, HL を使う(D - E = 帯 * 8)
+        ld   b, a
         ld   a, (_spr_bg)
-        cp   #3                    ; G_PAIR: 2 枠
-        ld   a, #1
-        jr   nz, 00019$
-        inc  a
-    00019$:
-        ld   (_spr_step), a
-        ld   a, (_spr_bg)
-        ld   e, a
-        ld   d, #0                 ; DE = グループ
-        ld   a, b
+        ld   e, a                  ; E = グループ
+        add  a, b
+        ld   d, a                  ; D = 帯 * 8 + グループ
         add  a, a
         add  a, a
-        add  a, a
-        add  a, e
+        ld   hl, #_spr_win
+        add  a, l
         ld   l, a
-        ld   h, #0                 ; HL = 帯 * 8 + グループ
-        push hl
+        adc  a, h
+        sub  l
+        ld   h, a
         ; ---- 窓(上の spr_win): 先頭から置く数が残っていれば置く、飛ばす数が残っていれば置かない
-        add  hl, hl
-        add  hl, hl
-        ld   de, #_spr_win
-        add  hl, de
         inc  (hl)                  ; 置こうとした数
         inc  hl
         inc  hl
@@ -301,98 +291,115 @@ void spr_add(u8 yy) __naked {
         jr   00032$
     00031$:
         inc  hl
-        ld   a, (hl)               ; 飛ばす数
-        or   a
+        or   (hl)                  ; 飛ばす数
         jr   z, 00032$
         dec  (hl)
         jp   00090$                ; 窓の外: 今回は置かない(数えるのは溢れと同じ)
     00032$:
-        pop  hl
-        push hl
-        ld   a, (_spr_bg)
-        ld   e, a
-        ld   d, #0                 ; DE = グループ
-        ld   iy, #_spr_gcount
-        add  iy, de
-        ld   de, #_spr_cnt
-        add  hl, de
-        ld   a, 0 (iy)             ; 枠の数
-        cp   (hl)
-        jp   z, 00090$             ; 満杯
-        jp   c, 00090$
-        ld   a, (_spr_step)
-        add  a, (hl)
+        ld   hl, #_spr_gcount
+        ld   a, e
+        add  a, l
+        ld   l, a
+        adc  a, h
+        sub  l
+        ld   h, a
+        ld   b, (hl)               ; B = 枠の数
+        ld   hl, #_spr_cnt
+        ld   a, d
+        add  a, l
+        ld   l, a
+        adc  a, h
+        sub  l
+        ld   h, a
+        ld   a, (hl)
+        cp   b
+        jp   nc, 00090$            ; 満杯
+        ld   b, #1                 ; B = 1 回に使う枠の数(G_PAIR は 2)
+        ld   a, e
+        cp   #3
+        jr   nz, 00019$
+        inc  b
+    00019$:
+        ld   a, (hl)
+        add  a, b
         ld   (hl), a               ; 使用数 += 枠の数
-        pop  hl
-        ld   de, #_spr_pos
-        add  hl, de
-        ld   e, (hl)               ; E = 枠
-        ld   a, (_spr_step)
-        add  a, e
-        ld   d, a                  ; D = 次の枠
-        ld   a, (_spr_bg)
+        ld   hl, #_spr_pos
+        ld   a, d
+        add  a, l
+        ld   l, a
+        adc  a, h
+        sub  l
+        ld   h, a
+        ld   a, (hl)               ; 枠
+        push af
+        add  a, b
+        ld   b, a                  ; B = 次の枠
         push hl
         ld   hl, #_spr_gend
+        ld   a, e
         add  a, l
         ld   l, a
-        jr   nc, 00011$
-        inc  h
-    00011$:
-        ld   a, d
+        adc  a, h
+        sub  l
+        ld   h, a
+        ld   a, b
         cp   (hl)
         jr   nz, 00012$
-        ld   a, (_spr_bg)
         ld   hl, #_spr_gfirst
+        ld   a, e
         add  a, l
         ld   l, a
-        jr   nc, 00013$
-        inc  h
-    00013$:
-        ld   a, (hl)
+        adc  a, h
+        sub  l
+        ld   h, a
+        ld   a, (hl)               ; 折り返し
     00012$:
         pop  hl
-        ld   (hl), a               ; 次の枠(折り返し)
+        ld   (hl), a               ; 次の枠
         ld   hl, #_spr_last
-        ld   a, b
-        add  a, l
-        ld   l, a
-        jr   nc, 00014$
-        inc  h
-    00014$:
         ld   a, d
+        sub  e
+        jr   z, 00014$
+        inc  hl
+    00014$:
+        ld   a, b
         cp   (hl)
         jr   c, 00015$
         ld   (hl), a               ; 使っている枠の最大 + 1
     00015$:
-        ld   a, (_spr_bg)
+        pop  af
+        ld   b, a                  ; B = 枠
+        ld   a, e
         cp   #G_MISC_N             ; G_MISC
         jr   nz, 00016$
-        ld   a, b
-        add  a, a
-        add  a, a
-        add  a, e
+        ld   a, d
+        sub  e
+        rrca                       ; 帯 * 4
+        add  a, b
         sub  #MISC_FIRST
         ld   hl, #_spr_misc_cs
         add  a, l
         ld   l, a
-        jr   nc, 00017$
-        inc  h
-    00017$:
+        adc  a, h
+        sub  l
+        ld   h, a
         ld   a, (_spr_bcs)
         ld   (hl), a
     00016$:
-        ld   l, e
-        ld   h, #0
-        add  hl, hl
-        add  hl, hl                ; 枠 * 4
         ld   a, b
-        or   a
+        add  a, a
+        add  a, a                  ; 枠 * 4(< 128)
+        ld   l, a
+        ld   a, d
+        sub  e
         jr   z, 00018$
-        ld   de, #128
-        add  hl, de
+        set  7, l                  ; 下の帯は + 128
     00018$:
+        ld   h, #0
+        push de
         ld   de, #_spr_shadow
         add  hl, de
+        pop  de
         ld   (hl), c               ; Y
         inc  hl
         ld   a, (_spr_bx)
@@ -400,9 +407,9 @@ void spr_add(u8 yy) __naked {
         inc  hl
         ld   a, (_spr_bp)
         ld   (hl), a               ; パターン
-        ld   a, (_spr_step)
-        dec  a
-        ret  z
+        ld   a, e
+        cp   #3
+        ret  nz
         inc  hl                    ; G_PAIR: 次の枠に上の層(パターン + 1)
         inc  hl
         ld   (hl), c
@@ -415,7 +422,6 @@ void spr_add(u8 yy) __naked {
         ld   (hl), a
         ret
     00090$:
-        pop  hl
         ld   hl, #_g_spr_dropped
         inc  (hl)
         ret
@@ -428,37 +434,13 @@ static u8 table_y(s16 y, u8 voff) {
 }
 
 /* ★asm(C では 1 枚約 1 ライン。敵・弾・爆発で 1 フレームに 50 回呼ぶ)。sdcccall(1): HL = x、DE = y、
-   スタックに pat / group / cs(呼ばれた側が 3 バイト下ろす) */
+   スタックに pat / group / cs(呼ばれた側が 3 バイト下ろす)。
+   同じ絵を何枚も置くときは spr_sel で絵・グループ・色の組を決めてから spr_putf(固定小数点の位置)で置く(引数を積まない) */
 void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs) __naked {
     (void)x; (void)y; (void)pat; (void)group; (void)cs;
     __asm
-        ld   a, h
-        or   a
-        jr   nz, 00090$            ; x が 0..255 の外
-        ld   a, l
-        ld   (_spr_bx), a
-        ld   hl, #16
-        add  hl, de                ; HL = y + 16(y > -16 かつ y < SPR_LIMIT_Y - 8 = 180)
-        ld   a, h
-        or   a
-        jr   nz, 00090$
-        ld   a, l
-        or   a
-        jr   z, 00090$
-        cp   #(SPR_LIMIT_Y - 8 + 16)
-        jr   nc, 00090$
-        ld   b, #0                 ; 帯: y < SPR_SPLIT → 上、y > SPR_SPLIT - 16 → 下
-        cp   #(SPR_SPLIT + 16)
-        jr   nc, 00001$
-        inc  b
-    00001$:
-        cp   #(SPR_SPLIT + 1)
-        jr   c, 00002$
-        set  1, b
-    00002$:
-        ld   a, b
-        ld   (_spr_bmask), a
-        ld   hl, #2
+        push hl
+        ld   hl, #4
         add  hl, sp                ; pat / group / cs
         ld   a, (hl)
         add  a, a
@@ -470,19 +452,82 @@ void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs) __naked {
         inc  hl
         ld   a, (hl)
         ld   (_spr_bcs), a
-        ld   a, (_spr_voff)        ; 表の Y = y - 1 + R#23(216 は 217 に)
-        add  a, e
-        dec  a
-        cp   #216
-        jr   nz, 00003$
-        inc  a
-    00003$:
-        call _spr_add
-    00090$:
+        pop  hl
+        call _spr_put_xy
         pop  hl
         pop  af
         inc  sp
         jp   (hl)
+    __endasm;
+}
+
+void spr_sel(u8 pat, u8 group, u8 cs) { spr_bp = (u8)(pat << 2); spr_bg = group; spr_bcs = cs; }
+
+/* 固定小数点(1/16 ドット)の中心 → 左上 = PX(v) - 8 で spr_put_xy へ。HL = x、DE = y */
+void spr_putf(s16 xf, s16 yf) __naked {
+    (void)xf; (void)yf;
+    __asm
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        ld   bc, #-8
+        add  hl, bc
+        ex   de, hl
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        sra  h
+        rr   l
+        add  hl, bc
+        ex   de, hl
+        jp   _spr_put_xy
+    __endasm;
+}
+
+/* HL = x、DE = y(左上)。絵・グループ・色の組は spr_bp / spr_bg / spr_bcs */
+void spr_put_xy(void) __naked {
+    __asm
+        ld   a, h
+        or   a
+        ret  nz                    ; x が 0..255 の外
+        ld   a, l
+        ld   (_spr_bx), a
+        ld   hl, #16
+        add  hl, de                ; HL = y + 16(y > -16 かつ y < SPR_LIMIT_Y - 8 = 180)
+        ld   a, h
+        or   a
+        ret  nz
+        ld   a, l
+        or   a
+        ret  z
+        cp   #(SPR_LIMIT_Y - 8 + 16)
+        ret  nc
+        ld   b, #0                 ; 帯: y < SPR_SPLIT → 上、y > SPR_SPLIT - 16 → 下
+        cp   #(SPR_SPLIT + 16)
+        jr   nc, 00001$
+        inc  b
+    00001$:
+        cp   #(SPR_SPLIT + 1)
+        jr   c, 00002$
+        set  1, b
+    00002$:
+        ld   a, b
+        ld   (_spr_bmask), a
+        ld   a, (_spr_voff)        ; 表の Y = y - 1 + R#23(216 は 217 に)
+        add  a, e
+        dec  a
+        cp   #216
+        jp   nz, _spr_add
+        inc  a
+        jp   _spr_add
     __endasm;
 }
 

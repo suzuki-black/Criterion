@@ -803,10 +803,13 @@ void enemy_draw(void) {
                             it->kind ? PAT_SHARD : ((it->t & 8) ? PAT_QUANTA2 : PAT_QUANTA1),
                             G_MISC, it->kind ? CS_SHARD : CS_QUANTA);
     }
-    for (i = 0; i < MAX_ESHOT; i++) {
-        const Bullet *b = &g_eshot[i];
-        if (b->on) spr_put(PX(b->x) - 8, PX(b->y) - 8, PAT_EBUL, G_EBUL, 0);
-        if (!(i & 3)) pcmx_service();
+    {
+        const Bullet *b = g_eshot;
+        spr_sel(PAT_EBUL, G_EBUL, 0);
+        for (i = 0; i < MAX_ESHOT; i++, b++) {
+            if (b->on) spr_putf(b->x, b->y);
+            if (!(i & 3)) pcmx_service();
+        }
     }
     for (i = 0; i < MAX_ENEMY; i++) {
         const Enemy *e = &g_enemy[i];
@@ -820,9 +823,12 @@ void enemy_draw(void) {
         if ((i & 3) == 3) pcmx_service();
     }
     if (g_zako_n) zako_draw();
-    for (i = 0; i < MAX_FX; i++) {
-        const Fx *f = &g_fx[i];
-        if (f->t) spr_put(PX(f->x) - 8, PX(f->y) - 8,
-                          f->t > 8 ? PAT_EXPL1 : f->t > 4 ? PAT_EXPL2 : PAT_EXPL3, G_MISC, CS_EXPL);
+    {
+        const Fx *f = g_fx;
+        for (i = 0; i < MAX_FX; i++, f++) {
+            if (!f->t) continue;
+            spr_sel(f->t > 8 ? PAT_EXPL1 : f->t > 4 ? PAT_EXPL2 : PAT_EXPL3, G_MISC, CS_EXPL);
+            spr_putf(f->x, f->y);
+        }
     }
 }

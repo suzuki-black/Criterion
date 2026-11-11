@@ -39,6 +39,9 @@ extern u8 g_spr_layout;
 void spr_begin(void);
 void spr_put(s16 x, s16 y, u8 pat, u8 group, u8 cs);       /* 左上(ドット)。cs は G_MISC のときだけ使う。
                                                               G_PAIR は pat(下の層)と pat + 1(上の層、CC)を隣の枠に置く */
+void spr_sel(u8 pat, u8 group, u8 cs);                    /* spr_putf で置く絵・グループ・色の組 */
+void spr_putf(s16 xf, s16 yf);                             /* 中心(1/16 ドット)で置く = spr_put(PX(x) - 8, PX(y) - 8, ...) */
+void spr_put_xy(void);
 void spr_put_hud(s16 x, s16 y, u8 pat, u8 cs);             /* HUD 帯(1 枚、色は G_MISC の組) */
 void spr_end(void);
 
