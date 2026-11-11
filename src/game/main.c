@@ -232,6 +232,7 @@ void main(void) {
     ras_init();
     ras_set_isr(RAS_ISR_DIRECT);
     code0_load();                    /* ここから先でページ 0 のコード(ROTOR / GHOST / 選曲と効果音)を呼べる */
+    spr_sat_reset();
     bk_load();                       /* ここから先で第 2 バンク(bank.h)を呼べる */
     rom_to_vram(ASSET_SPR_PAT_BANK, ASSET_SPR_PAT_OFF, 1, 0xF800, ASSET_SPR_PAT_LEN);   /* スプライトの絵(64 パターン。63 番 = 空白)。
                                                                          ★ROM に置く(常駐に置くと 1.3KB。M7 の後) */

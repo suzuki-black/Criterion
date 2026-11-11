@@ -132,7 +132,10 @@ $(BUILD)/lib/%.rel: | $(BUILD)
 # 本体の割込み処理は直接方式・PCM 方式 B だけ(RAS_GAME。BIOS 方式と刻み方式は M0 の検証 ROM だけが持つ。常駐の空き)
 $(BUILD)/g_raster.rel: src/core/raster.c $(HDRS) config.mk Makefile | $(BUILD)
 	sdcc -m$(strip $(TARGET)) -c $(OPT) $(DEFS) -DRAS_GAME $(INC) $< -o $@
-GAME_REST  := $(filter-out $(BUILD)/raster.rel $(GAME_FIRST) $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel,$(CORE))   # pcmb(方式 B の試作)・pcmc(方式 A/C の制御)は M0 の検証用
+# ★バンクからも割込みからも ROM を読む間にも呼ばないもの(フレームの待ち・入力)はページ 1 の外(GAME_LATE)へ。2026-11-11 にページ 1 が
+#   あふれ、第 4 バンクから呼ぶ stage_restore が 0x8000 をまたいだ(後半が第 4 バンクのコードに替わって暴走した)
+GAME_LATE  := $(BUILD)/frame.rel $(BUILD)/input.rel
+GAME_REST  := $(filter-out $(BUILD)/raster.rel $(GAME_FIRST) $(GAME_LATE) $(BUILD)/pcmb.rel $(BUILD)/pcmc.rel,$(CORE))   # pcmb(方式 B の試作)・pcmc(方式 A/C の制御)は M0 の検証用
 # ★第 2 バンク(src/bank、ページ 2 のセグメント 6)から呼べるのはページ 1 のものだけなので、下回り(GAME_REST)と
 #   敵・自機をページ 1 へ寄せる(Makefile の検査と、第 2 バンクのリンクが 0x8000 以上の記号を見ないことで守る)
 GAME_P1    := $(BUILD)/g_enemy.rel $(BUILD)/g_restore.rel   # restore: 第 4 バンクの登る Pawn から呼ぶ
@@ -296,9 +299,13 @@ $(BUILD)/bank.ihx: $(BUILD)/bkhdr.rel $(BK_RELS) $(BUILD)/resident_bk.rel tools/
 $(BUILD)/bank.bin: $(BUILD)/bank.ihx tools/gen_ovl.py
 	python3 tools/gen_ovl.py bin $< $(<:.ihx=.map) $@ $(BK_BASE) $(BK_DATA) $(BK_DATA) $(BK_DEND)
 
-$(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/rom.rel $(BUILD)/bkstubs.rel $(GAME_LIB) $(GAME_RELS) $(GAME_CODE0_CORE) $(BUILD)/ovl_entries.rel
+# ページ 1 に置くもの(GAME_FIRST・ライブラリ・GAME_REST・GAME_P1)の終わりの目印。★関数の先頭の番地だけを見る検査では、
+# 0x8000 をまたぐ関数を見逃した(stage_restore)。この目印が 0x8000 以下であることを下で確かめる
+$(BUILD)/p1end.s: Makefile | $(BUILD)
+	printf '\t.module p1end\n\t.area _CODE\n_p1_end::\n' > $@
+$(BUILD)/game.ihx: $(BUILD)/p1end.rel $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/rom.rel $(BUILD)/bkstubs.rel $(GAME_LIB) $(GAME_RELS) $(GAME_CODE0_CORE) $(BUILD)/ovl_entries.rel
 	sdcc -m$(strip $(TARGET)) --no-std-crt0 --code-loc $(strip $(CODELOC)) --data-loc $(strip $(DATALOC)) \
-	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_LIB) $(GAME_REST) $(GAME_P1) $(GAME_MID) $(GAME_CODE0_CORE) \
+	    -Wl-b_CODE0=0x0100 $(BUILD)/crt0rom.rel $(GAME_FIRST) $(GAME_LIB) $(GAME_REST) $(GAME_P1) $(BUILD)/p1end.rel $(GAME_LATE) $(GAME_MID) $(GAME_CODE0_CORE) \
 	    $(BUILD)/ovl_entries.rel -o $@
 	@if grep -q "Undefined Global" $(@:.ihx=.map); then \
 	    grep -A3 "Undefined Global" $(@:.ihx=.map); echo "ERROR: 未定義シンボル"; rm -f $@; exit 1; fi
@@ -307,6 +314,9 @@ $(BUILD)/game.ihx: $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_raster.rel $(BUILD)/r
 	@E=$$(awk '$$2=="s__DATA"{s=$$3} $$2=="l__DATA"{l=$$3} $$2=="s__INITIALIZED"{si=$$3} $$2=="l__INITIALIZED"{li=$$3} \
 	    END{e=s+l; if (si+li>e) e=si+li; printf "%d", e}' $(@:.ihx=.noi)); \
 	    if [ $$E -gt $$(($(OVL_DBEG))) ]; then echo "ERROR: _DATA/_INITIALIZED の末尾 $$E がオーバレイの変数 $(OVL_DBEG) に入った(ovl.h)"; rm -f $@; exit 1; fi
+	@A=$$(awk '$$2=="_p1_end"{print $$3}' $(@:.ihx=.noi)); \
+	    if [ -z "$$A" ] || [ $$(printf '%d' $$A) -gt 32768 ]; then \
+	        echo "ERROR: ページ 1 に置くものの終わり _p1_end=$$A が 0x8000 を越えた(最後の関数がページ 2 にはみ出す。バンクを出している間に壊れる)"; rm -f $@; exit 1; fi
 	@for S in _ras_isr_direct _ras_apply_next _ras_vblank _rom_copy _snd_frame _snd_end _bk_call _infx_draw; do \
 	    A=$$(awk -v n=$$S '$$2==n{print $$3}' $(@:.ihx=.noi)); \
 	    if [ -z "$$A" ] || [ $$(printf '%d' $$A) -ge 32768 ]; then \

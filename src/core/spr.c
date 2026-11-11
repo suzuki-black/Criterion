@@ -78,6 +78,11 @@ u8 spr_bx, spr_bp, spr_bg, spr_bcs, spr_bmask;   /* spr_add への受け渡し *
 u8 spr_voff;                         /* プレイエリアの縦スクロール(R#23)。Y に足す */
 
 static u8 misc_cache[2][2][4];       /* その表の G_MISC の 4 枠に今書いてある色の組 */
+/* その表の枠に今書いてある Y(0xFF = 分からない。sat_send)。★常駐の変数の領域に空きが無いので、ページ 0 の RAM の 0x3C80..0x3CFF
+   (ROTOR の写し先 0x3C00..0x3C7F と PCM の置き場 0x3D00.. の間)に置く。spr_init はページ 0 を RAM にする前に呼ばれるので、
+   初期化は spr_sat_reset(main.c がページ 0 の用意の後に呼ぶ) */
+#define SAT_Y ((u8 *)0xEC80)         /* [帯][表][枠] = SAT_Y + (帯 * 2 + 表) * SLOTS */
+void spr_sat_reset(void) { u8 *p = SAT_Y, i = 2 * 2 * SLOTS; do *p++ = 0xFF; while (--i); }
 static u8 rot_g[G_COUNT];            /* グループごとの回し始め(毎フレーム +1、数で折り返す) */
 static u8 buf;                       /* 次に書く側(0/1) */
 u8 g_spr_dropped;
@@ -499,12 +504,136 @@ static void write_hud(void) {
     hud_on = 0;
 }
 
+/* 帯の属性表を送る(asm)。★隠した枠(Y = 隠す Y)で、その表にも同じ Y が書いてあるものは送らない(番地を貼り直して飛ばす)。
+   4 面のデモの空中戦で、送る 42 枠のうち使っているのは 18 枠で、毎フレーム 1 回 8.6us の I/O を約 86 回むだにしていた。
+   SAT_Y はその表の枠ごとに最後に書いた Y(spr_sat_reset で 0xFF)。属性表の VRAM は sat_send と spr_init のほかでは書かない。
+   入口: 番地は枠 0 に貼ってある(R#14 も)。ss_src = 写し、ss_y = SAT_Y の表の行、ss_n = 枠の数、ss_lo = 枠 0 の番地の下 16 ビット。
+   枠の数が SLOTS 未満なら、その枠に 216(表の終わり)を書く(同じなら書かない)。PCM の送出口は 4 枠書くごと */
+static const u8 *ss_src;
+static u8 *ss_y;
+static u8 ss_n, ss_hide;
+static u16 ss_lo;
+static void sat_send(void) __naked {
+    __asm
+        ld   c, #4                 ; C = 送出口までの枠の数
+        ld   hl, (_ss_src)
+        ld   de, (_ss_y)
+        ld   a, (_ss_n)
+        or   a
+        jr   z, 00020$
+        ld   b, a                  ; B = 残りの枠
+    00001$:                        ; 番地は今の枠を指している
+        ld   a, (_ss_hide)
+        cp   (hl)                  ; 今は隠している?
+        jr   nz, 00003$
+        ld   a, (de)
+        cp   (hl)                  ; 表にも同じ Y?
+        jr   z, 00010$
+    00003$:
+        ld   a, (hl)
+        ld   (de), a
+        out  (0x98), a
+        inc  hl
+        ld   a, (hl)
+        out  (0x98), a
+        inc  hl
+        ld   a, (hl)
+        out  (0x98), a
+        inc  hl
+        ld   a, (hl)
+        out  (0x98), a
+        inc  hl
+        inc  de
+        dec  c
+        call z, 00040$
+        djnz 00001$
+    00020$:                        ; 終わり(番地は合っている)
+        ld   a, (_ss_n)
+        cp   #SLOTS
+        ret  nc
+        ld   a, (de)
+        cp   #216
+        ret  z
+        ld   a, #216
+        ld   (de), a
+        out  (0x98), a
+        ret
+    00010$:                        ; 飛ばしている間(番地はずれたまま)
+        inc  hl
+        inc  hl
+        inc  hl
+        inc  hl
+        inc  de
+        dec  b
+        jr   z, 00021$
+        ld   a, (_ss_hide)
+        cp   (hl)
+        jr   nz, 00012$
+        ld   a, (de)
+        cp   (hl)
+        jr   z, 00010$
+    00012$:
+        call 00030$
+        jr   00003$
+    00021$:                        ; 飛ばしたまま終わった
+        ld   a, (_ss_n)
+        cp   #SLOTS
+        ret  nc
+        ld   a, (de)
+        cp   #216
+        ret  z
+        ld   a, #216
+        ld   (de), a
+        call 00030$
+        ld   a, #216
+        out  (0x98), a
+        ret
+    00030$:                        ; 番地を ss_lo + (ss_n - B) * 4 へ貼り直す(R#14 はそのまま)
+        push hl
+        push de
+        ld   a, (_ss_n)
+        sub  b
+        ld   l, a
+        ld   h, #0
+        add  hl, hl
+        add  hl, hl
+        ld   de, (_ss_lo)
+        add  hl, de
+        di
+        ld   a, l
+        out  (0x99), a
+        ld   a, h
+        and  #0x3F
+        or   #0x40
+        out  (0x99), a
+        ei
+        pop  de
+        pop  hl
+        ret
+    00040$:                        ; PCM の送出口(4 枠ごと)
+        ld   c, #4
+        push hl
+        push de
+        push bc
+        ld   hl, (_g_vdp_wait_hook)
+        ld   a, h
+        or   l
+        call nz, 00031$
+        pop  bc
+        pop  de
+        pop  hl
+        ret
+    00031$:
+        jp   (hl)
+    __endasm;
+}
+
 static void write_band(u8 b) {
     u16 sa = sat_addr[b][buf];
-    u8 n = spr_last[b], i;
+    u8 i;
     vdp_write_addr17(1, sa);
-    if (n) vdp_out_block((u8)(n * 4), &spr_shadow[b ? SLOTS * 4 : 0]);
-    if (n < SLOTS) VDP_DAT = 216;
+    ss_src = &spr_shadow[b ? SLOTS * 4 : 0]; ss_y = SAT_Y + (u8)((u8)(b * 2 + buf) * SLOTS); ss_n = spr_last[b]; ss_hide = hide_y(); ss_lo = sa;
+    sat_send();
     /* G_MISC の色: 組が変わった枠だけ。★1 フレームに 1 枠まで(溢れて窓がずれると 4 枠とも替わることがあり、1 枠 ≒ 170us。
        PCM の鳴る間に重なって遅れた)。残りは次のフレームに書く(ちらつくものが一瞬違う色になるだけ) */
     for (i = 0; i < 4; i++) {
