@@ -48,7 +48,7 @@ static void fps_frame(u8 bad) {
     u16 j = *(volatile u16 *)0xFC9E;
     if (!bad) {
         u16 gap = (u16)(j - fps_lastgood);
-        if (gap > 1 && gap - 1 > fps_max) fps_max = gap > 100 ? 99 : (u8)(gap - 1);
+        if (gap > 1 && gap <= 100 && gap - 1 > fps_max) fps_max = (u8)(gap - 1);   /* ★100 を超える空きは空中戦の前(出撃の演出)からの間で、止まりではない */
         fps_lastgood = j;
         fps_good++;
     }
