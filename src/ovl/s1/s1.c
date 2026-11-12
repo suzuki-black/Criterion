@@ -32,7 +32,9 @@ static void enter(u8 sec) {
     default: enemy_waves(WAVES_NONE); break;
     }
     if (sec == SEC_MID) boss_start(BOSS_LEGION);
-    if (sec == SEC_CITY2) boss_prepare(BOSS_PLUMB);           /* ROTOR で下げ振りの絵を作り始める */
+    /* ROTOR で下げ振りの絵を作り始める。★試験は都市後半が 4 秒しかなく、作り終える前にボスに入って、登場の間ずっと 200 ラインまで
+       作り続けた(試験 1 の PLUMB が 51.9fps)。試験は降下から(開始表示の帯(ページ 2 の 168..187 行)は空中戦の間に消える) */
+    if (sec == (g_calib ? SEC_DESCENT : SEC_CITY2)) boss_prepare(BOSS_PLUMB);
     if (sec == SEC_BOSS) boss_start(BOSS_PLUMB);
     if (sec == SEC_ASCENT) { stage_set_upper(UP_SKY); g_scroll_speed = 8; pawn_reset(); }
     if (sec == SEC_AIR2) {

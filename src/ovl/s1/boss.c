@@ -479,8 +479,9 @@ extern u16 g_frame_t0;
 void boss_vram(void) {
     {   /* ★重いフレームは次へ(強化を積んだ都市後半で遅れが続いた)。PLUMB は絵ができるまで降りてこないので、登場の間は
            締め切りを 200 ラインまで緩める(★2 フレームに 1 回締め切りを無視して作ると、ボスの声の PCM と重なって 3 フレーム続けて
-           遅れた。重いフレームが続いても固まらないよう、plumb_update は 4 秒で待つのをやめる)(★間に合わない分を boss_start で作り切ると 0.25 秒止まった) */
-        if (!gen_done && (u16)(sys_timer() - g_frame_t0) <= (g_boss_state == BS_ENTER ? 200u * 16u : 150u * 16u)) boss_vram_gen();
+           遅れた。重いフレームが続いても固まらないよう、plumb_update は 4 秒で待つのをやめる)(★間に合わない分を boss_start で作り切ると 0.25 秒止まった)。
+           ★登場の前は 2 フレームに 1 回(244 段なので都市後半・試験の降下と都市で足りる。毎フレーム作ると試験の降下が 50fps になった) */
+        if (!gen_done && (g_boss_state == BS_ENTER || (g_frame & 1)) && (u16)(sys_timer() - g_frame_t0) <= (g_boss_state == BS_ENTER ? 200u * 16u : 150u * 16u)) boss_vram_gen();
     }
     if (kind != BOSS_PLUMB || !gen_done) { gq_pump(0); return; }   /* 絵ができるまでは写さない */
     {   /* 測定ビーム: 段が替わったら描く。★PLUMB を写す偶数フレームを避け、残りが少なければ

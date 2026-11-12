@@ -34,7 +34,9 @@ static void fz_load(void) {
 
 /* fz_buf[fz_pos] から記録を書く(asm)。戻り値 0 = 時間切れ、0xFE = 塊の終わり、0xFF = 段の終わり(fz_pos はその印を指す)。
    VRAM の番地 = リングの半分(x の 256 の位)<< 15 | 行 << 7 | バイトの位置(R#14 = 番地 >> 14)。リングの 256 / 512 の継ぎ目で 2 つに分ける。
-   時刻を見る(と PCM の送出口を呼ぶ)のは 2 記録に 1 回(s6boss.c の hg_run と同じ作り) */
+   時刻を見る(と PCM の送出口を呼ぶ)のは VDP への I/O 約 32 回ごと(記録 1 つ = 中身 + 番地の 4 回)で、次の記録を書き終える時刻で
+   締め切りと比べる。★前は 2 記録に 1 回(s6boss.c の hg_run と同じ作り)だったが、記録は 1 つ 127 バイトまで(約 1.1ms)あり、
+   241 ラインまで書いて m5 で遅れた。バイトだけ数えると、短い記録が続く所で番地の I/O の分だけ見る間隔が 1.6ms 空いた */
 static u8 fz_run(void) __naked {
     __asm
         ld   a, (_fz_pos)
@@ -42,21 +44,29 @@ static u8 fz_run(void) __naked {
         ld   d, #0
         ld   hl, (_fz_buf)
         add  hl, de
-        ld   a, #1
-        ld   (_fz_k), a
         ld   a, #0xFF
+        ld   (_fz_k), a            ; 最初の記録で必ず時刻を見る
         ld   (_fz_r14), a          ; R#14 はほかの書き込みが替えるので、呼ぶたびに覚え直す
     00010$:
         ld   a, (hl)
         cp   #0xFE
         jp   nc, 00090$            ; 塊・段の終わり
+        inc  hl
+        inc  hl
+        ld   a, (hl)               ; 長さ
+        dec  hl
+        dec  hl
+        and  #0x7F
+        add  a, #4
+        ld   c, a                  ; C = この記録の I/O の数(中身 + 番地の 4 回)
         ld   a, (_fz_k)
-        dec  a
-        ld   (_fz_k), a
-        jr   nz, 00020$
-        ld   a, #2
-        ld   (_fz_k), a
+        add  a, c
+        jr   c, 00015$
+        cp   #32
+        jr   c, 00019$             ; 前に時刻を見てから I/O 32 回(約 0.28ms)未満
+    00015$:
         push hl
+        push bc
         ld   hl, (_g_vdp_wait_hook)
         ld   a, h
         or   l
@@ -65,14 +75,22 @@ static u8 fz_run(void) __naked {
         ld   hl, (_g_frame_t0)
         ex   de, hl
         or   a
-        sbc  hl, de
+        sbc  hl, de                ; HL = フレームの頭からの時間
+        pop  bc
+        ld   b, #0
+        add  hl, bc
+        add  hl, bc                ; + この記録を書く時間(I/O 1 回 8.6us ≒ 2.2 カウント)
         ld   de, (_fz_budget)
         or   a
         sbc  hl, de
         pop  hl
-        jr   c, 00020$
-        xor  a                     ; 時間切れ
+        jr   c, 00018$
+        xor  a                     ; 時間切れ(この記録は次のフレームに)
         jp   00090$
+    00018$:
+        xor  a
+    00019$:
+        ld   (_fz_k), a
     00020$:
         ld   a, (_fz_sy0)
         add  a, (hl)
@@ -217,7 +235,11 @@ static u8 fz_write(void) {
     u16 t = sys_timer();                                      /* ★使い切る書き込みの時間は「重かった」に数えない(g_elastic) */
     u8 r;
     for (;;) {
-        if (!fz_ld) fz_load();
+        if (!fz_ld) {                                         /* ★塊を読む(256 バイト、約 0.4ms)前にも締め切りを見る。見ずに読んで
+                                                                 241 ラインまで書き、m5 で 1 フレーム遅れた */
+            if ((u16)(sys_timer() - g_frame_t0) > (u16)(fz_budget - 8u * 16u)) { r = 0; break; }
+            fz_load();
+        }
         r = fz_run();
         if (r == 0xFF) {
             if (++fz_pos == 0) { fz_blk++; fz_ld = 0; }       /* 印が塊の最後のバイトだった */
