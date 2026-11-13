@@ -158,8 +158,7 @@ engine sideways.
 - Development and automated testing are done in [openMSX](https://openmsx.org/), with a machine built from a
   dumped turboR BIOS. On a C-BIOS machine the line interrupts the game runs on never fire.
 - **Played on a real FS-A1ST** with the ROM loaded from an ESERAMair (a Wi-Fi RAM cartridge).
-  - It runs.
-  - Real hardware looks and sounds different from openMSX in several places; those are being worked through.
+  - It plays from the title through the ending into the second loop.
   - openMSX does not match a real R800's speed exactly, so the timing margins measured there are estimates.
   - The FS-A1GT has not been tried.
 
@@ -224,10 +223,7 @@ docs/          design spec and development notes
 ### Scope & honest positioning
 - **The point is the turboR spectacle, not balance.** Each stage exists to show one thing the R800 and the
   V9958 can do. The only promise on difficulty is that one loop can be cleared.
-- **It is still in development.**
-  - Some effects are simpler than the design spec (see the differences note).
-  - Not every track has been checked by ear yet.
-  - Real-hardware differences are still being fixed.
+- **It is still in development.** Some effects are simpler than the design spec (see the differences note).
 - The aim is to get a little closer to the feel of late-1980s MSX shooters on a machine that came after them.
   It is not meant to compete with them.
 
@@ -368,7 +364,7 @@ uses no names, characters, graphics, music or sound from other games.
 - 開発と自動テストは [openMSX](https://openmsx.org/) で、**実機 BIOS を吸い出した機種定義**を使って行っています。
   C-BIOS の機械では、ゲームが頼っている走査線割込みが発火しません。
 - **実機の FS-A1ST で遊べることを確かめています。** ROM は ESERAMair（Wi-Fi 付きの RAM カートリッジ）から載せました。
-  - 画面や音が openMSX と違うところがいくつかあり、順に直しています。
+  - タイトルからエンディング、2 周目まで遊べます。
   - openMSX の R800 の速さは実機と完全には一致しないので、openMSX で測った処理の余裕は目安です。
   - FS-A1GT では試していません。
 
@@ -430,10 +426,7 @@ docs/          指示書と開発ノート
 ### 位置づけ（正直な自己評価）
 - **主題は turboR の見せ場で、バランスは二の次**です。各面は R800 と V9958 にできることを一つ見せるためにあります。
   難しさについて約束しているのは「1 周クリアできること」だけです。
-- **まだ開発中**です。
-  - 指示書より簡単にした演出があります（「指示書との差分」を参照）。
-  - すべての曲を耳で確かめ終えてはいません。
-  - 実機と openMSX の違いを直している途中です。
+- **まだ開発中**です。指示書より簡単にした演出があります（「指示書との差分」を参照）。
 - 1980 年代後半の MSX のシューティングの手触りに、後から出た機械で少しでも近づけたら、という試みです。
   それらと競うものではありません。
 
