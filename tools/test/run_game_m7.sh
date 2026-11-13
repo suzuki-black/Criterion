@@ -181,7 +181,10 @@ proc wait_end {} {
 }
 after time 30 wait_end
 TCL
-timeout 3000 openmsx -machine "$MACHINE" -carta "$ROM" -romtype ASCII8 -script "$T" >/dev/null 2>&1 || true
+# ★作者の openMSX の設定(~/.openMSX/share/settings.xml)を汚さない: 写しで起動する(openMSX は終了時に設定を保存し、
+#   音量などが次の起動へ持ち越される)。元が無ければ空の設定で起動する
+cp "$HOME/.openMSX/share/settings.xml" "$OUT/settings.xml" 2>/dev/null || printf "<!DOCTYPE settings SYSTEM 'settings.dtd'>\n<settings>\n</settings>\n" > "$OUT/settings.xml"
+timeout 3000 openmsx -setting "$OUT/settings.xml" -machine "$MACHINE" -carta "$ROM" -romtype ASCII8 -script "$T" >/dev/null 2>&1 || true
 cat "$OUT/game_m7.log"
 echo "== もたつき(check_tempo.py)"
 T_OK=0; python3 tools/test/check_tempo.py "$OUT/opll.log" > "$OUT/tempo.txt" || T_OK=1
