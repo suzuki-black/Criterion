@@ -50,6 +50,7 @@ engine sideways.
 - [Stages](#stages)
 - [Controls](#controls)
 - [Requirements](#requirements)
+- [Download](#download)
 - [Building](#building)
 - [Running](#running)
 - [Project structure](#project-structure)
@@ -162,6 +163,10 @@ engine sideways.
   - openMSX does not match a real R800's speed exactly, so the timing margins measured there are estimates.
   - The FS-A1GT has not been tried.
 
+### Download
+The ROM is on the [Releases page](https://github.com/suzuki-black/Criterion/releases/latest). The zip holds
+`Criterion [ASCII8].rom`, a 1 MB ASCII8 MegaROM image. It needs an MSX turboR (or openMSX with a turboR machine).
+
 ### Building
 Requires:
 - [SDCC](https://sdcc.sourceforge.net/) 4.6 (`sdcc -mz80` and `sdasz80`);
@@ -262,6 +267,7 @@ uses no names, characters, graphics, music or sound from other games.
 - [ステージ](#ステージ)
 - [操作](#操作)
 - [動作環境](#動作環境)
+- [ダウンロード](#ダウンロード)
 - [ビルド](#ビルド)
 - [実行](#実行)
 - [ディレクトリ構成](#ディレクトリ構成)
@@ -367,6 +373,10 @@ uses no names, characters, graphics, music or sound from other games.
   - タイトルからエンディング、2 周目まで遊べます。
   - openMSX の R800 の速さは実機と完全には一致しないので、openMSX で測った処理の余裕は目安です。
   - FS-A1GT では試していません。
+
+### ダウンロード
+ROM は [Releases のページ](https://github.com/suzuki-black/Criterion/releases/latest)にあります。zip の中身は
+1MB の ASCII8 メガROM イメージ `Criterion [ASCII8].rom` です。MSX turboR（または turboR の機種を使う openMSX）で動きます。
 
 ### ビルド
 必要なもの:
