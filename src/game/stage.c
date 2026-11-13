@@ -168,7 +168,7 @@ void stage_banner(const char *text) {
 
 /* 1 面の空中戦から(出撃の終わりに title.c が呼ぶ)。面の中身は 1 面のオーバレイを読み込んでから */
 void stage_start(void) {
-    u8 b;
+    u8 b, st = g_loop ? 1 : g_start_stage;                    /* ★面セレクトは 1 周目だけ(8 面からだと 2 周目も 8 面から始まった。実機で遊んでの指摘) */
     g_wx = bg_layer_x(2); nx_prev = g_wx;
     g_scam_q = S_AIR * 16; g_scam = S_AIR; dir = 1;
     upper_sky = UP_AIR; g_sky_t = 0; g_sec = 0; g_maplen = 0; g_roll = 0; g_boss_state = BS_NONE; g_boss_dmg = 0; g_boss_aim = -1;
@@ -177,13 +177,13 @@ void stage_start(void) {
     strip_off = 0xFFFF; col_done = 0; col_b = NBLK; jn = 0; pick_at = 0x7FFF; hs_t = 0xFF; g_ban.t = 0;
     g_col_rev = 0; redraw_n = 0; g_bands_all = 0;
     for (b = 0; b < 32; b++) g_strip_xlat[b] = b;
-    if (g_start_stage > 1) {                                  /* 面セレクト: 前の面の終わりと同じ星空から(★1 面の夕焼けの空と丘が残っていた。指摘) */
+    if (st > 1) {                                             /* 面セレクト: 前の面の終わりと同じ星空から(★1 面の夕焼けの空と丘が残っていた。指摘) */
         g_scam_q = S_AIR2 * 16; g_scam = S_AIR2;
-        upper_sky = UP_SKY; g_sky_t = g_start_stage == 2 ? 6 : 16;
+        upper_sky = UP_SKY; g_sky_t = st == 2 ? 6 : 16;
         for (b = 0; b < BLK_CONST; b++) tag[b] = TAG_NONE;
     }
     enemy_waves(WAVES_AIR);
-    ovl_request((u8)(g_start_stage > 1 ? OVL_S1 + g_start_stage - 1 : OVL_S1));   /* 隠しコンフィグの面セレクト */
+    ovl_request((u8)(st > 1 ? OVL_S1 + st - 1 : OVL_S1));   /* 隠しコンフィグの面セレクト */
 }
 
 /* ★世界の位置 g_wx は bg の位置(1/4 ドットの u16 = 16384 ドットで一周)の差分で進める。そのまま使うと 5 面の途中で
