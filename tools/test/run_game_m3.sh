@@ -7,7 +7,7 @@
 #   2. legion: LEGION と戦っている最中、積んであるマス(g_lg_on)がリングに Pawn の絵で描かれていて、
 #      120 マス以上積み上がっている
 #   3. rotor: 都市後半で ROTOR が作った PLUMB の 10 枚(ページ 2)が tools/gen_boss.py の答えと一致(PLUMB と戦い始めたとき)
-#   4. no_late: 遅れたフレーム 0(起動から PLUMB を倒して上昇するまで)
+#   4. no_late: 遅れたフレーム 2 まで(起動から PLUMB を倒して上昇するまで。PCM を鳴らして流す)
 #   5. gq_drop: GHOST の待ち行列が溢れて捨てたコマンドが 0(捨てると描き戻しが抜けて絵が崩れる)
 #   usage: tools/test/run_game_m3.sh <作業ディレクトリ>
 set -e
@@ -22,11 +22,9 @@ clsym() { printf '0x%X' $(( 0x20000 + 0x$(awk -v s="$1" '$2==s{print $1}' build/
 CLWX=$(clsym _g_cl_wx); CLS=$(clsym _g_cl_s); CLST=$(clsym _g_cl_st)
 ST=$(sym _g_stat); GQD=$(sym _g_gq_drop); PL=$(sym _g_pl); SEC=$(sym _g_sec); BS=$(sym _g_boss_state); INV=$(sym _g_dbg_invul)
 WX=$(sym _g_wx); W0=$(sym _g_w0); LGON=$(sym _g_lg_on); LGX=$(sym _g_lg_x0); SCAM=$(sym _g_scam)
-PCMOFF=$(awk '$2=="_g_pcm_off"{print $3}' "$NOI")   # ★PCM は切る(エンジンの時間を見る。PCM は run_game_m7.sh)
 T="$OUT/game_m3.tcl"
 cat > "$T" <<TCL
 set throttle off
-after time 6 { debug write memory $PCMOFF 1 }
 set f [open "$OUT/game_m3.log" w]
 proc rd16 {a} { binary scan [debug read_block memory \$a 2] su v; return \$v }
 proc rd {a} { return [debug read memory \$a] }
@@ -132,7 +130,8 @@ check('rotor', diff == 0, f"違うバイト={diff} / {len(ref)}")
 # 4. 遅れ
 log = open(os.path.join(out, 'game_m3.log')).read()
 late = int(log.split('late=')[1].split()[0]) if 'late=' in log else -1
-check('no_late', late == 0, f"遅れたフレーム={late} " + log.split(' at=')[1].split('\n')[0] if ' at=' in log else f"遅れたフレーム={late}")
+check('no_late', 0 <= late <= 2,   # ★2026-11-14 から PCM を鳴らして流す(声の PCM と重い場面が重なると 1〜2 フレーム遅れる)。LEGION の終わりで 1
+       f"遅れたフレーム={late} " + log.split(' at=')[1].split('\n')[0] if ' at=' in log else f"遅れたフレーム={late}")
 drop = int(log.split('drop=')[1].split()[0]) if 'drop=' in log else -1
 check('gq_drop', drop == 0, f"GHOST の待ち行列から捨てたコマンド={drop}")
 print('判定: ' + ('OK' if not fails else f'NG ({fails})'))

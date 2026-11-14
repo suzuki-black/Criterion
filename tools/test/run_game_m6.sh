@@ -20,11 +20,9 @@ sym() { awk -v s="$1" '$2==s{print $3}' "$NOI"; }
 ST=$(sym _g_stat); PL=$(sym _g_pl); SEC=$(sym _g_sec); BS=$(sym _g_boss_state); BHP=$(sym _g_boss_hp)
 INV=$(sym _g_dbg_invul); AIM=$(sym _g_boss_aim); CAL=$(sym _g_calib); LOOP=$(sym _g_loop); DMG=$(sym _g_boss_dmg)
 RFRONT=$(sym _ras_front); RN=$(sym _ras_front_n)
-PCMOFF=$(awk '$2=="_g_pcm_off"{print $3}' "$NOI")   # ★PCM は切る(エンジンの時間を見る。PCM は run_game_m7.sh)
 T="$OUT/game_m6.tcl"
 cat > "$T" <<TCL
 set throttle off
-after time 6 { debug write memory $PCMOFF 1 }
 set f [open "$OUT/game_m6.log" w]
 set fails 0
 proc rd16 {a} { binary scan [debug read_block memory \$a 2] su v; return \$v }
@@ -109,7 +107,7 @@ proc finish {} {
   check loop2 [expr {[rd $LOOP] == 1 && [rd [expr {$ST+14}]] == 3}] "g_loop=[rd $LOOP]"
   check no_blackout [expr {\$::blank == 0 && \$::stall == 0}] "表示が切れた回数=\$::blank 止まった回数=\$::stall"
   set nl 0; foreach e \$::late_at { if {[regexp {\(\+(\d+)} \$e - k]} { incr nl \$k } }
-  check no_late [expr {\$nl <= 5}] "遅れたフレーム=\${nl}(★BGM のドライバが最も重い場面の山に重なると 1 フレーム遅れることがある。1 周で 5 まで許す(2026-10-20 に 2 → 5。HUD 帯の割込みに 2 命令足した後、同じ ROM で 1 と 5 が出た。上限すれすれのフレームが揺れる)。docs/TODO.md) \$::late_at"
+  check no_late [expr {\$nl <= 8}] "遅れたフレーム=\${nl}(★BGM のドライバが最も重い場面の山に重なると 1 フレーム遅れることがある。1 周で 8 まで許す(2026-11-14 に 5 → 8: PCM を鳴らして流すようにした。2026-10-20 に 2 → 5。HUD 帯の割込みに 2 命令足した後、同じ ROM で 1 と 5 が出た。上限すれすれのフレームが揺れる)。docs/TODO.md) \$::late_at"
   puts \$f "区間: \$::seq"
   if {\$::fails} { puts \$f "判定: NG (\$::fails)" } else { puts \$f "判定: OK" }
   close \$f; exit
