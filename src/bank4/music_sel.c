@@ -132,6 +132,9 @@ void music_frame(u8 over) {
         else if (w == BO) w = SONG_M13;
         else if (w == OU) w = SONG_J01;
         else if (w == CO) w = mt < 110 ? SND_NONE : SONG_M08C;
+        if (sec == 68 && mt >= 170) w = SND_NONE;     /* ★終幕の ∞: 2 周目へ移る前に 1 秒かけて消す(移るときに約 1 秒、画面を止めて
+                                                         雲とタイトルの素材を描き直す。その間は音のドライバが回らず、鳴っていた音が
+                                                         伸びたまま残った)。パレットが黒になる 240 までに消え終わる */
     }
     if (g_pcm_cur == PCM_V04) v04 = 1;
     if (g_phase != ph_prev) {
@@ -170,6 +173,6 @@ void music_frame(u8 over) {
     if (w == SONG_M13 && g_bgm == SONG_J02) return;
     snd_trans_next = (w == SONG_M03) ? air_trans[st] : 0;   /* 移調は次の曲の頭から(フェード中の曲の音程を変えない) */
     if (w == SONG_M13) { bgm_fade(SONG_J02, 1); pcm_req(PCM_V02); return; }   /* 警告 → ボス曲(短いフェード) */
-    bgm_fade(w, g_bgm == SONG_M03 ? 4 : 1);         /* ★フェードアウトしてから: 空中戦 → 面の曲は約 1 秒、ほかは約 0.25 秒 */
+    bgm_fade(w, (g_bgm == SONG_M03 || sec == 68) ? 4 : 1);         /* ★フェードアウトしてから: 空中戦 → 面の曲は約 1 秒、ほかは約 0.25 秒 */
 }
 
