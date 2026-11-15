@@ -36,7 +36,7 @@ void ovl_update(void) {
         if (sec_t == AIR_T) { g_calib = 1; ovl_request(OVL_S1); return; }   /* 試験 01 へ */
         break;
     case SEC7_LIBRA:
-        if (sec_t == 5400) g_boss_state = BS_DONE;
+        if (sec_t == 10800) g_boss_state = BS_DONE;
         if (g_boss_state == BS_DONE) { g_boss_state = BS_NONE; enter(SEC7_OUT); }
         break;
     case SEC7_OUT:                                            /* 白い空間が黒く反転し、縦穴が開く → 8 面 */

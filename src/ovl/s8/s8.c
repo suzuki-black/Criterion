@@ -42,8 +42,8 @@ static void enter(u8 sec) {
     if (sec == SEC8_MID) {
         u8 i;
         top_e = top_d = TOP0; bot_e = bot_d = BOT0; mid_t = 0; adv_t = 0;
-        for (i = 0; i < 8; i++) tu_hp[i] = 3;
-        g_boss_state = BS_FIGHT; g_boss_hp = 24;
+        for (i = 0; i < 8; i++) tu_hp[i] = 6;
+        g_boss_state = BS_FIGHT; g_boss_hp = 48;
     }
 }
 
@@ -119,7 +119,7 @@ static void mid_update(void) {
             tu_hp[i] = 0;
             fx_spawn(FX(x), FX(y + 6)); score_add(200);
             if (i < 4) top_e = top_e - 16 < TOP0 ? TOP0 : top_e - 16; else bot_e = bot_e + 16 > BOT0 ? BOT0 : bot_e + 16;
-            if (g_boss_hp >= 3) g_boss_hp -= 3;
+            if (g_boss_hp >= 6) g_boss_hp -= 6;
         }
         if (((mid_t + i * 17) & 63) == 0) enemy_shoot(FX(x), FX(y + 6));
     }
@@ -179,7 +179,7 @@ void ovl_update(void) {
         if (col_of_screen() + 8 >= S8_COL_MID + 8) { amp = 0; g_scroll_speed = 0; enter(SEC8_MID); }
         break;
     case SEC8_MID:
-        if (sec_t == 5400) g_boss_state = BS_DONE;
+        if (sec_t == 10800) g_boss_state = BS_DONE;
         if (g_boss_state == BS_DONE) {                        /* 後半へ(地面はそのまま) */
             g_boss_state = BS_NONE; g_scroll_speed = 4;
             g_sec = SEC8_CORE;

@@ -244,7 +244,7 @@ static void sand_draw(void) {
     for (i = 0; i < NSAND; i++) if (sd_on[i]) spr_put(PX(sd_x[i]) - 8, PX(sd_y[i]) - 8, PAT_EBUL, G_EBUL, 0);
 }
 
-void b6_mid_start(void) { { u8 i; for (i = 0; i < NSAND; i++) sd_on[i] = 0; for (i = 0; i < 64; i++) pile[i] = 0; } hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_hit = 0; hg_ph = 0; hg_t = 0; g_hg_disp = 0; hg_mir = 0; hg_rd = 0; hg_mx = 0; hg_my = SPLIT_H; hg_first = 1; hg_blk = 0; hg_ok = 0; g_boss_state = BS_ENTER; g_boss_hp = 16; b_t = 0; }
+void b6_mid_start(void) { { u8 i; for (i = 0; i < NSAND; i++) sd_on[i] = 0; for (i = 0; i < 64; i++) pile[i] = 0; } hg_f = 0; hg_shown = 0xFF; hg_chunk = 0; hg_hit = 0; hg_ph = 0; hg_t = 0; g_hg_disp = 0; hg_mir = 0; hg_rd = 0; hg_mx = 0; hg_my = SPLIT_H; hg_first = 1; hg_blk = 0; hg_ok = 0; g_boss_state = BS_ENTER; g_boss_hp = 32; b_t = 0; }
 static void hg_update(void) {
     s16 cy = s6_sy(HG_S + HG_N / 2), cx = HG_X + HG_N / 2;
     if (g_boss_state == BS_ENTER) { if (hg_mir >= HG_MIR) g_boss_state = BS_FIGHT; return; }
@@ -526,7 +526,7 @@ static u8  old_n;
 void b6_boss_start(void) {
     gn_a[0] = 0x3000; gn_a[1] = 0x1000; gn_spd = 48; gn_turn = 0; gn_lap = 0; old_n = 0; hg_hit = 0;
     gn_nh = RECAL ? 2 : 1;                                  /* 再校正版: 長針と短針 */
-    g_boss_state = BS_ENTER; g_boss_hp = 40; b_t = 0;
+    g_boss_state = BS_ENTER; g_boss_hp = 120; b_t = 0;
 }
 static s8 sin_i(u16 a) {           /* 64 刻みの表を線形補間 */
     u8 i = (u8)(a >> 8) & 63, f = (u8)a;

@@ -96,6 +96,18 @@ static u8 gauge_sig(void) {
 
 static u8 state;
 
+/* 7 面の試験(過去のボスの再校正版。g_calib 1..6)は、ボスの受けた傷を 2 倍にする。★2026-11-14 にボスの体力を 1 周目で 3 倍
+   (中ボス 2 倍)にしたが、試験は 6 連戦なので 1.5 倍に抑える(オーバレイに空きが無いので本体で)。e = 体力 − まだ受け取っていない傷。
+   e が減った分(弾・LIMIT BREAK)を g_boss_dmg に足す。足した分はオーバレイが受け取っても e は変わらないので数え直さない */
+static s16 cal_e;
+static void calib_dmg(void) {
+    if (g_calib && g_calib < 7 && g_boss_state == BS_FIGHT) {
+        s16 e = (s16)((s16)g_boss_hp - g_boss_dmg);
+        if (e < cal_e) { u8 d = (u8)(cal_e - e); g_boss_dmg = (u8)(g_boss_dmg + d); e -= d; }
+        cal_e = e;
+    } else cal_e = 0x7FFF;
+}
+
 /* ---- デモ(M7 の後、指摘 B8): タイトルで 15 秒触らないと、自動操縦の 1 面でパワーアップの使い方を見せる。
    何か押すとタイトルへ戻る。説明は面の開始表示の帯に出す(フォントは英大文字・数字と - . " , / だけ) ---- */
 u8 g_demo;
@@ -320,6 +332,7 @@ void main(void) {
             if (g_dbg_invul == 1 || g_demo) g_pl.invul = 2;   /* 2 = 敵弾だけ無敵(enemy.c) */
             player_update();
             if (ph >= PH_AIR) { stage_pump_nb(); if (!g_slow) { enemy_update(); if (g_ovl_ready && g_ovl >= OVL_S1) ovl_logic(); } }
+            calib_dmg();
             if (!g_pl.alive && !g_pl.dead_t && !g_pl.lives) { state = ST_OVER; over_t = 0; over_spd = g_scroll_speed; }
         } else if (state == ST_OVER) {
             /* ゲームオーバー(指示書 4.3): スクロールが慣性で止まり、文字を 1 字ずつ押す。押し終えたら A か 5 秒でネームエントリーへ */

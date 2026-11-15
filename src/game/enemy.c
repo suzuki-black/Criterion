@@ -789,7 +789,7 @@ void enemy_update(void) {
 u8 g_lb;                           /* LIMIT BREAK からのフレーム(面の小物 = Pawn などが見て消える。main.c が減らす) */
 void limit_break(void) {
     u8 i;
-    boss_damage(10);
+    boss_damage(25);               /* ボスの体力を 2〜3 倍にしたので 10 → 25 */
     g_lb = 24;
     for (i = 0; i < MAX_ENEMY; i++) if (g_enemy[i].type) enemy_kill(&g_enemy[i], 1);
     for (i = 0; i < MAX_ESHOT; i++) if (g_eshot[i].on) { g_eshot[i].on = 0; }

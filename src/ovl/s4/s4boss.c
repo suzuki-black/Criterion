@@ -98,7 +98,7 @@ static void vern_start(void) {
     vb_rx = (u16)((s4_band_x(VB_L) - 240) & 0x1FE);
     vt_sx = 272; vb_sx = -240;
     s4_band_hold(VT_L, s4_band_x(VT_L)); s4_band_hold(VB_L, s4_band_x(VB_L));
-    v_drawn = 0; core_hp[0] = core_hp[1] = 20; g_boss_hp = 40; beam_t = 0; beam_cool = 90; v_ang = 0;
+    v_drawn = 0; core_hp[0] = core_hp[1] = 40; g_boss_hp = 80; beam_t = 0; beam_cool = 90; v_ang = 0;
 }
 
 /* 目盛りの一致: 上 i(0..13)と下 j(0..14)で vt_sx + 16i ≒ vb_sx + 15j。j = i + m とすると i = Δ + 15m */
@@ -295,7 +295,7 @@ static void stratum_start(void) {
     for (i = 0; i < NREEL; i++) { reel[i] = (s16)(256 + i * 40); reel_to[i] = 0; }
     f_cmd = 0; f_flat = 0; f_rest = 0; st_phase = 0; st_t = 0; core_hits = 0;
     f_top = s4_band_x(0); f_bot = s4_band_x(11);
-    g_boss_hp = 36;
+    g_boss_hp = 72;                                            /* ★帯がそろった間しか効かないので 2 倍(ほかの面ボスは 3 倍) */
 }
 
 static void reels_move(u8 fast) {

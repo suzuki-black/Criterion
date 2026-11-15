@@ -166,7 +166,7 @@ void ovl_update(void) {
     case SEC2_MID:
     case SEC2_BOSS:
         if (g_scroll_speed && !(sec_t & 7)) g_scroll_speed--;
-        if (sec_t == 3600) g_boss_state = BS_DONE;
+        if (sec_t == 7200) g_boss_state = BS_DONE;
         if (g_boss_state == BS_DONE && !g_scroll_speed) {
             g_boss_state = BS_NONE; g_scroll_speed = 4;
             enter(g_sec == SEC2_MID ? SEC2_CENTER : SEC2_OUT);

@@ -327,7 +327,7 @@ static void ring_update(void) {
         }
         if (((t + k * 11) & 127) == 0) enemy_bullet(FX(x), FX(y), (s16)((CX - x) >> 2), (s16)((CY - y) >> 2));   /* 内へ */
     }
-    g_boss_hp = (u8)(left * 3 + core_hp);
+    g_boss_hp = (u8)(left * 9 + core_hp);
     if (left <= 8) ring_msg(1);
     if (!left) {
         /* ★砲台を全部壊したら真ん中の核を撃って倒せる(LIMIT BREAK なら一気に)。前はとどめが LIMIT BREAK だけで、核を撃っても
@@ -397,12 +397,12 @@ static void db_update(void) {
 /* ======== 区間 ======== */
 static void boss_form(u8 sec) {
     g_sec = sec; sec_t = 0; b_t = 0;
-    g_boss_state = BS_FIGHT; g_boss_hp = 40;
+    g_boss_state = BS_FIGHT; g_boss_hp = 120;
     if (sec == SEC8_BOSS3) {
         u8 k;
         rr = 120 * 4; ra = 0; msg = 0xFF; msg_drawn = 0xFF; msg_row = 8; hint_t = 0; ring_pos();
-        for (k = 0; k < NT; k++) tt_hp[k] = 3;
-        core_hp = 30;
+        for (k = 0; k < NT; k++) tt_hp[k] = 9;
+        core_hp = 90;
         ring_msg(0);
     }
 }

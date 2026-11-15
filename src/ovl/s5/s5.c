@@ -176,7 +176,7 @@ void ovl_update(void) {
            眺めのままで、船底の下に通る余裕が無いので「上の側」にされ、穴から下へ行こうとすると押し戻された(遊んでの指摘
            「上にいていいのか下にいていいのかわからない」) */
         if (g_boss_state == BS_DYING) cam_to = 0;
-        if (sec_t == 5400) g_boss_state = BS_DONE;
+        if (sec_t == 10800) g_boss_state = BS_DONE;
         if (g_boss_state == BS_DONE) { g_boss_state = BS_NONE; g_scroll_speed = 4; enter(SEC5_UNDER); stage_banner_c("DIVE UNDER THE HULL", 13); }
         break;
     case SEC5_UNDER:
@@ -198,7 +198,7 @@ void ovl_update(void) {
         if (c + 8 >= S5_COL_BOSS + 8) { g_scroll_speed = 0; enter(SEC5_BOSS); }
         break;
     case SEC5_BOSS:
-        if (sec_t == 5400) g_boss_state = BS_DONE;
+        if (sec_t == 10800) g_boss_state = BS_DONE;
         if (g_boss_state == BS_DONE) {
             g_boss_state = BS_NONE; g_bands_all = 0;
             if (g_calib) { g_scroll_speed = 4; enter(SEC5_OUT); } else enter(SEC5_WRECK);

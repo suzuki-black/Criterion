@@ -125,7 +125,7 @@ void ovl_update(void) {
         break;
     case SEC6_MID:
     case SEC6_BOSS:
-        if (sec_t == 5400) g_boss_state = g_sec == SEC6_MID ? BS_DYING : BS_DONE;   /* ★砂時計は壊れる流れで(見えない半分の写しを描き直す) */
+        if (sec_t == 10800) g_boss_state = g_sec == SEC6_MID ? BS_DYING : BS_DONE;   /* ★砂時計は壊れる流れで(見えない半分の写しを描き直す) */
         if (g_boss_state == BS_DONE) {
             g_boss_state = BS_NONE;
             if (g_sec == SEC6_MID) { g_scroll_speed = 4; enter(SEC6_DIAL); }

@@ -212,9 +212,9 @@ static void kg_draw(void) {
 void b2_start(u8 k) {
     u8 i;
     kind = k; t = 0; g_boss_state = BS_ENTER; g_boss_dmg = 0;
-    if (k == B2_CW) { hp_l = hp_r = 30; g_boss_hp = 60; cw_y = -60; ang = 0; fire_t = 0; }
+    if (k == B2_CW) { hp_l = hp_r = 60; g_boss_hp = 120; cw_y = -60; ang = 0; fire_t = 0; }
     else {
-        g_boss_hp = 60; kg_shown = 0; zoom_start(ASSET_KG_BANK, ASSET_KG_OFF, 64u * 128u + 64u); open_t = 0; lens_nx = 0xFFFF; cal_t = 0;
+        g_boss_hp = 120; kg_shown = 0; zoom_start(ASSET_KG_BANK, ASSET_KG_OFF, 64u * 128u + 64u); open_t = 0; lens_nx = 0xFFFF; cal_t = 0;
         for (i = 0; i < NSAT; i++) { sat_hp[i] = 2; sat_t[i] = 0; sat_x[i] = KG_X; sat_y[i] = KG_Y; }
         for (i = 0; i < 64; i++) { orb_x[i] = (s8)((g_sin64[(u8)(i + 16) & 63] * 66) >> 7); orb_y[i] = (s8)((g_sin64[i] * 52) >> 7); }
         vdp_set_pal(2, 0, 0, 0); vdp_set_pal(3, 1, 1, 1); vdp_set_pal(4, 3, 3, 4); vdp_set_pal(5, 6, 6, 7);

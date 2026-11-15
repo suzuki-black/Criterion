@@ -192,7 +192,7 @@ static u8 boss_t;
 static s16 lift_s(void) { return (s16)(S5_DECK + 20 - lift); }
 void b5_hangar_start(void) {
     door_n = 0; door_w = 0; lift = 0; lift_drawn = 0xFF; lift_ph = 0; lift_wait = 60; lift_vd = 0xFF; lift_img = 0; lift_fl = 0; lamp_t = 0;
-    g_boss_state = BS_ENTER; g_boss_hp = 30; boss_t = 0;
+    g_boss_state = BS_ENTER; g_boss_hp = 60; boss_t = 0;
     stage_banner_c("TARGET: ELEVATOR", 13);
 }
 /* 台の絵は第 4 バンクの lift.c(lift_sheet) */
@@ -293,7 +293,7 @@ void b5_gauge_start(void) {
     u8 k;
     for (k = 0; k < 6; k++) { g_order[k] = k; g_off[k] = 0; }
     g_drawn = 0; g_ph = 0; g_t = 0; g_redraw = 0;
-    g_boss_state = BS_ENTER; g_boss_hp = 30; boss_t = 0;
+    g_boss_state = BS_ENTER; g_boss_hp = 90; boss_t = 0;
     g_bands_all = 1;
 }
 static void gauge_row(u8 k) {      /* 段 k を描く: 空で塗ってからブロックを中央に */

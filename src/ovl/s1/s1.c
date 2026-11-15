@@ -87,9 +87,9 @@ void ovl_update(void) {
         if (col_of_screen() + 8 >= CITY_COL_ARENA1) enter(SEC_MID);
         break;
     case SEC_MID:
-    case SEC_BOSS:      /* スクロールを止めて戦う。倒すか時間切れ(60 秒)で先へ */
+    case SEC_BOSS:      /* スクロールを止めて戦う。倒すか時間切れ(120 秒。2026-11-15 にボスの耐久を上げたので 60 から)で先へ */
         if (g_scroll_speed && !(sec_t & 7)) g_scroll_speed--;
-        if (sec_t == 3600) boss_leave();
+        if (sec_t == 7200) boss_leave();
         if (g_boss_state == BS_DONE && !g_scroll_speed) {
             g_boss_state = BS_NONE;
             if (g_sec == SEC_MID) { g_scroll_speed = 4; enter(SEC_CITY2); }

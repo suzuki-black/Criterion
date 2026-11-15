@@ -217,7 +217,7 @@ void ovl_update(void) {
     case SEC4_MID:
     case SEC4_RIVER:
     case SEC4_BOSS:
-        if (sec_t == 5400) g_boss_state = BS_DONE;            /* 長引いたら先へ */
+        if (sec_t == 10800) g_boss_state = BS_DONE;            /* 長引いたら先へ */
         if (g_boss_state == BS_DONE) {
             g_boss_state = BS_NONE;
             enter(g_sec == SEC4_MID ? SEC4_RIVER : g_sec == SEC4_RIVER ? SEC4_BOSS : SEC4_OUT);

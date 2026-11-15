@@ -71,7 +71,7 @@ static u8 level(void) {            /* 強化の段階の合計(測定値) */
 
 void b7_init(void) { t = 0; spr_loaded = 0; drawn = 0; post = 0; }
 void b7_start(void) {
-    g_boss_state = BS_ENTER; g_boss_hp = 30; tilt = tilt_to = 0; tilt_drawn = 0x7F; expose = 0; wy = 0; b_t = 0; fire_t = 0; hit_t = 0; defl_t = 0;
+    g_boss_state = BS_ENTER; g_boss_hp = 90; tilt = tilt_to = 0; tilt_drawn = 0x7F; expose = 0; wy = 0; b_t = 0; fire_t = 0; hit_t = 0; defl_t = 0;
 }
 
 void b7_update(void) {

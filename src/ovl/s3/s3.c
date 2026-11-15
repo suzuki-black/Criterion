@@ -219,7 +219,7 @@ void ovl_update(void) {
         break;
     case SEC3_MID:
     case SEC3_BOSS:
-        if (sec_t == 3600) g_boss_state = BS_DONE;
+        if (sec_t == 7200) g_boss_state = BS_DONE;
         if (g_boss_state == BS_DONE) {
             g_boss_state = BS_NONE;
             enter(g_sec == SEC3_MID ? SEC3_TOP : SEC3_OUT);

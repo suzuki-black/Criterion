@@ -225,11 +225,11 @@ static void to_patterns(void) {
 void b3_start(u8 k) {
     u8 i;
     kind = k; t = 0; g_boss_state = BS_ENTER; g_boss_dmg = 0;
-    if (k == B3_MET) { g_boss_hp = 40; ph = 0; omega = 16; last_side = 0; g_met_tempo = 0; }
+    if (k == B3_MET) { g_boss_hp = 80; ph = 0; omega = 16; last_side = 0; g_met_tempo = 0; }
     else {
         dial_wx = (u16)(g_wx + DIAL_SX + 64); dial_drawn = 0; dial_clean = 0; needle = 0; rush_t = 0; wild_t = 0;
-        for (i = 0; i < NMARK; i++) mark_hp[i] = 3;
-        g_boss_hp = NMARK * 3;
+        for (i = 0; i < NMARK; i++) mark_hp[i] = 9;
+        g_boss_hp = NMARK * 9;
         rotor_1bpp_src_at(spr_needle32, ROT1_SRC2);
         nset = 0xFF; nready = 0; nrow = 0; n_drawn = 0xFF;
     }
