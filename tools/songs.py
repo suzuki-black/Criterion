@@ -232,7 +232,7 @@ m07 = ['Dm7', 'G', 'Dm7', 'G', 'Am7', 'C', 'Dm7', 'G', 'Fmaj7', 'G', 'Am7', 'Dm7
 three = ' '.join(nn(n, '8') for n in [62, 69, 72]) + ' '      # 3 つの 8 分のくり返し(4/4 の上で 3 小節で一巡)
 SONGS.append(Song('M07', 128, {
     'FM0': 'L @0 v12 q3 ' + rep(three, 32),
-    'FM1': 'L @3 v11 q2 o5d4 f4 e4 c4 | o4b2 o5d2 | f4 a4 g4 e4 | d2 o4b2 | o5c4 e4 d4 c4 | e2 g2 | f4 a4 o6c4 o5a4 | b2 g2 | '
+    'FM1': 'L @3 v11 q2 o5d4 f4 e4 c4 | o4g2 o5d2 | f4 a4 g4 e4 | d2 o4b2 | o5c4 e4 d4 c4 | e2 g2 | f4 a4 o6c4 o5a4 | d2 g2 | '   # ★2 小節目 b → g、8 小節目 b → d(上の d a c の c と短 9 度で当たった。2026-11-15)
            'a4 g4 f4 e4 | d2 g2 | e4 c4 o4a4 o5c4 | d1',
     'FM2': 'L @1 v9 ' + pad(m07, 1, 60),
     'FM3': 'L @14 v12 q3 ' + bass(m07, 2, (0, 7, 12, 7), 24),
@@ -268,8 +268,8 @@ def arp78(prog, lo):
     return out
 SONGS.append(Song('M09', 100, {
     'FM0': 'L @0 v12 q2 ' + arp78(m09, 67),
-    'FM1': 'L @0 v10 q2 o5d4 c8 o4b-8 a4. | g4 a8 b-8 o5c4. | d4 f+8 a8 g4. | f+4 d8 o4b-8 g4. | '
-           'o5g4 f8 d+8 d4. | c4 d+8 d8 c4. | o4b-4 a8 b-8 o5c4. | d2 r4.',
+    'FM1': 'L @0 v10 q2 o5d4 c8 o4b-8 g4. | g4 a8 b-8 o5c4. | d4 f+8 a8 g4. | f+4 d8 o4b-8 g4. | '   # ★1 小節目 a → g、6 小節目 d+8 d8 → d+4(旋律の b- / d+ と半音。2026-11-15)
+           'o5g4 f8 d+8 d4. | c4 d+4 c4. | o4b-4 a8 b-8 o5c4. | d2 r4.',
     'FM2': 'L @1 v8 ' + pad(m09, 1, 58, B7),
     'FM3': 'L @14 v12 q3 ' + ''.join(nn(tones(s, 31)[0], '4') + ' ' + nn(tones(s, 31)[0], '4') + ' ' + nn(tones(s, 31)[1], '4.') + ' ' for s in m09),
     'RHY': 'L ' + rep('b4 h4 s4.', 7) + ' b4 s8 s8 s8 s8 s8',
@@ -309,7 +309,7 @@ SONGS.append(Song('M12', 160, {
     'FM1': 'L @15 v10 q3 ' + ' '.join(nn(52 + i // 2, '8') for i in range(32)),
     'FM3': 'L @13 v13 q2 ' + crom + ' ' + ' '.join(nn(48 + i // 2, '8') for i in range(16)),
     'RHY': 'PP01 L ' + rep('bh8 h8 sh8 bh8 h8 bh8 sh8 h8', 3) + ' bc8 s8 s8 s8 s16 s16 s16 s16 sc4',
-    'PSGA': 'L @1 v8 ' + ' '.join(nn(64 + i // 4, '16') for i in range(64)),
+    'PSGA': 'L @1 v8 ' + ' '.join(nn(67 + i // 4, '16') for i in range(64)),   # ★e → g から(e からでは 1 小節目の 3 拍目が旋律の f と半音。2026-11-15)
 }, user=LEAD))
 
 # ---- M13 Out of Tolerance(ボス、全面共通。7 面 LIBRA も): 金管、Criterion の動機の低音、4 小節ごとにオケヒ ----
@@ -362,9 +362,9 @@ m14c = ['D', 'A', 'Bm', 'G', 'D', 'A', 'G', 'A', 'Bm', 'G', 'D', 'A', 'G', 'A', 
 def m14c_top(prog):
     """FM5: 2 小節ひと組。1 小節目は弦で和音の 3 度を旋律の上で伸ばし、2 小節目は弦の半分のあと金管が和音を 8 分で駆け上がる"""
     out = []
-    for a, b in zip(prog[0::2], prog[1::2]):
+    for k, (a, b) in enumerate(zip(prog[0::2], prog[1::2])):
         up = tones(b, 67)
-        out.append('@1 v12 ' + nn(tones(a, 74)[1], '1'))
+        out.append('@1 v12 ' + nn(tones(a, 74)[2 if k == 6 else 1], '1'))   # ★13 小節目(G)は g → b(旋律の f+ と短 9 度。2026-11-15)
         out.append('@1 v12 ' + nn(tones(b, 74)[1], '2') + ' @7 v12 ' + ' '.join(nn(n, '8') for n in (up[0], up[1], up[2], up[0] + 12)))
     return ' | '.join(out)
 
