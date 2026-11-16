@@ -215,14 +215,14 @@ void ovl_update(void) {
                 ring_cmd(0, 0, 122, s5_sy(S5_DECK + 10), 4, 30, 1, 0xDD);
             }
         } else {
-            cam_to = S_TOP * 16;
+            if (sec_t >= 360) cam_to = S_TOP * 16;           /* ★2026-11-16: 5 秒かけて艦首の側を持ち上げて傾けながら、4 秒目から沈む(ovl_vram の wreck_tilt) */
             if (!(sec_t & 3)) {                               /* 雲海の渦(パレットを回す) */
                 u8 p = vortex;
                 if (++vortex >= 3) vortex = 0;
                 vdp_set_pal(4, (u8)(4 + p), (u8)(4 + p), (u8)(5 + p));   /* 雲のきめ(4, 5)だけ回す(3 は雲の地で、回すと全面が光った) */
                 vdp_set_pal(5, (u8)(6 - p), (u8)(6 - p), 7);
             }
-            if (sec_t > 300) { enter(SEC5_OUT); g_scroll_speed = 4; }
+            if (sec_t > 540) { enter(SEC5_OUT); g_scroll_speed = 4; }
         }
         g_pl_ymin = 0; g_pl_ymax = PLAY_H - 16;
         break;
@@ -267,6 +267,7 @@ void ovl_vram(void) {
         u16 r = fz_vram();
         if (r & 0x8000u) far_on = 2; else fz_d = (u8)r;
     }
+    if (g_sec == SEC5_WRECK && sec_t < 420) wreck_tilt((u8)(sec_t >> 1));
     b5_vram();
 }
 

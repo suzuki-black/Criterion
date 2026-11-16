@@ -460,6 +460,11 @@ static u8 hg_run(void) __naked {
 static u8 hg_write(u8 h) {
     if (hg_mir < HG_MIR) { hg_budget = HG_BUDGET_IN; hg_kn = 1; }   /* ★入りの 0° は 1 記録 48 バイトなので毎回見る(4 記録ごとでは 6 フレーム遅れた) */
     else { hg_budget = HG_BUDGET_ROT; hg_kn = 4; }
+    {   /* ★砂の粒 1 つにつき 3 ライン早く切り上げる(粒の動きと描くスプライトが 1 つ約 150us。回り終わりに 8 方向へ散った砂が
+           舞う間だけ、書く時間を変えずにいたらフレームを越えて 2 フレーム遅れた。2026-11-16) */
+        u8 i;
+        for (i = 0; i < NSAND; i++) if (sd_on[i]) hg_budget -= 3u * 16u;
+    }
     hg_rx0 = (u16)((g_wx + HG_X + h * 256u) & 510u);
     hg_sy0 = (u8)(s6_sy(HG_S) + g_vscroll);
     if (!hg_chunk) { hg_load(); hg_chunk = 1; }

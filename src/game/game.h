@@ -304,6 +304,7 @@ void pawn_volley(void *pw);        /* 集団で対空射撃 */
 void fz_start(u8 *buf);            /* 第 4 バンク(farz.c): 5 面の接近の戦艦を書き始める。buf = ページ 3 の 256 バイト */
 u16  fz_vram(void);                /* 毎フレーム。下位 = 艦首を左へずらすドット(空の帯の横スクロール)、0x8000 = 最後の段まで見せた */
 void fort_draw(s16 x, s16 y);      /* 第 4 バンク(fort.c): 5 面の出口で 6 面の要塞を見せる(左上) */
+void wreck_tilt(u8 a);           /* 第 4 バンク(tilt.c): 5 面の撃沈で艦首の側を持ち上げて傾ける。a < 60 で消す、60.. で傾ける */
 void lift_sheet(u8 y0);            /* 第 4 バンク(lift.c): 5 面の格納庫の台の絵(48x12)をページ 2 へ、y0 から 3 行 */
 #define LIFT_W   48                /* 5 面の格納庫の台(s5boss.c・lift.c) */
 #define LIFT_H   12

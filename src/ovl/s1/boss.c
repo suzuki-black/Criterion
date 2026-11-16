@@ -286,10 +286,10 @@ static void legion_update(void) {
             if (p->mode == P_WAIT) { p->mode = P_RUN; p->t = 0; }
             else if (p->mode == P_CLIMB) { p->mode = P_FALL; p->tj = 0xFF; }
         }
-        /* 上の行から崩す(1 フレームに 3 マスまで。1 行まとめると重いフレームになった。★4 マスでは、耐久を上げて戦いが長引いたら撃破の PCM と重なって 2 フレーム遅れた) */
+        /* 上の行から崩す(1 フレームに 2 マスまで。1 行まとめると重いフレームになった。★4 マスでは、耐久を上げて戦いが長引いたら撃破の PCM と重なって 2 フレーム遅れた。3 マスでも本体の番地がずれると 3 フレーム遅れた(m3)) */
         if (col_j < LG_H) {
             u8 n = 0;
-            for (i = 0; i < LG_W && n < 3 && gq_free() >= 8; i++) if (is_on(i, col_j)) { knock(i, col_j, 1); n++; }
+            for (i = 0; i < LG_W && n < 2 && gq_free() >= 8; i++) if (is_on(i, col_j)) { knock(i, col_j, 1); n++; }
             if (i == LG_W) col_j++;
         }
         if (!(t & 7)) fx_spawn(FX(gx0 + 8 + (rnd8() & 31)), FX(LG_Y + (rnd8() & 63) + (col_j << 2)));
