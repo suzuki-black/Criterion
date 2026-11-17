@@ -322,11 +322,11 @@ static void hall_block(u8 row, s16 s0) {
     }
 }
 
-/* 8 面の縦穴(g_hall == 2): 高い空のブロックに左右の壁(画面がリングのページ 0 にそろっている前提)。32 行ごとに継ぎ目 */
+/* 8 面の縦穴(g_hall == 2): 高い空のブロックに左右の壁(画面がリングのページ 0 にそろっている前提)。壁の絵(32 行の周期)は
+   8 面のオーバレイがページ 2 の 6..45 行に置いている(gen_stage8.py の tbar.bin。x 0..31 = 左、32..63 = 右)。行 = s & 31 */
 static void shaft_block(u8 row, s16 s0) {
-    vdp_hmmv(0, row, 32, 8, 0xEE); vdp_hmmv(28, row, 4, 8, 0x99);
-    vdp_hmmv(224, row, 32, 8, 0xEE); vdp_hmmv(224, row, 4, 8, 0x99);
-    if (!(s0 & 31)) { vdp_hmmv(0, row, 32, 1, 0x22); vdp_hmmv(224, row, 32, 1, 0x22); }
+    u16 sy = (u16)(512u + 6u + ((u8)s0 & 31));
+    vdp_hmmm(0, sy, 0, row, 32, 8); vdp_hmmm(32, sy, 224, row, 32, 8);
     vdp_cmd_wait();
 }
 /* 高い空のブロックを全部描き直させる(縦穴に入ったとき: 壁のある絵に) */

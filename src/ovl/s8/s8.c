@@ -162,16 +162,17 @@ void ovl_update(void) {
         if (sec_t >= AIR_T && g_scam_q <= S8_SHAFT_TOP * 16 && (g_wx & 511u) == 0) {
             g_scroll_speed = 0;
             g_w0 = (u16)(g_wx >> 3);                          /* 画面の左 = 縦穴の底の地図の列 0 */
-            g_hall = 2; stage_sky_redraw();
+            g_hall = 2; g_bands_all = 1; stage_sky_redraw();
             enter(SEC8_SHAFT);
         }
         break;
     case SEC8_SHAFT:                                          /* 縦スクロールだけで降りる */
-        if (g_scam_q < 0) { g_scam_q += 32; if (g_scam_q > 0) g_scam_q = 0; }
+        if (g_scam_q < 0) { g_scam_q += g_scam_q < -96 * 16 ? 32 : 12; if (g_scam_q > 0) g_scam_q = 0; }   /* ★底の手前で減速(底の部屋の
+                                                                 列の描き替えが 2 ドット/フレームに追いつかず、右下に縦穴の壁の切れ端が残った) */
         if (!(sec_t & 15)) enemy_bullet(FX(40 + (rnd8() & 127) + (rnd8() & 31)), FX(0), 0, 24);   /* 落ちてくる破片 */
         if (PX(g_pl.x) < 36) g_pl.x = FX(36);
         if (PX(g_pl.x) > 204) g_pl.x = FX(204);
-        if (!g_scam_q) { g_hall = 0; g_scroll_speed = 4; enter(SEC8_WARP); }
+        if (!g_scam_q) { g_hall = 0; g_bands_all = 0; g_scroll_speed = 4; enter(SEC8_WARP); }
         break;
     case SEC8_WARP:
         if (amp < 4 && !(sec_t & 31)) amp++;
@@ -197,8 +198,16 @@ void ovl_update(void) {
 void ovl_logic(void) { if (g_sec == SEC8_MID && g_boss_state != BS_NONE && g_boss_state != BS_DONE) mid_update(); }
 void ovl_draw(void) { if (g_sec == SEC8_MID && g_boss_state == BS_FIGHT) mid_draw(); }
 void ovl_vram(void) {
-    if (sheet_ld < 6) {                                       /* バーの縁をページ 2 の 0..5 行へ */
+    if (sheet_ld < 46) {                                      /* バーの縁と縦穴の壁をページ 2 の 0..45 行へ(空中戦の間に) */
         rom_to_vram(ASSET_TBAR_BANK, (u16)(ASSET_TBAR_OFF + sheet_ld * 128u), 1, (u16)(sheet_ld * 128u), 128);
+        sheet_ld++;
+    } else if (sheet_ld == 46 && g_sec == SEC8_SHAFT) {       /* ★リングの全列共通の行(ブロック 23、s = -4..3)は空の描き替えから外れていて、
+                                                                 縦穴を 256 行ごとに横切る線に見えた。縦穴の間は壁つきの暗がりにする */
+        vdp_hmmv(0, 184, 256, 8, 0x11);
+        vdp_hmmm(0, 512u + 6u + 28u, 0, 184, 32, 8); vdp_hmmm(32, 512u + 6u + 28u, 224, 184, 32, 8);   /* (u8)-4 & 31 = 28 */
+        sheet_ld++;
+    } else if (sheet_ld == 47 && g_sec >= SEC8_WARP) {        /* 回廊へ出たら短冊の 0..3 行(色 6)に戻す */
+        vdp_hmmv(0, 184, 256, 8, 0x66); vdp_hmmv(0, 256 + 184, 256, 8, 0x66);
         sheet_ld++;
     }
     if (g_sec == SEC8_MID) mid_vram();
@@ -207,7 +216,9 @@ void ovl_vram(void) {
 
 void ovl_bands(s16 sc, u16 nx) {
     u8 k;
-    if (g_sec == SEC8_SHAFT || g_sec == SEC8_AIR) return;
+    if (g_sec == SEC8_AIR) return;
+    if (g_sec == SEC8_SHAFT) { stage_ev_pal(0, inside); stage_ev_scroll(0, nx); return; }   /* 縦穴は帯を全部出す(g_bands_all): 空の帯の
+                                                                 横縞をやめ、回廊の中と同じ一色 */
     stage_ev_pal((s16)(0 - sc), g_sec >= SEC8_WARP ? inside : sky_dark);
     if (!amp) return;
     /* 歪曲回廊: 16 行ごとの帯の横と縦を正弦でずらす(★12 行ごと 14 本では割込みが重く遅れた) */

@@ -1,6 +1,6 @@
 /* ed.c — 終幕のオーバレイ(指示書 4.2「エンディング」): 宇宙へ抜ける → 地球を見下ろす SCREEN 12 の自然画帯 →
    スタッフロール(R#23 の縦スクロール)→ SUBJECT INFINITAS / STATUS ∞ → 2 周目の出撃。
-   ・地球はタイトルの地平線の YJK(ページ 0 と 2)を使う。カメラ s = -316 のとき見えないリングの 64..119 行に置き、
+   ・地球は gen_title.py の earth(256x56 の YJK、横に周期。ページ 0 と 2)。カメラ s = -316 のとき見えないリングの 64..119 行に置き、
      列と描き替えから外す(g_blk_base / g_blk_skip)。帯の R#23 = 64 でその行を見せる。
    ・スタッフロール: 世界の横を止め(画面 = リングのページ 0)、カメラを下へ動かし、見えてくる行に名前を
      フォントで書く(高い空のブロックは先回りで描かれるので、書くのは画面に入る直前)。
@@ -19,9 +19,10 @@ enum { SECE_SPACE = 65, SECE_EARTH, SECE_ROLL, SECE_FINAL };
 #define CAM_EARTH (-316)
 #define CAM_ROLL0 (-908)           /* ★行を増やしたら 1 行 16 ずつ上へ(最後の行の止まる位置 = ROLL_S0 + (NROLL - 1) * 16 = -52 を保つ) */
 #define CAM_ROLL1 (-200)
+#define EARTH_EVEN_BANK 121        /* gen_title.py の earth_even.bin / earth_odd.bin(Makefile の rompack: 8 面前半・終幕のオーバレイの 2 バンク目) */
+#define EARTH_ODD_BANK  125
 #define YJK_ROW   64
 #define YJK_H     56
-#define YJK_SRC0  8                /* 地平線の絵(64 行)の 8 行目から(下の端に地平線の光がある) */
 
 static u16 sec_t;
 static u8  yrow, split;
@@ -118,8 +119,8 @@ void ovl_vram(void) {
         u8 n;
         for (n = 0; n < 2 && yrow < YJK_H * 2; n++, yrow++) {   /* 偶数バイト → ページ 0、奇数 → ページ 2 */
             u8 r = (u8)(yrow < YJK_H ? yrow : yrow - YJK_H);
-            if (yrow < YJK_H) rom_to_vram(ASSET_TITLE_EVEN_BANK, (u16)(ASSET_TITLE_EVEN_OFF + (YJK_SRC0 + r) * 128u), 0, (u16)((YJK_ROW + r) * 128u), 128);
-            else rom_to_vram(ASSET_TITLE_ODD_BANK, (u16)(ASSET_TITLE_ODD_OFF + (YJK_SRC0 + r) * 128u), 1, (u16)((YJK_ROW + r) * 128u), 128);
+            if (yrow < YJK_H) rom_to_vram(EARTH_EVEN_BANK, (u16)(r * 128u), 0, (u16)((YJK_ROW + r) * 128u), 128);
+            else rom_to_vram(EARTH_ODD_BANK, (u16)(r * 128u), 1, (u16)((YJK_ROW + r) * 128u), 128);
         }
     }
     if (g_sec == SECE_ROLL && sec_t > 50 && next_line < NROLL) {   /* 画面の下に入る前の名前を書く */

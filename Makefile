@@ -323,9 +323,11 @@ $(BUILD)/game.ihx: $(BUILD)/p1end.rel $(BUILD)/crt0rom.rel $(CORE) $(BUILD)/g_ra
 	        echo "ERROR: $$S=$$A がページ 1(0x8000 未満)に無い。ROM を読む間に壊れる(rom.c)"; rm -f $@; exit 1; fi; \
 	done
 
-GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/snd.bin $(OVL_BINS) $(BUILD)/bank.bin $(BUILD)/bank3.bin $(BUILD)/bank4.bin tools/rompack.mjs
+# ★終幕の地球(gen_title.py の earth_*.bin、7KB ずつ)は素材の領域(バンク 6..87)に入らないので、コードの小さいオーバレイ(8 面前半・終幕)の
+#   2 バンク目へ置く(ed.c の EARTH_*_BANK)。オーバレイがその 2 バンク目まで伸びたら rompack が衝突で止める
+GAME.ROM: $(BUILD)/game.ihx $(BUILD)/assets.bin $(BUILD)/title.stamp $(BUILD)/snd.bin $(OVL_BINS) $(BUILD)/bank.bin $(BUILD)/bank3.bin $(BUILD)/bank4.bin tools/rompack.mjs
 	node tools/rompack.mjs --code $< --out $@ --asset 6 $(BUILD)/assets.bin --asset 88 $(BUILD)/snd.bin \
-	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin --asset 100 $(BUILD)/bank4.bin --asset 102 $(BUILD)/bank3.bin --asset 126 $(BUILD)/bank.bin
+	    --asset 104 $(BUILD)/ovl_title.bin --asset 106 $(BUILD)/ovl_s1.bin --asset 108 $(BUILD)/ovl_s2.bin --asset 110 $(BUILD)/ovl_s3.bin --asset 112 $(BUILD)/ovl_s4.bin --asset 114 $(BUILD)/ovl_s5.bin --asset 116 $(BUILD)/ovl_s6.bin --asset 118 $(BUILD)/ovl_s7.bin --asset 120 $(BUILD)/ovl_s8.bin --asset 121 $(BUILD)/earth_even.bin --asset 122 $(BUILD)/ovl_s8b.bin --asset 124 $(BUILD)/ovl_ed.bin --asset 125 $(BUILD)/earth_odd.bin --asset 100 $(BUILD)/bank4.bin --asset 102 $(BUILD)/bank3.bin --asset 126 $(BUILD)/bank.bin
 
 # 常駐リンク。sdld は未定義シンボルを警告で済ませて call 0x0000 を出す(実機リセット)ので、
 # マップに Undefined が出たら失敗させる(前作の教訓)。

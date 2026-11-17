@@ -5,11 +5,11 @@
 
 1. s8_strips.bin: 短冊 32 本(8x188、4bpp)。母艦の中枢の回廊(天井 4..27、床 160..187)。
      0..7 回廊(天井と床に目盛りの刻まれた板)/ 8..11 縦穴の底(天井が開いている)/ 12..15 原器の間(広い。
-     天井 4..11、床 176..187)/ 16..19 崩れた回廊(脱出)/ 20..31 予備(回廊)
+     天井 4..11、床 176..187)/ 16..19 崩れた回廊(脱出)/ 20..27 中ボスの間(回廊)/ 28..31 縦穴の底の左の壁
    ★0..3 行は色 6(ブロック 23)。板の縁は色 3(パレットアニメで脈打つ)。
 2. s8_map.bin: 地図 640 列(縦穴の底 16 → 歪曲回廊 192 → 中ボスの間 40 → 中枢 96 → 原器の間 64 → 脱出 232)
 3. s8_data.h: 区間の列、短冊ごとの天井と床
-4. tbar.bin: TOLERANCE のバーの縁(256x6。目盛りつき)
+4. tbar.bin: TOLERANCE のバーの縁(256x6。目盛りつき)と縦穴の壁(64x40。ページ 2 の 6..45 行)
 5. bell_i.bin: 内の鐘の ROTOR の元(64x64、4bpp。ガラスの継ぎ目つき)。bell96.bin: 外の鐘の 96x96 の 4 コマ(C3。ROTOR を使わず写す)
 """
 import math, os, random, sys
@@ -48,12 +48,46 @@ for k in range(16, 20):
     plate(x0, 4, t, k, 1); plate(x0, b, H, k, -1)
     for i in range(3): put(x0 + rnd.randrange(8), rnd.randrange(t + 4, b - 4), 13)
     LIM.append((t, b))
-for k in range(20, 32):
+for k in range(20, 28):
     x0 = base(k); plate(x0, 4, 28, k, 1); plate(x0, 160, H, k, -1); LIM.append((28, 160))
+
+# ---- 縦穴の壁(2026-11-17。仮の灰色の板から作り直した) ----
+# 母艦の中枢へ降りる縦穴の左右の壁(幅 32)。縦に 32 行の周期(行 = s & 31。高い空のブロックも縦穴の底の部屋も同じ位相)。
+#   外から: 継ぎ目の暗い溝 → 装甲板(色 9、上の縁が 14 で光り、下の縁が 0 の影。鋲)→ 管(14、光る筋 15)→ 溝 → 目盛りの定規
+#   (色 14 の地に 8 行ごとの刻み、32 行ごとの長い刻みは 15)→ 内側の縁(色 3。s8.c が中枢の鼓動のように光らせる)
+#   右の壁は左右を裏返す。★高い空のブロック(stage.c の shaft_block)はページ 2 の 6..45 行(tbar.bin の下)から写す
+WALL_P = 32
+def wall_px(x, r):
+    """左の壁の (x, 行) の色(x = 0..31、r = 0..31)"""
+    if x <= 1: return 0 if r % 16 else 9                   # 外の溝
+    if x <= 18:
+        if r == 0: return 14                                # 板の上の縁(光)
+        if r == WALL_P - 1: return 0                        # 板の下の縁(影)
+        if x == 2 or x == 18: return 6
+        if r in (4, 27) and x in (5, 15): return 15         # 鋲
+        if 9 <= r <= 22 and 7 <= x <= 13: return 6 if (r + x) % 2 else 9   # 板の凹み(網目)
+        return 9
+    if x <= 21: return (15 if x == 20 else 14) if r % 8 else 6   # 管(8 行ごとに継ぎ手)
+    if x == 22: return 0
+    if x <= 28:                                             # 目盛りの定規
+        if r % 32 == 0 and x >= 23: return 15
+        if r % 8 == 0 and x >= 26: return 2
+        if r % 4 == 0 and x >= 28: return 2
+        return 14 if x < 28 else 9
+    return 3                                                # 内側の縁(29..31)
+def wall_rows(n, right):
+    return [[wall_px(31 - x if right else x, r % WALL_P) for x in range(32)] for r in range(n)]
+
+# 縦穴の底の部屋の左の 4 列(短冊 28..31): 床まで左の壁が続く(右は回廊へ開いている)
+for k in range(28, 32):
+    x0 = base(k)
+    for y in range(4, 160):
+        for x in range(8): put(x0 + x, y, wall_px((k - 28) * 8 + x, y % WALL_P))
+    plate(x0, 160, H, k, -1); LIM.append((4, 160))
 
 cmap, SEC = [], {}
 def sec(n): SEC[n] = len(cmap)
-sec('SHAFT'); cmap += [8 + (i & 3) for i in range(32)]
+sec('SHAFT'); cmap += [28 + i if i < 4 else 8 + (i & 3) for i in range(32)]   # 左の 4 列は壁
 sec('WARP'); cmap += [i & 7 for i in range(176)]
 sec('MID'); cmap += [20 + (i & 7) for i in range(40)]
 sec('CORE'); cmap += [i & 7 for i in range(96)]
@@ -68,7 +102,9 @@ def pack(rows):
     return bytes(out)
 
 def tbar():
-    s = [[14] * 256 for _ in range(6)]
+    """ページ 2 の 0..45 行: 0..5 = TOLERANCE のバーの縁、6..45 = 縦穴の壁(x 0..31 = 左、32..63 = 右。40 行 = 周期 32 + 8)"""
+    s = [[14] * 256 for _ in range(6)] + [[0] * 256 for _ in range(40)]
+    for r, (a, b) in enumerate(zip(wall_rows(40, False), wall_rows(40, True))): s[6 + r][0:32] = a; s[6 + r][32:64] = b
     for x in range(256):
         s[5][x] = 15
         if x % 16 == 0:

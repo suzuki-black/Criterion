@@ -3,7 +3,7 @@
 
   usage: gen_title.py <出力ディレクトリ>
 
-1. 夜明けの地球の地平線(256x64、SCREEN12 = GRAPHIC7 + YJK)
+1. 夜明けの地球の地平線(256x64、SCREEN12 = GRAPHIC7 + YJK)。終幕の地球(256x56、横に周期)→ earth_even.bin / earth_odd.bin
    宇宙の暗がりと星、地球の縁(大気の青い光)、右から昇る日の出。
    YJK: 4 画素で J/K を共有。Y は画素ごと(5 ビット)、J = R - Y、K = G - Y(6 ビット符号付き)。
    ★GRAPHIC7 は VRAM を 2 つのバンクに 1 バイトずつ交互に読むので(M0-4)、表示アドレスの偶数バイトと奇数バイトを
@@ -39,7 +39,7 @@ def horizon_rgb(x, y):
 
 def yjk_encode(img):
     out = []
-    for y in range(H):
+    for y in range(len(img)):
         row = []
         for gx in range(0, W, 4):
             px = [img[y][gx + i] for i in range(4)]
@@ -130,6 +130,45 @@ def tdf():
             out.append((img[y][x] << 4) | img[y][x + 1])
     return bytes(out)
 
+# ---- 終幕の地球(2026-11-17。仮にタイトルの地平線を流していた: 弧が横に周期でないので、流すと継ぎ目で V 字に折れた) ----
+# 256x56、横に周期(ed.c が R#26/27 でゆっくり流す)。地球を見下ろす: 上に大気の縁(地平線はまっすぐ)、下ほど近い地表(海・陸・雲)。
+#   x の周波数は整数だけ(256 で 1 周)。奥行きは行で詰める(地平線の近くほど細かく、大気で青白く)。最終行は黒(タイトルと同じ理由)
+EH, EHZ = 56, 11.0
+def earth():
+    TAU = 2 * math.pi
+    rnd = random.Random(42)
+    def mk(n, kmax, vmax):
+        return [(rnd.randint(1, kmax), rnd.uniform(0.5, vmax), rnd.uniform(0, TAU), rnd.uniform(0, TAU), rnd.uniform(0.4, 1.0)) for _ in range(n)]
+    CL, LA = mk(18, 12, 9.0), mk(6, 3, 2.0)
+    def noise(P, u, v):
+        s = t = 0
+        for k, f, p, q, a in P:
+            s += a * math.sin(TAU * k * u + p + math.sin(TAU * f * v + q) * 1.3) * math.cos(TAU * f * v * 0.7 + q)
+            t += a
+        return s / t
+    def rgb(x, y):
+        u = x / W
+        if y < EHZ:                                    # 宇宙と大気の縁
+            glow = math.exp(-(EHZ - y) / 2.2)
+            return (2 * glow, 10 * glow, 26 * glow)
+        z = (y - EHZ + 1.5) / (EH - EHZ)               # 0 = 地平線、1 = 手前
+        v = 1.6 / (z + 0.08)
+        land = noise(LA, u, v * 0.15)
+        cl = noise(CL, u + 0.13 * math.sin(TAU * v * 0.05), v * 0.25)
+        if land > 0.12: r, g, b = (15, 12, 6) if land > 0.35 else (9, 13, 5)
+        else: r, g, b = 2, 5, 14 + 4 * z
+        c = clamp((cl - 0.02) * 2.6, 0, 1)             # 雲
+        r, g, b = r + (26 - r) * c, g + (27 - g) * c, b + (29 - b) * c
+        hz = 0.8 * math.exp(-(y - EHZ) / 7.0)          # 地平線の近くは大気で青白く
+        return (r + (8 - r) * hz, g + (18 - g) * hz, b + (30 - b) * hz)
+    img = [[tuple(clamp(c, 0, 31) for c in rgb(x + 0.5, y + 0.5)) for x in range(W)] for y in range(EH)]
+    for _ in range(25):                                # 星
+        x, y = rnd.randrange(W), rnd.randrange(7)
+        img[y][x] = (24, 24, 28)
+    yjk = yjk_encode(img)
+    yjk[EH - 1] = [0] * W
+    return bytes(v for row in yjk for v in row[0::2]), bytes(v for row in yjk for v in row[1::2])
+
 def main(d):
     rnd = random.Random(7)
     img = [[horizon_rgb(x + 0.5, y + 0.5) for x in range(W)] for y in range(H)]
@@ -147,6 +186,9 @@ def main(d):
     open(os.path.join(d, 'title_odd.bin'), 'wb').write(odd)
     open(os.path.join(d, 'logo.bin'), 'wb').write(logo())
     open(os.path.join(d, 'tdf.bin'), 'wb').write(tdf())
+    ee, eo = earth()
+    open(os.path.join(d, 'earth_even.bin'), 'wb').write(ee)
+    open(os.path.join(d, 'earth_odd.bin'), 'wb').write(eo)
 
 if __name__ == '__main__':
     main(sys.argv[1])
