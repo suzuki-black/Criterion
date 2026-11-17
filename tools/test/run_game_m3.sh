@@ -68,7 +68,7 @@ TCL
 cp "$HOME/.openMSX/share/settings.xml" "$OUT/settings.xml" 2>/dev/null || printf "<!DOCTYPE settings SYSTEM 'settings.dtd'>\n<settings>\n</settings>\n" > "$OUT/settings.xml"
 timeout 600 openmsx -setting "$OUT/settings.xml" -machine "$MACHINE" -carta "$ROM" -romtype ASCII8 -script "$T" >/dev/null 2>&1 || true
 python3 - "$OUT" <<'PY'
-import sys, os
+import sys, os, re
 out = sys.argv[1]
 fails = 0
 def check(name, ok, detail):
@@ -82,6 +82,9 @@ def info(name):
     d['lg'] = [int(x) for x in open(os.path.join(out, name + '.txt')).read().split(' lg=')[1].split()]
     return d
 cmap = open('build/city_map.bin', 'rb').read()
+_ch = open('build/city_data.h').read()
+far_s1 = int(re.search(r'#define CITY_FAR_S1 (\d+)', _ch).group(1))
+far_tb = [int(x) for x in re.search(r'#define CITY_FAR_TABLE \{([^}]*)\}', _ch).group(1).split(',')]
 # 1. 都市のリング
 v = open(os.path.join(out, 'city.vram'), 'rb').read(); d = info('city')
 wx, w0 = d['wx'], d['w0']
@@ -95,7 +98,7 @@ for W in range((wx + 8 + 7) >> 3, (wx + 248) >> 3):
     for s in range(150):
         r = (188 + s) & 255
         got = v[page * 0x8000 + r * 128 + xb: page * 0x8000 + r * 128 + xb + 4]
-        kk = (27, 28, 29, 30, 31, 27, 28, 29)[W & 7] if 16 <= s < 40 and k <= 26 else k   # ★遠景の行は遠景の短冊(bank/far.c の FAR_CITY)
+        kk = far_tb[W & 15] if 20 <= s < 68 and k <= far_s1 else k   # ★遠景の行(ブロック s = 20..67)は遠景の短冊(bank4/far.c の FAR_CITY)
         exp = v[0x18000 + s * 128 + kk * 4: 0x18000 + s * 128 + kk * 4 + 4]
         if d['clst'] and W == d['clwx'] >> 3 and d['cls'] - 2 <= s < d['cls'] + 10: continue   # ★ビルの壁を登る Pawn(第 4 バンクの climb.c)の行
         if got != exp: bad += 1

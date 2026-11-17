@@ -18,10 +18,10 @@
 
 static u16 sec_wx, sec_t;
 static u8  turret_i;
-static FarCfg far_cfg;             /* 遠景(第 2 バンクの far_step の FAR_CITY。gen_city.py の短冊 27..31) */
+static FarCfg far_cfg;             /* 遠景(第 4 バンクの far_step の FAR_CITY が埋める。gen_city.py の遠景のビル群) */
 
 static const u8 city_sky[6][3] = { { 2, 1, 2 }, { 3, 1, 3 }, { 4, 1, 3 }, { 5, 2, 3 }, { 6, 3, 3 }, { 7, 4, 2 } };
-static const u8 city_sky_s[6] = { 0, 14, 40, 70, 100, 130 };
+static const u8 city_sky_s[6] = { 0, 14, 44, 70, 100, 130 };   /* ★44 = 遠景の奥と手前の帯の境(gen_city.py) */
 
 static void enter(u8 sec) {
     g_sec = sec; sec_wx = g_wx; sec_t = 0;
@@ -133,8 +133,9 @@ void ovl_draw(void) {
 void ovl_vram(void) { boss_vram(); }
 
 /* 都市の空の帯と、LEGION の揺れの帯(横のずれ)を行の順に混ぜる */
-/* ★遠景(多重スクロール。遊んでの指摘): 都市の前半・後半の間、雲の底の下の帯(14..39 行。空の色の帯 14・40 行の項目にまとめる)を
-   半分の速さに(第 2 バンクの far_step の FAR_CITY。広場(LEGION・PLUMB は BG)の手前でずれを 0 に戻す) */
+/* ★遠景のビル群(多重スクロール。指示書 5.1): 都市の前半・後半の間、雲の底の下の 2 つの帯(14..43 行 = 奥、44..69 行 = 手前。
+   空の色の帯 14・44・70 行の項目にまとめる)を 1/4 と 1/2 の速さに(第 4 バンクの far_step の FAR_CITY。奥の位置は far_cfg.xb。
+   広場(LEGION・PLUMB は BG)の列がリングに入る前にずれを 0 に戻す) */
 void ovl_bands(s16 sc, u16 nx) {
     s16 bl[5]; s8 bo[5];
     u8 i, nb = boss_bands(bl, bo), kb = 0;
@@ -143,7 +144,7 @@ void ovl_bands(s16 sc, u16 nx) {
         s16 l = (s16)(city_sky_s[i] - sc);
         while (kb < nb && bl[kb] < l) { stage_ev_scroll(bl[kb], (u16)(nx - bo[kb])); kb++; }
         stage_ev_pal(l, city_sky[i]);
-        if ((nx - fx) & 511u) { if (i == 1) stage_ev_scroll(l, fx); else if (i == 2) stage_ev_scroll(l, nx); }
+        if (((nx - fx) & 511u) && (u8)(i - 1) < 3) stage_ev_scroll(l, i == 1 ? far_cfg.xb : i == 2 ? fx : nx);
     }
     while (kb < nb) { stage_ev_scroll(bl[kb], (u16)(nx - bo[kb])); kb++; }
 }

@@ -72,7 +72,8 @@ static u16 cur_col;                /* 流している列 */
 static u8  col_b;                  /* その列の次のブロック(NBLK = 列を終えた) */
 static u8  jb0, jn, jstep;         /* 描き替え中のブロック(先頭・個数。jn = 0 で仕事なし)と進み */
 static s16 js;
-static s16 pick_at;                /* 前に描き替えを探して何も無かったときの g_scam(8 行単位) */
+s16 g_pick_at;                     /* 前に描き替えを探して何も無かったときの g_scam(8 行単位)。★第 4 バンクの far.c も 0x7FFF にする(1 面の遠景の行を描き直させる) */
+#define pick_at g_pick_at
 static u8  hs_t;                   /* hs_cur を求めたときの sky_t */
 Banner g_ban;                      /* 面の開始表示(game.h)。VRAM の仕事は第 2 バンクの banner.c */       /* ★写しを持つ(呼ぶのは古いオーバレイで、その文字列は次のオーバレイの読み込みで消える) */
 

@@ -291,7 +291,8 @@ extern u8 g_loop;                           /* 周回(0 = 1 周目) */
 #define RECAL (g_calib || g_loop)           /* ボスの再校正版の動き(7 面の試験と、2 周目以降の 1〜6 面) */
 void calib_begin(u8 k);                     /* 試験 k の始まり(各面の ovl_init から): 開始表示 */
 u8   calib_out(u16 t);                      /* 試験に合格したあと(各面から毎フレーム): 判定文 → 上がって次の試験へ。1 = 頼んだ */
-typedef struct { u8 s0, s1, t0, t1, strip[8]; } FarCfg;   /* 遠景(stage.c): 使う短冊 s0..s1・s の範囲 t0..t1-1・遠景の短冊 8 本 */
+typedef struct { u8 s0, s1, t0, t1, strip[16]; u16 xb; } FarCfg;   /* 遠景(stage.c): 使う短冊 s0..s1・s の範囲 t0..t1-1・遠景の短冊 16 本(周期 128 ドット)・
+                                                                         1 面の奥の帯の横位置(far.c が書く) */
 extern FarCfg *g_far;              /* 0 = 使わない。オーバレイの変数を指す */
 u16 far_step(u16 a);               /* 第 4 バンク: 遠景の帯の横位置。a = bg の位置(14 ビット) | 指示 << 14(FAR_LOCK / FAR_FREE / FAR_RESET) */
 u8  plumb_gen(u8 reset);           /* 第 4 バンク: 1 面の PLUMB の絵を 1 段ずつ作る(reset = 1 で始める)。全部できたら 1 */

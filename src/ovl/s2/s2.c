@@ -98,7 +98,7 @@ void ovl_init(void) {
     g_boss_state = BS_NONE;
     {   /* 遠景の短冊(地図で使わない 6 本。表の 7・8 本目は 1・2 本目と同じ絵) */
         static const u8 fs[8] = { 11, 14, 15, 27, 30, 31, 11, 14 };
-        for (i = 0; i < 8; i++) far_cfg.strip[i] = fs[i];
+        for (i = 0; i < 16; i++) far_cfg.strip[i] = fs[i & 7];   /* 表は 16 本(1 面が周期 128 で使う)。ここは 64 のくり返し */
         far_cfg.s0 = 0; far_cfg.s1 = 31; far_cfg.t0 = 40; far_cfg.t1 = 144;
         g_far = g_calib ? 0 : &far_cfg;                       /* 試験の白い空間では使わない */
         far_rst = 1; s2_far_zero = 1;

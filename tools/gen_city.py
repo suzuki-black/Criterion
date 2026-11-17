@@ -11,7 +11,7 @@
      158     歩道(色 14)
      159..187 街路(色 0 = 黒地。Pawn が歩く。M3)
    使う色: 0 黒 / 1 空 / 6 ビル(近い雲と同じ) / 7 屋上の縁の光 / 8 橙の窓 / 9 青灰 / 12 黄の窓 / 13 赤 / 14 灰。
-   ★2..5 は降下の間まだ画面にある遠い雲・中の雲の色なので使わない。
+   ★2..5 は降下の間まだ画面にある遠い雲・中の雲の色なので使わない(遠景のビル群の 2・3・5 だけは別。下の FAR_STRIPS)。
 2. 地図: 都市の列(8 ドット)ごとの短冊の番号 → city_map.bin(1 列 1 バイト)。
    区間: 降下(32 列)/ 都市前半(192)/ 中ボスの広場(40)/ 都市後半・高架道路(160)/ ボスの広場(40)/ 上昇(64)。
 3. city_data.h: 区間の列の位置と、砲台(Spirit)を置く屋上の (列, 行)。
@@ -77,17 +77,17 @@ def strip(desc, fn, roof=None):
     return k
 
 EMPTY = strip('empty', None)
-HEIGHTS = [40, 70, 100, 125]
+HEIGHTS = [70, 100, 125]          # ★40 は外した(2026-11-17。16..67 行を遠景のビル群に空ける。地図では 40 を 70 のアンテナつきに替える)
 BLD = {}
 for t in HEIGHTS:
     BLD[t] = [strip(f'b{t}{kind}', (lambda kk, t=t, kind=kind: building(kk, t, kind[0])), t) for kind in ('L', 'W1', 'W2', 'R')]
 RUIN = [strip(f'ruin{t}', (lambda kk, t=t: building(kk, t, 'W', jag=12, holes=0.25)), t + 6) for t in (70, 70, 100, 100)]
 
 def antenna(kk):
-    building(kk, 40, 'W')
+    building(kk, 70, 'W')
     x0 = kk * 8
-    put(x0 + 3, 41, RED); put(x0 + 4, 41, RED)               # ★屋上の赤い灯だけ(25..39 行へ伸びる柱は外した: 遠景の帯 16..39 に入る)
-ANTENNA = strip('antenna', antenna, 40)
+    put(x0 + 3, 71, RED); put(x0 + 4, 71, RED)               # ★屋上の赤い灯だけ(上へ伸びる柱は遠景の行に入るので描かない)
+ANTENNA = strip('antenna', antenna, 70)
 
 ROAD_Y = 118
 def road(kk, pillar):
@@ -111,21 +111,51 @@ def rubble(kk):
         for y in range(WALK - h, WALK): put(x0 + x, y, GRAY if y == WALK - h else BODY)
 RUBBLE = strip('rubble', rubble)
 LOWRUIN = [strip('lowruin', lambda kk: building(kk, 135, 'W', jag=8, holes=0.4), 140) for _ in range(2)]
+# 広場(LEGION・PLUMB)と上昇の短冊。中身は EMPTY / RUBBLE と同じだが番号を分け、遠景を描かない(ボスは空の色で四角く描き消すので、
+# 遠景があると穴が開く)。far.c の遠景は短冊 0..CITY_FAR_S1 だけに効く
+CITY_FAR_S1 = len(STRIPS) - 1
+PL_EMPTY = strip('plaza', None)
+PL_RUBBLE = strip('plaza_rubble', rubble)
 while len(STRIPS) < 32: strip('spare', None)
 assert len(STRIPS) == 32
 
-# ★遠景(多重スクロール。遊んでの指摘): 予備の短冊 27..31 の 16..39 行(雲の底の下で、どのビルより上)に、遠い雲の筋を描く。
-#   s1.c は短冊の表を 27, 28, 29, 30, 31, 27, 28, 29 にするので、筋は 1 本(8 ドット)の中に収める。地図の乱数は使わない
-FAR_Y0, FAR_Y1 = 16, 40
+# ★遠景のビル群(多重スクロール。指示書 5.1「帯ごとに異なる速度の視差」。2026-11-17): 残りの短冊(FAR_STRIPS)の 20..67 行に
+#   2 層を描く。奥 = 20..43 行(1/4 の速さ)、手前 = 44..67 行(1/2)。遠いほど空の色に近い。
+#   遠景はリングのブロック(s = 20, 28, .. 60 の 8 行)単位で写すので 20..67 行。短冊の表は 16 本(FAR_TABLE、周期 128 ドット)で、
+#   短冊は 7 本しかないので、どの並びでも継ぎ目がそろうよう、1 本(8 ドット)ごとに完結した部品にする(土台の高さは全部同じ)。
+#   下の縁は 1 行おきに空を混ぜてもやに溶かす(横に流しても模様がちらつかない)。
+#   ★色は 2・3・4・5 だけ(遠景専用。降下の雲と PLUMB も 2..5 を使うので、far.c が都市の間だけパレットを書く)。広場の列には遠景が無く
+#   (PLUMB が空の色で四角く描き消すので)、そのままでは広場の手前で遠景が縦に切れて見えるので、far.c が広場の手前で空の色へ溶かす
+FAR_STRIPS = list(range(len(STRIPS) - 7, 32))
+FAR_TABLE = [0, 3, 5, 1, 6, 2, 4, 3, 0, 5, 2, 6, 1, 4, 2, 5]
+FAR_S0, FAR_S1 = 20, 68
+FB, FB2, FF, FW = 2, 4, 3, 5                              # 奥・奥(手前の帯の行)・手前・窓の灯の色(far.c がパレットを書く: 遠いほど空に近い。
+                                                           # 広場の手前で、それぞれの帯の空の色へ溶かす)
+BACK_BASE, FRONT_BASE = 35, 56
+# 部品: (x0, x1, 屋上の行) の箱の並び。土台より上へ伸びる塔
+BACK = [[(1, 4, 24), (2, 3, 21)], [(0, 2, 29), (4, 7, 31)], [(1, 6, 30), (2, 5, 27), (3, 4, 25)], [(0, 7, 33), (5, 5, 28)],
+        [(1, 6, 26), (3, 4, 23)], [(0, 1, 30), (5, 6, 25)], [(2, 5, 29), (3, 4, 27)]]
+FRONT = [[(0, 5, 47), (6, 7, 52)], [(0, 2, 53), (3, 7, 49)], [(1, 6, 45)], [(0, 7, 52), (2, 4, 48)],
+         [(0, 3, 50), (5, 7, 46)], [(0, 7, 54), (4, 4, 51)], [(1, 4, 44), (5, 7, 51)]]
 fr = random.Random(1010)
-for k in range(27, 32):
+for m, k in enumerate(FAR_STRIPS):
     x0 = k * 8
-    for y in range(FAR_Y0, FAR_Y1):
+    for y in range(16, 70):
         for x in range(8): put(x0 + x, y, SKY)
-    for i in range(fr.randrange(1, 3)):
-        n = fr.randrange(3, 9); cx = fr.randrange(0, 8 - n + 1); cy = fr.randrange(FAR_Y0 + 2, FAR_Y1 - 3)
-        for x in range(cx, cx + n): put(x0 + x, cy, 4)
-        for x in range(cx + 1, cx + n - 1): put(x0 + x, cy + 1, 3)
+    for x in range(8):                                     # 土台ともや
+        for y in range(BACK_BASE, 50): put(x0 + x, y, FB if y < 44 else FB2)   # ★奥の胴体は手前の帯(44..)まで続ける。一様な行は帯の速さが違っても同じに見える
+        for y in (50, 52): put(x0 + x, y, FB2)
+        for y in range(FRONT_BASE, 64): put(x0 + x, y, FF)
+        for y in (64, 66): put(x0 + x, y, FF)
+    for a, b, t in BACK[m]:
+        for x in range(a, b + 1):
+            for y in range(t, BACK_BASE): put(x0 + x, y, FB)
+    for a, b, t in FRONT[m]:
+        for x in range(a, b + 1):
+            for y in range(t, FRONT_BASE): put(x0 + x, y, FF)
+        for y in range(t + 2, FRONT_BASE + 3, 3):          # まばらな窓の灯
+            for x in range(a + (a & 1 ^ 1), b + 1, 2):
+                if fr.random() < 0.22: put(x0 + x, y, FW)
 
 # ---- 地図 ----
 cmap = []
@@ -149,6 +179,8 @@ def city(n_cols, with_road):
                 emit(PILLAR if i % 4 == 1 else ROAD)
             continue
         t = rnd.choice([40, 70, 70, 100, 100, 125])
+        ant = t == 40                                      # ★40 は 70 のアンテナつきに(乱数の引き方は前のまま)
+        if ant: t = 70
         w = rnd.randrange(3, 8)
         start = len(cmap)
         if rnd.random() < 0.2 and t in (70, 100):
@@ -157,7 +189,7 @@ def city(n_cols, with_road):
         else:
             b = BLD[t]
             emit(b[0])
-            for i in range(w - 2): emit(ANTENNA if (t == 40 and i == 1) else b[1 + (i & 1)])
+            for i in range(w - 2): emit(ANTENNA if (ant and i == 1) else b[1 + (i & 1)])
             emit(b[3])
             roof = t
         nb += 1
@@ -166,7 +198,7 @@ def city(n_cols, with_road):
     del cmap[end:]
 
 def plaza(n):
-    for i in range(n): emit(RUBBLE if rnd.random() < 0.25 else EMPTY)
+    for i in range(n): emit(PL_RUBBLE if rnd.random() < 0.25 else PL_EMPTY)
 
 SEC = {}
 SEC['DESCENT'] = len(cmap); lead(32)
@@ -188,6 +220,8 @@ def main(d, hpath):
         f.write('#ifndef CITY_DATA_H\n#define CITY_DATA_H\n\n')
         for k, v in SEC.items(): f.write(f'#define CITY_COL_{k} {v}\n')
         f.write(f'#define CITY_COLS {len(cmap)}\n#define CITY_ROAD_Y {ROAD_Y}\n#define CITY_WALK {WALK}\n\n')
+        f.write(f'#define CITY_FAR_S1 {CITY_FAR_S1}\n#define CITY_FAR_TABLE {{ ' + ', '.join(str(FAR_STRIPS[i]) for i in FAR_TABLE) + ' }\n')
+        f.write('\n#ifndef CITY_FAR_ONLY   /* far.c は区間と遠景の定数だけ(表を複製しない) */\n')
         f.write(f'#define CITY_NTURRET {len(turrets)}\n#ifndef CITY_CLIMB\n')
         f.write('static const u16 city_turret_col[CITY_NTURRET] = {\n    ' +
                 ', '.join(str(c) for c, _ in turrets) + ' };\n')
@@ -197,7 +231,7 @@ def main(d, hpath):
         climb = [0] * 32
         for t in HEIGHTS: climb[BLD[t][0]] = t
         f.write('\n#ifdef CITY_CLIMB\nstatic const u8 city_climb[32] = {\n    ' + ', '.join(str(c) for c in climb) + ' };\n#endif\n')
-        f.write('\n#endif /* CITY_DATA_H */\n')
+        f.write('#endif /* CITY_FAR_ONLY */\n\n#endif /* CITY_DATA_H */\n')
 
 if __name__ == '__main__':
     main(sys.argv[1], sys.argv[2])

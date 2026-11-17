@@ -6,6 +6,7 @@
    ・FAR_CITY: 1 面。流す・戻すをここで決める(下の far_city)
    ★本体の変数の領域に空きが無いので、指示は引数の上位 2 ビット(bg の位置は 14 ビット)、状態はここ(第 2 バンクの変数)に置く */
 #include "game.h"
+#include "vdp.h"
 
 static u16 fx, fprev;
 static s16 facc;
@@ -29,26 +30,66 @@ static u16 far_core(u16 a) {
     return fx;
 }
 
-/* ---- 1 面(都市): 雲の底の下(s = 16..39)。どの短冊もこの行は空(gen_city.py。アンテナの柱は外した)。遠景は短冊 27..31 ---- */
-#define CITY_ARENA1 224            /* city_data.h の CITY_COL_ARENA1 / ARENA2(★生成ヘッダは表を持つので取り込まない。gen_city.py を変えたら合わせる) */
-#define CITY_ARENA2 424
+/* ---- 1 面(都市): 雲の底の下の遠景のビル群(gen_city.py。s = 20..67 はどの短冊も空で、遠景の短冊だけが描く)。
+   奥(14..43 行)は 1/4、手前(44..69 行)は 1/2 の速さ。帯の横位置は手前 = 戻り値、奥 = f->xb(オーバレイの変数。ページ 3 なので書ける)。
+   奥のずれは手前の 1.5 倍(e + e/2)。e が 512 で回って符号が替わると奥は 768 ≡ 256 跳ぶが、遠景の周期 128 の倍数なので見えない ---- */
+#define CITY_FAR_ONLY
+#include "city_data.h"
+#define FAR_AHEAD 72               /* リングは画面の左から 64 列(画面 + 32 列先)。帯をずらすとその全部が見えるので、広場(遠景の無い短冊)の
+                                      列が入る 8 列手前でずれを 0 にし終え、広場の列がリングから出るまで流さない */
+#define FAR_HIDE  56               /* 広場の 56 列手前から遠景を空の色へ溶かす(画面の右に広場が出るのは 32 列手前。そこで縦に切れて見えた) */
+extern s16 g_blk_tag[];            /* stage.c(ページ 3 の変数) */
+extern s16 g_pick_at;
+
+/* 遠景の色(2 = 奥、3 = 手前、4 = 奥の胴体の手前の帯に入る行、5 = 窓の灯)の段: 0 = 空と同じ(2 は 14..43 行の空、ほかは 44..69 行の空)… 3 = 見える */
+static const u8 far_pal[4][4][3] = {
+    { { 3, 1, 3 }, { 4, 1, 3 }, { 4, 1, 3 }, { 4, 1, 3 } },
+    { { 3, 1, 3 }, { 3, 1, 3 }, { 3, 1, 3 }, { 4, 1, 3 } },   /* ★灯は 1 段遅らせる(体より先に灯だけが浮いて見えた) */
+    { { 3, 1, 2 }, { 3, 1, 2 }, { 3, 1, 2 }, { 5, 2, 2 } },
+    { { 3, 1, 2 }, { 2, 1, 2 }, { 3, 1, 2 }, { 6, 3, 2 } } };
+static u8 lv, lv_t;                /* 今の段と、次に動かすまでのフレーム */
+
+static void far_pal_set(void) {
+    const u8 *p = far_pal[lv][0];
+    u8 i;
+    for (i = 2; i < 6; i++, p += 3) vdp_set_pal(i, p[0], p[1], p[2]);
+}
+
 /* ★1 面のオーバレイと常駐に空きが無いので、設定もここで書く: オーバレイは g_far を自分の FarCfg に向けて t1 = 0 にしておき、
-   最初の呼び出しで埋めて置き直す(t1 = 0 の間は遠景の範囲が空なので、列の描き込みには効かない) */
+   都市に入ったら埋めて置き直す(t1 = 0 の間は遠景の範囲が空なので、列の描き込みには効かない)。★降下の間は描かない(色 2..5 は
+   まだ見えている雲の色)。降下の間にリングへ入った遠景の行は、印を消して描き直させる(stage.c のブロックの描き替え。色は空と同じ段 0
+   から始めるので、描き直す途中は見えない) */
 static u16 far_city(u16 nx) {
     FarCfg *f = g_far;
-    u16 c, m = FAR_LOCK;
-    if (g_sec < SEC_CITY1) return nx;                         /* 降下の間は地面がまだ遠い */
+    u16 c, m = FAR_LOCK, x;
+    u8 want = 0;
+    s16 e;
+    if (g_sec < SEC_CITY1) return nx;
+    c = (u16)((g_wx >> 3) - g_w0);                            /* 画面の左の列 */
     if (!f->t1) {
+        static const u8 tb[16] = CITY_FAR_TABLE;
         u8 i;
-        for (i = 0; i < 8; i++) f->strip[i] = (u8)(i < 5 ? 27 + i : 22 + i);   /* 27..31, 27..29 */
-        f->s0 = 0; f->s1 = 26; f->t0 = 16; f->t1 = 40;
+        for (i = 0; i < 16; i++) f->strip[i] = tb[i];
+        f->s0 = 0; f->s1 = CITY_FAR_S1; f->t0 = 16; f->t1 = 68;
+        for (i = 0; i < 32; i++) if (g_blk_tag[i] >= 16 && g_blk_tag[i] < 68) g_blk_tag[i] = 0x7FFF;
+        g_pick_at = 0x7FFF;
+        lv = 0; lv_t = (u8)-48; far_pal_set();                 /* 描き直しを待ってから浮かべる */
         m = FAR_RESET;
     } else {
-        c = (u16)(((g_wx >> 3) - g_w0) + 48);                 /* 画面の右の 16 列先 */
-        if (g_sec == SEC_CITY1 && c < CITY_ARENA1) m = FAR_FREE;
-        else if (g_sec == SEC_CITY2 && c < CITY_ARENA2) m = FAR_FREE;
+        if ((c >= CITY_COL_CITY1 && c < CITY_COL_ARENA1 - FAR_AHEAD) || (c >= CITY_COL_CITY2 && c < CITY_COL_ARENA2 - FAR_AHEAD)) m = FAR_FREE;
+        /* 見せる区間(★都市前半の頭は描き直しを待つ) */
+        if ((c >= CITY_COL_CITY1 + 4 && c < CITY_COL_ARENA1 - FAR_HIDE) || (c >= CITY_COL_CITY2 && c < CITY_COL_ARENA2 - FAR_HIDE)) want = 3;
+        if (g_sec <= SEC_CITY2 && ++lv_t == 12) {             /* 12 フレームに 1 段。★ボス(PLUMB は 2..5 を回す)からは書かない */
+            lv_t = 0;
+            if (lv != want) lv = (u8)(lv < want ? lv + 1 : lv - 1);
+            far_pal_set();                                    /* 変わらなくても書き直す(やられて再開したときなど、ほかが 2..5 を書いても戻る) */
+        }
     }
-    return far_core(nx | m);
+    x = far_core(nx | m);
+    e = (s16)((nx - x) & 511u);
+    if (e >= 256) e -= 512;
+    f->xb = (u16)(nx - (u16)(e + (e >> 1)));
+    return x;
 }
 
 /* 入口(呼び口は 1 つ: 常駐に空きが無い)。指示が FAR_CITY なら 1 面の判定から */
