@@ -80,7 +80,8 @@ static void enter(u8 sec) {
     if (sec == SEC3_REV) g_col_rev = 31;                      /* 逆走: 窓は画面の左へ */
     if (sec == SEC3_MID) { g_col_rev = 16; b3_start(B3_MET); }   /* 振り子で前後: 窓は左右に半分ずつ */
     if (sec == SEC3_TOP) {
-        g_col_rev = 0; g_scroll_speed = g_calib ? 4 : 24; set_streak(!g_calib);
+        g_col_rev = 0; if (g_calib) g_scroll_speed = 4;      /* ★最高速へは下の SEC3_TOP で 4 フレームに 1 段ずつ上げる(0 から一気に 24 へ
+                                                                 跳んでいた間は、中ボスの後にいきなり最高速で走り出した。指摘) */
         g_map[S3_COL_STOP + 2] = 14; g_map[S3_COL_STOP + 6] = 14;   /* 停止の隔壁は開いて無くなる(まだ窓の外)。★前は開いた隔壁の BG に
                                                                  していたが、真ん中に壁がある間は遠景を止めることになるので通路に */
         if (!g_calib) b3_load_dial();
@@ -226,6 +227,8 @@ void ovl_update(void) {
         }
         break;
     case SEC3_TOP:
+        if (!g_calib && g_scroll_speed < 24 && !(sec_t & 3)) g_scroll_speed++;   /* 前半の加速と同じ上げ方(0 → 24 で約 1.6 秒) */
+        set_streak(!g_calib && g_scroll_speed >= 16);
         bulkheads();
         if (col_of_screen() + 8 >= S3_COL_ARENA) { g_scroll_speed = 0; set_streak(0); enter(SEC3_BOSS); }
         break;
